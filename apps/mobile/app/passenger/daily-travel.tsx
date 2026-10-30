@@ -165,6 +165,9 @@ export default function DailyTravelScreen() {
   // On focus and on every new search — and seats fill and cars leave while the rider watches.
   useFocusEffect(loadPools);
   useForegroundInterval(loadPools, 20_000);
+  // One beat for every box's car photos, so they turn over together.
+  const [carBeat, setCarBeat] = useState(0);
+  useForegroundInterval(() => setCarBeat((b) => b + 1), 2800);
 
   const openRide = useCallback(
     (tripId: string) => router.push(`/passenger/trip/${tripId}` as Parameters<typeof router.push>[0]),
@@ -397,7 +400,7 @@ export default function DailyTravelScreen() {
               {searching ? 'NEAREST TO YOUR DROP-OFF FIRST' : `SHARED RIDES IN ${cityName.toUpperCase()}`}
             </Text>
             <View style={styles.grid}>
-              {pools.map((p, i) => <PoolBox key={p.id} pool={p} index={i} onPress={() => setOpened(p)} />)}
+              {pools.map((p, i) => <PoolBox key={p.id} pool={p} index={i} beat={carBeat} onPress={() => setOpened(p)} />)}
             </View>
           </>
         )}
@@ -413,6 +416,7 @@ export default function DailyTravelScreen() {
         }}
       />
       <RideDialog
+        beat={carBeat}
         pool={opened}
         uid={user?.uid}
         rates={cancellation}
@@ -532,6 +536,66 @@ function ShowCar({ width, arrive, idle = false }: { width: number; arrive?: Anim
   );
 }
 
+/**
+ * A ride's real cars (owner, 2026-10-30): the accepted driver's own, else the
+ * nearby cars that could come, turning over on each `beat` — or, with none,
+ * the stock car. It drives in with `arrive`, as the stock car does.
+ */
+function RideCars({
+  photos,
+  beat,
+  width,
+  arrive,
+  idle,
+}: {
+  photos: string[];
+  beat: number;
+  /** The stock car's width; a photo fills its box. */
+  width: number;
+  arrive?: Animated.Value;
+  idle?: boolean;
+}) {
+  const [still] = useState(() => new Animated.Value(1));
+  const [fade] = useState(() => new Animated.Value(1));
+  const [shown, setShown] = useState(0);
+  // The beat it mounted on: the first car stays up for a full beat.
+  const [firstBeat] = useState(beat);
+  const count = photos.length;
+  useEffect(() => {
+    if (count < 2 || beat === firstBeat) return;
+    const out = Animated.timing(fade, { toValue: 0, duration: 200, useNativeDriver: true });
+    out.start(() => {
+      setShown((i) => (i + 1) % count);
+      Animated.timing(fade, { toValue: 1, duration: 260, useNativeDriver: true }).start();
+    });
+    return () => out.stop();
+  }, [beat, firstBeat, count, fade]);
+
+  if (count === 0) return <ShowCar width={width * 0.9} arrive={arrive} idle={idle} />;
+  const shownIn = arrive ?? still;
+  return (
+    <Animated.View
+      style={{
+        alignSelf: 'stretch',
+        opacity: shownIn,
+        transform: [{ translateX: shownIn.interpolate({ inputRange: [0, 1], outputRange: [-40, 0] }) }],
+      }}
+    >
+      <Animated.Image
+        source={{ uri: photos[shown % count] }}
+        resizeMode="cover"
+        accessible={false}
+        style={[styles.carPhoto, { opacity: fade }]}
+      />
+      {count > 1 ? (
+        <View style={styles.carDots}>
+          {photos.map((url, i) => <View key={url} style={[styles.carDot, i === shown % count && styles.carDotOn]} />)}
+        </View>
+      ) : null}
+    </Animated.View>
+  );
+}
+
 /** A seat for each place in the car: lime when taken, an outline when free. */
 function SeatIcons({ taken, total }: { taken: number; total: number }) {
   return (
@@ -548,7 +612,7 @@ function SeatIcons({ taken, total }: { taken: number; total: number }) {
  * the car, then from → to, the fare and the seats still free. Each box rises
  * in after the one before it with its car driving in, and dips when pressed.
  */
-function PoolBox({ pool: p, index, onPress }: { pool: SharedPool; index: number; onPress: () => void }) {
+function PoolBox({ pool: p, index, beat, onPress }: { pool: SharedPool; index: number; beat: number; onPress: () => void }) {
   const active = isActive(p);
   const yours = p.mine || p.booked || p.aboardTripId !== null;
   const from = areaLabel(p.pickup.address);
@@ -580,7 +644,7 @@ function PoolBox({ pool: p, index, onPress }: { pool: SharedPool; index: number;
       >
         <StatusTag open={isAvailable(p)} />
         <View style={styles.boxCar}>
-          <ShowCar width={124} arrive={arrive} idle={active} />
+          <RideCars photos={p.carPhotos ?? []} beat={beat} width={136} arrive={arrive} idle={active} />
         </View>
         <View>
           <View style={styles.boxLine}>
@@ -821,6 +885,7 @@ function SheetRow({ label, children }: { label: string; children: React.ReactNod
  */
 function RideDialog({
   pool: p,
+  beat,
   uid,
   rates,
   busy,
@@ -833,6 +898,8 @@ function RideDialog({
   onRemove,
 }: {
   pool: SharedPool | null;
+  /** The screen's car-photo beat. */
+  beat: number;
   uid: string | undefined;
   rates: { poolLeaveRate: number; poolLeaveArrivedRate: number };
   busy: boolean;
@@ -870,7 +937,10 @@ function RideDialog({
         >
           <StatusTag open={isAvailable(p)} />
           <View style={styles.boxCar}>
-            <ShowCar width={220} arrive={pop} idle={isActive(p)} />
+            <RideCars photos={p.carPhotos ?? []} beat={beat} width={240} arrive={pop} idle={isActive(p)} />
+            {p.carPhotos?.length ? (
+              <Text style={styles.carCaption}>{p.carIsDrivers ? 'The driver’s car' : 'Cars nearby that could come'}</Text>
+            ) : null}
           </View>
 
           <View style={styles.dialogStats}>
@@ -1261,6 +1331,12 @@ const styles = themed(() => StyleSheet.create({
   statusFull: { color: colors.danger },
   /** Room above the car for the status. */
   boxCar: { paddingTop: 16 },
+  /** A real car's photo: the driver's own, or one of the cars nearby. */
+  carPhoto: { width: '100%', aspectRatio: 1.6, borderRadius: 12, backgroundColor: colors.background },
+  carDots: { flexDirection: 'row', justifyContent: 'center', gap: 4, marginTop: 5 },
+  carDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.border },
+  carDotOn: { width: 12, backgroundColor: colors.primary },
+  carCaption: { fontSize: 11.5, fontWeight: '800', color: colors.muted, textAlign: 'center', marginTop: 6 },
   liveRing: { position: 'absolute', width: 12, height: 12, borderRadius: 6, backgroundColor: GO },
   liveCore: { width: 10, height: 10, borderRadius: 5, backgroundColor: GO },
   boxLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },

@@ -19,9 +19,11 @@
  *   5. A shared ride is one gender: women with women, men with men.
  *   6. The driver starts the car (or it starts itself once due): the box opens
  *      for the next car, and the driver gets each rider's stops as they confirm.
+ *   7. Real cars: the nearest online cars before a driver accepts, then theirs.
  * ----------------------------------------------------------------------------
  */
 import { describe, it, expect, beforeEach } from 'vitest';
+import { geohashForLocation } from 'geofire-common';
 import * as admin from 'firebase-admin';
 import type { CallableRequest } from 'firebase-functions/v2/https';
 
@@ -34,6 +36,7 @@ import { leaveSharedRide } from '../../trips/poolLeave';
 import {
   acceptSharedPool,
   autoStartDue,
+  clearNearbyCarsCache,
   confirmSharedSeat,
   createSharedPool,
   dispatchPool,
@@ -343,5 +346,34 @@ describe('6 · the driver starts the car; riders confirm', () => {
     await autoStartDue(admin.firestore.Timestamp.now());
     expect((await trip(made.tripId)).poolConfirm).toEqual({ amna: 'pending' });
     expect((await pool.get()).get('autoStartAt')).toBeUndefined();
+  });
+});
+
+describe('7 · real cars on the boxes', () => {
+  it('shows the online cars nearest the pickup before a driver accepts, and that driver’s own after', async () => {
+    clearNearbyCarsCache();
+    await db().doc(`drivers/${D1}`).set({
+      geohash: geohashForLocation([A_PICKUP.lat, A_PICKUP.lng]),
+      vehicleCheck: { photoUrl: 'https://cars.example/imran.jpg' },
+    }, { merge: true });
+    const farther = { lat: A_PICKUP.lat + 0.01, lng: A_PICKUP.lng };
+    await db().doc(`drivers/${D2}`).set({
+      geohash: geohashForLocation([farther.lat, farther.lng]),
+      lastLocation: farther,
+      vehiclePhotoDocUrl: 'https://cars.example/sana.jpg',
+    }, { merge: true });
+    const made = (await createSharedPool.run(makeReq({
+      city: 'islamabad', rideType: 'mini', departTime: pktClock(2 * 3600_000), pickup: A_PICKUP, dropoff: A_DROPOFF,
+    }, 'amna'))) as { poolId: string };
+
+    const [before] = (await search('bushra', BUSHRA.pickup, BUSHRA.dropoff)).pools;
+    expect(before).toMatchObject({
+      carPhotos: ['https://cars.example/imran.jpg', 'https://cars.example/sana.jpg'],
+      carIsDrivers: false,
+    });
+
+    await acceptSharedPool.run(driverReq({ poolId: made.poolId }, D2));
+    const [after] = (await search('bushra', BUSHRA.pickup, BUSHRA.dropoff)).pools;
+    expect(after).toMatchObject({ carPhotos: ['https://cars.example/sana.jpg'], carIsDrivers: true });
   });
 });

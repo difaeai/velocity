@@ -2705,6 +2705,12 @@ export interface SharedPool {
   driverAhead: boolean;
   /** A short walk away: the rider meets the car at its own pickup and leaves at its drop-off. */
   nearby: boolean;
+  /**
+   * Real car photos: the accepted driver's own (`carIsDrivers`), else up to five
+   * nearby online cars that could come. Empty, or absent on an older backend: the stock car.
+   */
+  carPhotos?: string[];
+  carIsDrivers?: boolean;
 }
 
 /** A shared ride as a job for a driver — backend sharedPools `DriverPoolView`. */
