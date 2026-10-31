@@ -44,6 +44,7 @@ import { AdsSection, ApprovalBox, Hero, KpiTile, SalesSection, readDesk } from '
 import { BRAIN_CSS, Brain } from '@/components/social/brain';
 import { AreaSpark, FX_CSS } from '@/components/social/fx';
 import { compact } from '@/components/charts';
+import { useDraft } from '@/lib/draft';
 
 /** Every switch the daily run needs; pausing touches `enabled` and nothing else — a stop, not a reset. */
 const RUN_ON: Partial<SocialSettings> = {
@@ -82,10 +83,11 @@ export default function SocialOverview() {
   const [switching, setSwitching] = useState(false);
   const [pageRead, setPageRead] = useState<SocialPageRead | null>(null);
   const [want, setWant] = useState<SocialFormat>('reel');
-  // Held here so "Make one like this" on the content page can fill the box.
-  const [brief, setBrief] = useState('');
+  const { user, workspaceId } = useAuth();
+  // Held here so "Make one like this" on the content page can fill the box — and kept in
+  // this browser until the piece is made, so a reload or a sign-in that ended loses nothing.
+  const [brief, setBrief] = useDraft(`composer.brief.${workspaceId ?? 'house'}`);
   const [refLink, setRefLink] = useState('');
-  const { user } = useAuth();
   const showAds = includes('ads');
   const showSales = includes('sales');
 
@@ -214,7 +216,7 @@ export default function SocialOverview() {
       document.getElementById('make')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 0);
     return () => clearTimeout(t);
-  }, []);
+  }, [setBrief]);
 
   const onShift = staff.filter((e) => e.status === 'active');
   const connected = accounts.filter((a) => a.status === 'connected');

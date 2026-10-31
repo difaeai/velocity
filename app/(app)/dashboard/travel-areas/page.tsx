@@ -21,6 +21,7 @@ import { db } from '@/lib/firebase';
 import { adminApi } from '@/lib/api';
 import { colors } from '@/lib/config';
 import { Button, Card } from '@/components/ui';
+import { SkeletonRows } from '@/components/states';
 
 interface Place {
   lat: number;
@@ -156,7 +157,7 @@ export default function TravelDemandPage() {
       </Card>
 
       {seeds === null ? (
-        <div style={{ color: colors.muted }}>Loading…</div>
+        <SkeletonRows rows={4} />
       ) : seeds.length === 0 ? (
         <div style={{ color: colors.muted }}>Nothing added yet.</div>
       ) : (

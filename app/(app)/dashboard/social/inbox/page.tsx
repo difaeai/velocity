@@ -23,6 +23,7 @@ import { colors } from '@/lib/config';
 import { socialApi, type SocialCommentDoc, type SocialSettings } from '@/lib/api';
 import { Button, Card } from '@/components/ui';
 import { PLATFORM_META, PlatformBadge, StatusPill } from '@/components/social/shared';
+import { EmptyState } from '@/components/states';
 
 const INTENT_LABEL: Record<string, string> = {
   praise: 'Likes it',
@@ -129,11 +130,20 @@ export default function InboxPage() {
       </div>
 
       {shown.length === 0 ? (
-        <Card>
-          <p style={{ margin: 0, color: colors.muted, fontSize: 14 }}>
-            {tab === 'open' ? 'Nothing waiting for an answer.' : 'No comments have come in yet.'}
-          </p>
-        </Card>
+        tab === 'open' ? (
+          <EmptyState
+            icon="✅"
+            title="Nothing waiting for an answer"
+            why="Every comment has a reply. New ones land here as people comment on your posts."
+          />
+        ) : (
+          <EmptyState
+            icon="💬"
+            title="No comments have come in yet"
+            why="Comments on your Instagram and Facebook posts show up here, with a reply drafted for each. If your accounts are not connected yet, that is the first step."
+            action={{ label: 'Connected accounts', href: '/dashboard/social/accounts' }}
+          />
+        )
       ) : (
         <div style={{ display: 'grid', gap: 12 }}>
           {shown.map((comment) => (

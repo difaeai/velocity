@@ -27,6 +27,7 @@ import { db } from '@/lib/firebase';
 import { adminApi, type MarketRunReport } from '@/lib/api';
 import { colors } from '@/lib/config';
 import { Button, Card } from '@/components/ui';
+import { SkeletonRows } from '@/components/states';
 
 type Competitor = 'indrive' | 'yango';
 type VehicleCategory = 'moto' | 'rickshaw' | 'mini' | 'ac_car' | 'luxury';
@@ -362,7 +363,7 @@ export default function MarketRatesPage() {
     (r) => r.outcome === 'poor_fit' || r.outcome === 'rejected_jump',
   );
 
-  if (loading) return <div style={{ color: colors.muted, padding: 20 }}>Loading…</div>;
+  if (loading) return <div style={{ padding: 20 }}><SkeletonRows rows={5} /></div>;
 
   return (
     <div>

@@ -25,7 +25,7 @@ function read(key: string): string {
  * A text field that survives a reload, a crash or a sign-in that ended: what was
  * typed is kept in this browser until `clear()` — call it once the work is saved.
  */
-export function useDraft(key: string): [string, (v: string) => void, () => void] {
+export function useDraft(key: string): [string, (v: string | ((prev: string) => string)) => void, () => void] {
   const subscribe = useCallback(
     (cb: () => void) => {
       const set = listeners.get(key) ?? new Set<() => void>();
@@ -40,7 +40,8 @@ export function useDraft(key: string): [string, (v: string) => void, () => void]
   const value = useSyncExternalStore(subscribe, () => read(key), () => '');
 
   const set = useCallback(
-    (v: string) => {
+    (next: string | ((prev: string) => string)) => {
+      const v = typeof next === 'function' ? next(read(key)) : next;
       memory.set(key, v);
       try {
         if (v) localStorage.setItem(PREFIX + key, v);

@@ -31,6 +31,7 @@ import {
   shortDate,
 } from '@/components/charts';
 import { CostOfVelocityTile } from '@/components/CostOfVelocity';
+import { SkeletonRows } from '@/components/states';
 
 const RANGES = [7, 30, 90] as const;
 
@@ -159,7 +160,7 @@ export default function Overview() {
         </p>
       ) : null}
 
-      {loading && !data ? <p style={{ color: colors.muted }}>Loading…</p> : null}
+      {loading && !data ? <SkeletonRows rows={4} h={72} /> : null}
 
       {data ? (
         <>

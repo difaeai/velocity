@@ -6,6 +6,7 @@ import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { adminApi } from '@/lib/api';
 import { db } from '@/lib/firebase';
 import { colors } from '@/lib/config';
+import { SkeletonRows } from '@/components/states';
 
 interface Photo {
   url: string;
@@ -234,7 +235,7 @@ export default function SpecialRidesAdminPage() {
   if (loading) {
     return (
       <div style={{ textAlign: 'center', paddingTop: 40 }}>
-        <p style={{ color: colors.muted }}>Loading...</p>
+        <SkeletonRows rows={4} />
       </div>
     );
   }

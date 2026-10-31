@@ -44,6 +44,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { colors } from '@/lib/config';
 import { Button, Card } from '@/components/ui';
+import { SkeletonRows } from '@/components/states';
 
 /** Mirrors DEFAULT_COMMISSION + DEFAULT_DAILY_TARGET on the backend. */
 const DEFAULTS = {
@@ -201,7 +202,7 @@ export default function CommissionSettingsPage() {
       )}
 
       {loading ? (
-        <div style={{ color: colors.muted }}>Loading…</div>
+        <SkeletonRows rows={4} />
       ) : (
         <div style={{ display: 'grid', gap: 20, maxWidth: 560 }}>
           {/* ── What drivers pay ── */}

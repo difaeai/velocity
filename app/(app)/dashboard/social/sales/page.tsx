@@ -25,6 +25,7 @@ import { CallingAgents } from '@/components/social/calling';
 import { AgentPackageCard, AiCallLog, WhatsAppChats, WhatsAppLine, useAgentDesk } from '@/components/social/agentsDesk';
 import { FX_CSS } from '@/components/social/fx';
 import { LaunchSequence } from '@/components/social/launch';
+import { SkeletonRows, ErrorState, EmptyState } from '@/components/states';
 
 type Shelf = 'review' | 'ready' | 'new' | 'sent' | 'done' | 'all';
 const SHELVES: { key: Shelf; label: string; states: SalesLeadStatus[] | null }[] = [
@@ -99,7 +100,7 @@ export default function SalesPage() {
   }
 
   if (!settings) {
-    return error ? <p style={{ color: colors.danger }}>{error}</p> : <p style={{ color: colors.muted }}>Loading…</p>;
+    return error ? <ErrorState error={error} onRetry={() => window.location.reload()} /> : <SkeletonRows rows={5} />;
   }
 
   const setUp = Boolean(settings.product && settings.senderCompany && settings.senderName);
@@ -266,9 +267,11 @@ export default function SalesPage() {
             })}
           </div>
           {shown.length === 0 ? (
-            <Card>
-              <p style={{ margin: 0, color: colors.muted }}>Nothing here yet.</p>
-            </Card>
+            <EmptyState
+              icon="🔎"
+              title="No businesses on this shelf"
+              why="The sales agent looks for new businesses every night, for the kinds of business and the city in Settings. To look right now, use Find businesses on this page."
+            />
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 12 }}>
               {shown.map((lead) => (
