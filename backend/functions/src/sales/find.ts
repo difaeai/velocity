@@ -118,7 +118,12 @@ export async function findBySearch(kind: string, city: string, model: string): P
     const name = (b.name ?? '').trim().slice(0, 120);
     if (!name || !b.website) continue;
     try {
-      const { url, site } = await readBusiness(b.website);
+      const { url, site, inCity } = await readBusiness(b.website, city);
+      // The search once kept a London developer as an Islamabad lead: its own pages never named the city.
+      if (!inCity) {
+        logger.info('sales: a searched business never names the city; dropped', { website: b.website, city });
+        continue;
+      }
       out.push({ name, website: url, email: site.emails[0] ?? null, phone: site.phones[0] ?? null, source: 'search' });
     } catch (e) {
       logger.info('sales: a searched site did not answer; dropped', { website: b.website, error: (e as Error).message });

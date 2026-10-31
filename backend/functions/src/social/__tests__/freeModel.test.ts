@@ -20,7 +20,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { freeModelReady, freeModelText, resolveFreeModel } from '../freeModel';
+import { freeModelReady, freeModelText, resolveFreeModel, tokensOver } from '../freeModel';
 import { activeEngine, generateText, modelGone, modelReady, outOfCredit, resetEngineBench } from '../engine';
 import { DEFAULT_FREE_MODEL } from '../types';
 
@@ -212,6 +212,35 @@ describe('it cannot search, and says so', () => {
   it('says what stopped it rather than returning an empty piece', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => reply('', 'length')));
     await expect(freeModelText({ model: '', system: 's', prompt: 'p' })).rejects.toThrow(/past its length/);
+  });
+});
+
+describe('a prompt too big for the free tier’s window', () => {
+  it('cuts the overflow out of the middle and asks again, keeping the task and the reply format', async () => {
+    // What Groq said on 2026-10-29, which sent that day's story to the local writer.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        failure(
+          413,
+          'Request too large for model `openai/gpt-oss-120b` in organization `org_x` service tier `on_demand` on tokens per minute (TPM): Limit 8000, Requested 8287, please reduce your message size and try again. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing',
+        ),
+      )
+      .mockResolvedValueOnce(reply('{"ok":true}'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const prompt = `TASK: plan today's piece.\n${'context '.repeat(1000)}\nReply with ONE JSON object.`;
+    await expect(freeModelText({ model: '', system: 's', prompt, json: true })).resolves.toMatchObject({ text: '{"ok":true}' });
+
+    const sent = body(fetchMock, 1).messages[1].content as string;
+    expect(sent.length).toBeLessThan(prompt.length);
+    expect(sent.startsWith('TASK: plan today')).toBe(true);
+    expect(sent.endsWith('Reply with ONE JSON object.')).toBe(true);
+  });
+
+  it('reads how far over it is from the provider’s own count', () => {
+    expect(tokensOver('… (TPM): Limit 8000, Requested 8287, please reduce …')).toBe(287);
+    expect(tokensOver('400: Invalid argument')).toBeNull();
   });
 });
 

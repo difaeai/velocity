@@ -123,6 +123,20 @@ function isJsonModeRefusal(message: string): boolean {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** "Limit 8000, Requested 8287" → 287: the provider's own count of how far over its per-minute window a request is. */
+export function tokensOver(message: string): number | null {
+  const m = message.match(/Limit (\d+), Requested (\d+)/i);
+  return m ? Math.max(0, Number(m[2]) - Number(m[1])) : null;
+}
+
+/** `text` with `chars` taken out of its middle: the task opens a prompt and the reply format closes it. Pure. */
+export function cutMiddle(text: string, chars: number): string {
+  const keep = text.length - chars;
+  if (chars <= 0 || keep < 200) return text;
+  const head = Math.ceil(keep / 2);
+  return `${text.slice(0, head)}\n…\n${text.slice(text.length - (keep - head))}`;
+}
+
 /**
  * Turned off for the life of the instance the first time a provider refuses
  * it. Deliberately module state rather than a setting: it is a fact about the
@@ -138,6 +152,7 @@ interface ChatResponse {
 /** One call, with the free tier's rate limit survived rather than hit. */
 async function post(body: unknown): Promise<ChatResponse> {
   const key = (process.env.FREE_MODEL_KEY ?? '').trim();
+  let shrinks = 0;
 
   for (let attempt = 0; ; attempt++) {
     let res: Response;
@@ -194,6 +209,20 @@ async function post(body: unknown): Promise<ChatResponse> {
     ) {
       const { response_format: _dropped, ...rest } = body as Record<string, unknown>;
       body = rest;
+      continue;
+    }
+
+    // Too big for the free tier's per-minute window (Groq's 413 on 2026-10-29 sent a story to the
+    // local writer, which never posts on its own). Cut the overflow out of the prompt and go again.
+    const over = res.status === 413 ? tokensOver(message) : null;
+    if (over !== null && shrinks < 2) {
+      shrinks++;
+      const b = body as { messages: { role: string; content: string }[] };
+      const user = b.messages[b.messages.length - 1];
+      // About three characters a token, with a margin, because the second try is the last.
+      const content = cutMiddle(user.content, (over + 300) * 3);
+      logger.info('social: the prompt was too big for the free model; shortened', { over, chars: user.content.length - content.length });
+      body = { ...b, messages: [...b.messages.slice(0, -1), { ...user, content }] };
       continue;
     }
 
