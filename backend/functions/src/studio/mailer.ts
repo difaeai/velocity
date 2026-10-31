@@ -83,7 +83,7 @@ export async function sendStudioMail(mail: Mail): Promise<void> {
   try {
     await transport(config, pass).sendMail({ from: { name: config.fromName, address: config.from }, ...mail });
   } catch (e) {
-    logger.error('studio: sending mail failed', { to: mail.to, message: (e as Error).message });
+    logger.error('studio: sending mail failed', { to: mail.to, error: (e as Error).message });
     throw new HttpsError('unavailable', 'We could not send the email just now. Try again in a minute.');
   }
 }

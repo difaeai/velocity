@@ -304,6 +304,7 @@ Reply with one JSON object and nothing else:
       '',
       `FACTS (the only numbers anyone may use):\n${JSON.stringify(params.facts, null, 2)}`,
       '',
+      params.pageRead ?? '',
       researchBlock(params.research),
       params.recentConcepts.length
         ? `ALREADY MADE RECENTLY — do not repeat these:\n- ${params.recentConcepts.join('\n- ')}`

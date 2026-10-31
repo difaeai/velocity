@@ -215,6 +215,30 @@ describe('it cannot search, and says so', () => {
   });
 });
 
+describe('a reply that fails the provider’s own JSON check', () => {
+  it('asks once more without JSON mode, and keeps it for the next call', async () => {
+    // What Groq said for the story of 2026-10-30, which then failed at the standup.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        failure(400, "Failed to generate JSON. Please adjust your prompt. See 'failed_generation' for more details."),
+      )
+      .mockResolvedValueOnce(reply('{"ok":true}'))
+      .mockResolvedValueOnce(reply('{"ok":true}'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(freeModelText({ model: '', system: 's', prompt: 'p', json: true })).resolves.toMatchObject({
+      text: '{"ok":true}',
+    });
+    expect(body(fetchMock, 0).response_format).toBeDefined();
+    expect(body(fetchMock, 1).response_format).toBeUndefined();
+
+    // The provider does have JSON mode, so the next call still asks for it.
+    await freeModelText({ model: '', system: 's', prompt: 'p', json: true });
+    expect(body(fetchMock, 2).response_format).toBeDefined();
+  });
+});
+
 describe('a provider without JSON mode', () => {
   it('drops it once and carries on, rather than failing every call', async () => {
     const fetchMock = vi

@@ -56,6 +56,8 @@ export default defineConfig({
       // The AI meter, keys and budgets; the AI agents' calls, WhatsApp and billing.
       'src/ai/__tests__/**/*.test.ts',
       'src/agents/__tests__/**/*.test.ts',
+      // What the platform costs: which token reads which account.
+      'src/costs/__tests__/**/*.test.ts',
     ],
     // All test files share one Firestore emulator — run them sequentially.
     // vitest 4: poolOptions is gone; forks.*  and fileParallelism are top-level.

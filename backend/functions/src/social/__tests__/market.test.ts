@@ -51,6 +51,14 @@ describe('normaliseAnalysis', () => {
     expect(read.channels).toEqual([]);
     expect(read.fromLinks).toEqual([]);
   });
+
+  it('cuts a long line between words, not through one', () => {
+    // The channel production stored on 2026-10-26, cut at 80 to "…product listings, visibilit".
+    const long = normaliseAnalysis({
+      channels: ["Daraz.pk (Pakistan's largest online marketplace) for product listings, visibility and reviews"],
+    });
+    expect(long.channels).toEqual(["Daraz.pk (Pakistan's largest online marketplace) for product listings"]);
+  });
 });
 
 describe('the audience test', () => {

@@ -81,12 +81,17 @@ export async function fetchPage(raw: string): Promise<{ url: string; html: strin
   throw new Error('Too many redirects.');
 }
 
+const char = (n: number): string => (n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : ' ');
+
 /** The words a person would read on a page: no scripts, styles or tags, whitespace collapsed. Pure. */
 export function textOf(html: string): string {
   return html
     .replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<noscript[\s\S]*?<\/noscript>|<svg[\s\S]*?<\/svg>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;/gi, ' ')
+    // Numeric before &amp;, so a literal "&amp;#8211;" stays as typed. WordPress titles are full of these.
+    .replace(/&#(\d{1,7});/g, (_, n: string) => char(Number(n)))
+    .replace(/&#x([0-9a-f]{1,6});/gi, (_, h: string) => char(parseInt(h, 16)))
     .replace(/&amp;/gi, '&')
     .replace(/&quot;/gi, '"')
     .replace(/&#0?39;|&apos;/gi, "'")
@@ -116,10 +121,11 @@ export function readSite(html: string, pageUrl: string): SiteRead {
   const text = decoded.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ');
 
   const found = new Set<string>();
-  for (const m of decoded.matchAll(/mailto:([^"'?\s>]+)/gi)) found.add(decodeURIComponent(m[1]).toLowerCase());
+  for (const m of decoded.matchAll(/mailto:([^"'?\s>]+)/gi)) found.add(decodeURIComponent(m[1]).trim().toLowerCase());
   for (const m of text.matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)) found.add(m[0].toLowerCase());
   const emails = [...found]
-    .filter((e) => /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(e) && !JUNK_EMAIL.test(e))
+    // No "%": that is a still-encoded href ("mailto:%20info@…" was kept as "%20info@…" and would bounce).
+    .filter((e) => /^[^@\s%]+@[^@\s%]+\.[a-z]{2,}$/.test(e) && !JUNK_EMAIL.test(e))
     // Their own domain first: info@theirsite beats a web designer's address in the footer.
     .sort((a, b) => Number(b.endsWith(host)) - Number(a.endsWith(host)))
     .slice(0, 5);
@@ -141,7 +147,7 @@ export function readSite(html: string, pageUrl: string): SiteRead {
     !has(/\b(book|booking|appointment|reserve|order now|order online)\b/i) ? 'no way to book or order online on the home page' : '',
   ].filter(Boolean);
 
-  const pick = (re: RegExp) => (html.match(re)?.[1] ?? '').replace(/\s+/g, ' ').trim().slice(0, 200);
+  const pick = (re: RegExp) => textOf(html.match(re)?.[1] ?? '').slice(0, 200);
   return {
     title: pick(/<title[^>]*>([^<]*)<\/title>/i),
     description: pick(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["']/i),

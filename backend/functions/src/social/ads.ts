@@ -162,6 +162,16 @@ async function adsToken(): Promise<string> {
   return open(sealed);
 }
 
+/** The connected ad account and its token for reading spend (the cost page), or null when none is connected. */
+export async function adsAccess(): Promise<{ adAccountId: string; token: string } | null> {
+  try {
+    const { cfg, token } = await ready();
+    return { adAccountId: cfg.adAccountId!, token };
+  } catch {
+    return null;
+  }
+}
+
 /** Connected and ready to spend: an account, a token, a limit. */
 async function ready(): Promise<{ cfg: AdsConfig; token: string }> {
   const cfg = await adsConfig();
@@ -527,7 +537,7 @@ async function planAd(params: {
     });
     return { plan: normalisePlan(data, fallback, cfg.maxDays), engine: activeEngine() };
   } catch (e) {
-    logger.warn('ads: the model plan failed, using the local one', { message: (e as Error).message });
+    logger.warn('ads: the model plan failed, using the local one', { error: (e as Error).message });
     return { plan: fallback, engine: 'local' };
   }
 }
@@ -720,7 +730,7 @@ Change only what their latest message asks for or what your answer requires; kee
       : [];
     return { reply: reply || explainPlan(plan, cfg.currency), questions, plan, note, engine: activeEngine() };
   } catch (e) {
-    logger.warn('ads: the campaign design failed, using the local one', { message: (e as Error).message });
+    logger.warn('ads: the campaign design failed, using the local one', { error: (e as Error).message });
     return local();
   }
 }
@@ -862,7 +872,7 @@ async function rewriteCreative(plan: AdPlanSpec, verdict: Verdict, cfg: AdsConfi
     );
     return next.lines[0] && next.lines[0] !== plan.lines[0] ? next : null;
   } catch (e) {
-    logger.warn('ads: the creative rewrite failed', { message: (e as Error).message });
+    logger.warn('ads: the creative rewrite failed', { error: (e as Error).message });
     return null;
   }
 }
@@ -1074,7 +1084,7 @@ async function syncAds(): Promise<string> {
       ) {
         // Improving it, not just judging it: a worn-out creative gets a new one.
         const did = await refreshCreative(token, cfg, c.id, mine ?? {}, verdict).catch((e) => {
-          logger.warn('ads: could not refresh a creative', { campaign: c.id, message: (e as Error).message });
+          logger.warn('ads: could not refresh a creative', { campaign: c.id, error: (e as Error).message });
           return null;
         });
         if (did) {
@@ -1100,7 +1110,7 @@ async function syncAds(): Promise<string> {
   const rides = !isHouse()
     ? null
     : await statsFor(dateRange(8, now).slice(0, 7), now).catch((e) => {
-        logger.warn('ads: could not read our own rides for cost per order', { message: (e as Error).message });
+        logger.warn('ads: could not read our own rides for cost per order', { error: (e as Error).message });
         return null;
       });
   // Blended means every ad rupee: Google's spend over the same seven days, when an account is connected.
@@ -1181,7 +1191,7 @@ async function proposeIfIdle(cfg: AdsConfig, now: number): Promise<string | null
       made.launched ? `live at ${money(made.budget, cfg.currency)} a day` : 'waiting for your Approve'
     }.`;
   } catch (e) {
-    logger.warn('ads: the expert could not propose a campaign', { message: (e as Error).message });
+    logger.warn('ads: the expert could not propose a campaign', { error: (e as Error).message });
     return `Tried to propose a campaign but could not: ${(e as Error).message}`.slice(0, 300);
   }
 }
@@ -1251,7 +1261,7 @@ async function reviewAccount(
       engine: activeEngine(),
     };
   } catch (e) {
-    logger.warn('ads: the review failed, using the local one', { message: (e as Error).message });
+    logger.warn('ads: the review failed, using the local one', { error: (e as Error).message });
     return local();
   }
 }
@@ -1283,7 +1293,7 @@ export const socialAdsSync = onSchedule(
     forEachWorkspace('ads', async () => {
       const cfg = await adsConfig();
       if (!cfg.adAccountId) return;
-      await syncAndRecord().catch((e) => logger.error('ads: sync failed', { message: (e as Error).message }));
+      await syncAndRecord().catch((e) => logger.error('ads: sync failed', { error: (e as Error).message }));
     }),
 );
 

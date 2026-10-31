@@ -380,7 +380,7 @@ export const adminFinishMetaConnect = deskCall('any', async (req) => {
     return { pages: choices, adAccounts };
   } catch (e) {
     if (e instanceof HttpsError) throw e;
-    logger.warn('social: meta connect failed', { message: (e as Error).message });
+    logger.warn('social: meta connect failed', { error: (e as Error).message });
     throw new HttpsError('failed-precondition', (e as Error).message);
   }
 });

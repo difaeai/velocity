@@ -250,7 +250,7 @@ export async function googleAdsSpend(currency: string): Promise<number | null> {
     const rows = await search(app, token, link.customerId, 'SELECT metrics.cost_micros FROM customer WHERE segments.date DURING LAST_7_DAYS');
     return inCurrency(sumMetrics(rows).spend, link.currency, currency);
   } catch (e) {
-    logger.warn('ads: could not read Google Ads spend for blended ROAS', { message: (e as Error).message });
+    logger.warn('ads: could not read Google Ads spend for blended ROAS', { error: (e as Error).message });
     return null;
   }
 }

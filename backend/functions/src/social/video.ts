@@ -106,7 +106,7 @@ Reply with one JSON object and nothing else:
     }
   } catch (e) {
     logger.warn('social: the editor could not write a cut; falling back to the script', {
-      message: (e as Error).message,
+      error: (e as Error).message,
     });
   }
 

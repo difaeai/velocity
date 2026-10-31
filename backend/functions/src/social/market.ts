@@ -78,7 +78,15 @@ export interface MarketAnalysis {
 
 export const marketRef = () => sdb.doc('socialLaunch/market');
 
-const text = (v: unknown, max: number): string => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+/** Held to `max` characters, cut between words rather than through one ("…product listings, visibilit"). */
+const text = (v: unknown, max: number): string => {
+  if (typeof v !== 'string') return '';
+  const s = v.trim();
+  if (s.length <= max) return s;
+  const cut = s.slice(0, max);
+  const space = cut.lastIndexOf(' ');
+  return (space > max / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:(–-]+$/, '');
+};
 const texts = (v: unknown, n: number, max: number): string[] =>
   Array.isArray(v) ? v.map((x) => text(x, max)).filter(Boolean).slice(0, n) : [];
 const objects = (v: unknown): Record<string, unknown>[] =>

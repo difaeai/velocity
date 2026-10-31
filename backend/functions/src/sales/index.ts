@@ -425,7 +425,7 @@ async function checkInbox(s: SalesSettings): Promise<{ ok: boolean; replies: num
       intent = out.intent;
       if (out.body) draft = { subject: /^re:/i.test(lead.draft?.subject ?? '') ? lead.draft!.subject : `Re: ${lead.draft?.subject ?? ''}`.trim(), body: out.body };
     } catch (e) {
-      logger.warn('sales: could not draft an answer', { lead: reply.leadId, message: (e as Error).message });
+      logger.warn('sales: could not draft an answer', { lead: reply.leadId, error: (e as Error).message });
     }
     const closed = intent === 'not_interested' || intent === 'unsubscribe';
     if (intent === 'unsubscribe' && lead.email) await sdb.doc(`${SUPPRESS}/${emailKey(lead.email)}`).set({ atMs: Date.now() });
@@ -476,7 +476,7 @@ async function sendFollowUps(s: SalesSettings): Promise<number> {
       });
       sent++;
     } catch (e) {
-      logger.warn('sales: a follow-up failed', { message: (e as Error).message });
+      logger.warn('sales: a follow-up failed', { error: (e as Error).message });
     }
   }
   await day.record(sent);
@@ -494,7 +494,7 @@ export async function seedSales(p: { offer: string; kinds: string[]; city: strin
   const stored = ((await sdb.doc(SETTINGS).get()).data() ?? {}) as Partial<SalesSettings>;
   const patch: Partial<SalesSettings> = {};
   if (!stored.offer && p.offer) patch.offer = p.offer.slice(0, 600);
-  if (!stored.kinds?.length && p.kinds.length) patch.kinds = p.kinds.slice(0, 8).map((k) => k.slice(0, 40));
+  if (!stored.kinds?.length && p.kinds.length) patch.kinds = p.kinds.slice(0, 8).map((k) => k.slice(0, 80));
   if (!stored.city && p.city) patch.city = p.city.slice(0, 80);
   if (Object.keys(patch).length) await sdb.doc(SETTINGS).set(patch, { merge: true });
 }
@@ -504,7 +504,7 @@ export async function seedSales(p: { offer: string; kinds: string[]; city: strin
 const settingsSchema = z.object({
   product: z.string().trim().max(600).optional(),
   offer: z.string().trim().max(600).optional(),
-  kinds: z.array(z.string().trim().min(2).max(40)).max(8).optional(),
+  kinds: z.array(z.string().trim().min(2).max(80)).max(8).optional(),
   city: z.string().trim().max(80).optional(),
   senderName: z.string().trim().max(80).optional(),
   senderCompany: z.string().trim().max(80).optional(),
@@ -586,7 +586,7 @@ export const salesSaveSettings = deskCall('sales', async (req) => {
 
 export const salesFindLeads = deskCall('sales', { timeoutSeconds: 300, memory: '512MiB' }, async (req) => {
   const parsed = z
-    .object({ kind: z.string().trim().min(2).max(40), city: z.string().trim().min(2).max(80), write: z.boolean().optional() })
+    .object({ kind: z.string().trim().min(2).max(80), city: z.string().trim().min(2).max(80), write: z.boolean().optional() })
     .safeParse(req.data ?? {});
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Say what kind of business, and which city.');
   const res = await findAndProfile(parsed.data.kind, parsed.data.city, 25);
@@ -745,18 +745,18 @@ export const salesSweep = onSchedule(
       }
       // Replies first: whoever answered must be off the follow-up list before it is read.
       const inbox = await checkInbox(s).catch((e) => {
-        logger.warn('sales: the inbox check failed', { message: (e as Error).message });
+        logger.warn('sales: the inbox check failed', { error: (e as Error).message });
         return { ok: false, replies: 0 };
       });
       if (inbox.replies) notes.push(`${inbox.replies} replied — answers drafted.`);
       const sent = await sendApproved().catch((e) => {
-        logger.warn('sales: sending failed', { message: (e as Error).message });
+        logger.warn('sales: sending failed', { error: (e as Error).message });
         return 0;
       });
       if (sent) notes.push(`Sent ${sent}.`);
       if (inbox.ok) {
         const followed = await sendFollowUps(await getSales()).catch((e) => {
-          logger.warn('sales: follow-ups failed', { message: (e as Error).message });
+          logger.warn('sales: follow-ups failed', { error: (e as Error).message });
           return 0;
         });
         if (followed) notes.push(`Followed up ${followed}.`);

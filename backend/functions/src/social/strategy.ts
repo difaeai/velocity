@@ -251,7 +251,7 @@ export async function ensureMonthPlan(month: string): Promise<void> {
   } catch (e) {
     logger.warn('social: could not plan the month; laying the rotation out instead', {
       month,
-      message: (e as Error).message,
+      error: (e as Error).message,
     });
     const plan: MonthPlan = {
       ...localMonthPlan(month, await getSocialSettings()),

@@ -129,7 +129,7 @@ export async function recordPiece(wid: string = currentWorkspace()): Promise<voi
         { merge: true },
       );
   } catch (err) {
-    logger.warn('ai: could not count a piece', { wid, message: (err as Error).message });
+    logger.warn('ai: could not count a piece', { wid, error: (err as Error).message });
   }
 }
 
@@ -162,6 +162,6 @@ export async function recordAi(e: UsageEntry): Promise<void> {
       { merge: true },
     );
   } catch (err) {
-    logger.warn('ai: could not record usage', { wid, message: (err as Error).message });
+    logger.warn('ai: could not record usage', { wid, error: (err as Error).message });
   }
 }

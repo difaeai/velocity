@@ -179,7 +179,7 @@ export async function fetchRouteServerSide(
       logger.error('Routes API rejected the request', {
         httpStatus: res.status,
         status: data?.error?.status,
-        message: data?.error?.message,
+        error: data?.error?.message,
       });
       return null;
     }

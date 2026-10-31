@@ -76,6 +76,16 @@ describe('readSite', () => {
     expect(read.signals).toContain('no way to book or order online on the home page');
   });
 
+  it('reads a WordPress title as words and an encoded mailto as the address', () => {
+    // Both as production stored them on 2026-10-28: "&amp; … &#8211;" in the title, "%20info@…" as the email.
+    const wp = readSite(
+      '<title>The 1 Properties &amp; Services Islamabad &#8211; Your Number 1</title><a href="mailto:%20info@time2rent.net">Mail</a>',
+      'https://time2rent.net/',
+    );
+    expect(wp.title).toBe('The 1 Properties & Services Islamabad – Your Number 1');
+    expect(wp.emails).toEqual(['info@time2rent.net']);
+  });
+
   it('takes the WhatsApp number when a shop gives no other', () => {
     const wa = readSite('<a href="https://api.whatsapp.com/send?phone=923331112222&text=hi">Order</a>', 'https://shop.pk/');
     expect(wa.phones).toEqual(['+923331112222']);

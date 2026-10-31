@@ -144,7 +144,7 @@ Reply with one JSON object and nothing else:
       note: (typeof data.note === 'string' ? data.note.trim().slice(0, 200) : '') || 'Captions written per network.',
     };
   } catch (e) {
-    logger.warn('social: the manager could not write per-network captions', { message: (e as Error).message });
+    logger.warn('social: the manager could not write per-network captions', { error: (e as Error).message });
     return fallback;
   }
 }

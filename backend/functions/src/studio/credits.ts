@@ -86,7 +86,7 @@ export const studioCreditSweep = onSchedule({ schedule: 'every 30 minutes', time
       const why = await spendCreditDay(d.id);
       if (why) logger.info('studio: a credit day was spent', { wid: d.id, why });
     } catch (e) {
-      logger.error('studio: a credit day failed', { wid: d.id, message: (e as Error).message });
+      logger.error('studio: a credit day failed', { wid: d.id, error: (e as Error).message });
     }
   }
 });

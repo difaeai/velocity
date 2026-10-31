@@ -165,7 +165,7 @@ async function onMessage(line: WaLine, token: string, waId: string, name: string
     intent = WA_INTENTS.includes(data.intent as WaIntent) ? (data.intent as WaIntent) : 'question';
     deal = typeof data.deal === 'string' ? data.deal.trim().slice(0, 1000) : '';
   } catch (e) {
-    logger.warn('agents: no WhatsApp reply was written', { message: (e as Error).message });
+    logger.warn('agents: no WhatsApp reply was written', { error: (e as Error).message });
   }
   if (!reply) {
     await ref.update({ needsOwner: true, note: 'The AI could not write a reply.' });
@@ -263,7 +263,7 @@ export const agentWhatsappWebhook = onRequest({ cors: false, invoker: 'public', 
     });
   } catch (e) {
     // 200 regardless: Meta retries a failure, and a message that crashes once crashes every time.
-    logger.error('agents: WhatsApp webhook failed', { wid, message: (e as Error).message });
+    logger.error('agents: WhatsApp webhook failed', { wid, error: (e as Error).message });
   }
   res.status(200).send('ok');
 });

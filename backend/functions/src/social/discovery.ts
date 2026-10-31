@@ -98,12 +98,12 @@ export async function readAccounts(handles: string[]): Promise<AccountRead[]> {
       };
       const found = body.business_discovery;
       if (!res.ok || !found) {
-        logger.info('social: an account could not be read', { username, message: body.error?.message?.slice(0, 200) });
+        logger.info('social: an account could not be read', { username, error: body.error?.message?.slice(0, 200) });
         continue;
       }
       reads.push(rankAccount(found.username ?? username, found.followers_count ?? 0, found.media?.data ?? []));
     } catch (e) {
-      logger.info('social: an account could not be read', { username, message: (e as Error).message });
+      logger.info('social: an account could not be read', { username, error: (e as Error).message });
     }
   }
   return reads;

@@ -85,7 +85,7 @@ async function sweepOne(): Promise<void> {
           logger.info('agents: auto-call held', { wid: currentWorkspace(), agent: agent.id, why: e.message });
           break;
         }
-        logger.warn('agents: auto-call failed', { message: (e as Error).message });
+        logger.warn('agents: auto-call failed', { error: (e as Error).message });
       }
     }
   }
