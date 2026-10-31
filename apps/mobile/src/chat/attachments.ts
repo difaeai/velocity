@@ -16,6 +16,7 @@ import * as Location from 'expo-location';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 
 import { storage } from '../firebase';
+import { explainDenied } from '../lib/permissions';
 
 export interface PickedImage {
   uri: string;
@@ -94,7 +95,10 @@ function extFromMime(mime?: string | null, fallback = 'jpg'): string {
 /** Take a live photo with the camera. Returns null if cancelled. */
 export async function captureChatPhoto(): Promise<PickedImage | null> {
   const perm = await ImagePicker.requestCameraPermissionsAsync();
-  if (!perm.granted) throw new AttachmentError('Allow camera access to take a photo.');
+  if (!perm.granted) {
+    explainDenied('camera');
+    return null;
+  }
   const result = await ImagePicker.launchCameraAsync({
     mediaTypes: ImagePicker.MediaTypeOptions.Images,
     quality: 0.6,
@@ -107,7 +111,10 @@ export async function captureChatPhoto(): Promise<PickedImage | null> {
 /** Pick a photo from the gallery. Returns null if cancelled. */
 export async function pickChatPhoto(): Promise<PickedImage | null> {
   const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (!perm.granted) throw new AttachmentError('Allow photo access to share a picture.');
+  if (!perm.granted) {
+    explainDenied('photos');
+    return null;
+  }
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ImagePicker.MediaTypeOptions.Images,
     quality: 0.6,
@@ -165,7 +172,10 @@ export async function pickChatContact(): Promise<PickedContact | null> {
     throw new AttachmentError('Update the app to share contacts.');
   }
   const perm = await Contacts.requestPermissionsAsync();
-  if (!perm.granted) throw new AttachmentError('Allow contacts access to share a contact.');
+  if (!perm.granted) {
+    explainDenied('contacts');
+    return null;
+  }
   const picked = await Contacts.presentContactPickerAsync();
   if (!picked) return null;
   const name = picked.name || [picked.firstName, picked.lastName].filter(Boolean).join(' ') || 'Contact';
@@ -177,7 +187,10 @@ export async function pickChatContact(): Promise<PickedContact | null> {
 /** Read the device's current GPS location for sharing. */
 export async function getChatLocation(): Promise<PickedLocation | null> {
   const perm = await Location.requestForegroundPermissionsAsync();
-  if (!perm.granted) throw new AttachmentError('Allow location access to share your location.');
+  if (!perm.granted) {
+    explainDenied('location');
+    return null;
+  }
   const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
   const lat = pos.coords.latitude;
   const lng = pos.coords.longitude;

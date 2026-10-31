@@ -30,6 +30,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { Text, TextInput } from '../src/ui/Text';
+import { explainDenied } from '../src/lib/permissions';
 import { api } from '../src/api/client';
 import { db, functions } from '../src/firebase';
 import { useAuth } from '../src/auth/AuthContext';
@@ -107,7 +108,7 @@ export default function Onboarding() {
   async function pickPhoto() {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      setError('Camera roll access is needed to upload a photo.');
+      explainDenied('photos');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({

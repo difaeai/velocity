@@ -20,8 +20,9 @@
  * dual-axis chart can be made to show any correlation you like by scaling it.
  */
 import React from 'react';
-import { Pressable, StyleSheet, View, type DimensionValue } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
+import { Skeleton } from './states';
 import Svg, { Circle, Defs, Line, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
 
 import { colors } from '../config';
@@ -315,17 +316,8 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry: () 
 
 // ── Loading skeletons ────────────────────────────────────────────────────────
 
-export function Skeleton({
-  height = 16,
-  width = '100%',
-  radius = 8,
-}: {
-  height?: number;
-  width?: DimensionValue;
-  radius?: number;
-}) {
-  return <View style={[s.skeleton, { height, width, borderRadius: radius }]} />;
-}
+// The one skeleton the whole app draws loading with (src/ui/states.tsx).
+export { Skeleton };
 
 export function DashboardSkeleton() {
   return (
@@ -440,7 +432,6 @@ const s = themed(() => StyleSheet.create({
   },
   retryText: { color: colors.btnText, fontWeight: '800' },
 
-  skeleton: { backgroundColor: colors.glassChip },
 
   segmented: {
     flexDirection: 'row',

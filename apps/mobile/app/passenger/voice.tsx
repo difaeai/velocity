@@ -29,6 +29,7 @@ import { useAuth } from '../../src/auth/AuthContext';
 import { useRecentDestinations } from '../../src/hooks/passenger';
 import { BASE_FARES, RIDE_TYPE_LABELS, type RideType } from '../../src/domain/types';
 import { MicIcon } from '../../src/ui/ServiceIcons';
+import { explainDenied } from '../../src/lib/permissions';
 import {
   parseBooking,
   parseDestinationAnswer,
@@ -151,6 +152,7 @@ export default function VoiceBooking() {
 
       if (!granted) {
         setPhase('denied');
+        explainDenied('microphone');
         setPrompt(NO_PERMISSION);
         await speak(NO_PERMISSION);
         return;

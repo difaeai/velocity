@@ -12,6 +12,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LocationSubscription } from 'expo-location';
 import { Platform } from 'react-native';
+import { explainDenied } from '../lib/permissions';
+
+let saidWhyLocation = false;
 
 // `expo-location` is native-only; never evaluate it on web.
 const Location =
@@ -97,7 +100,15 @@ export function useCurrentLocation(auto = true): CurrentLocation {
       try {
         const { status: perm } = await Location!.requestForegroundPermissionsAsync();
         if (!mounted.current) return;
-        if (perm !== 'granted') { setStatus('denied'); return; }
+        if (perm !== 'granted') {
+          setStatus('denied');
+          // Once a session, however many screens ask: why, and the way to Settings.
+          if (!saidWhyLocation) {
+            saidWhyLocation = true;
+            explainDenied('location');
+          }
+          return;
+        }
 
         // Start live GPS watch — updates the map as the user moves.
         // NOTE: getLastKnownPositionAsync is intentionally skipped — it can

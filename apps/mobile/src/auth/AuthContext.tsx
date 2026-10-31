@@ -5,7 +5,7 @@
  * custom claims (set by the backend). The single mobile binary renders the
  * passenger or driver experience based on this role.
  */
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 
 import { auth } from '../firebase';
@@ -23,6 +23,16 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
 
+/** A sign-in that ended without the Sign out button: a revoked token, an account closed elsewhere. */
+let sessionEnded = false;
+
+/** True once, on the sign-in screen after a session ended on its own — then forgotten. */
+export function takeSessionEnded(): boolean {
+  const ended = sessionEnded;
+  sessionEnded = false;
+  return ended;
+}
+
 async function readRole(user: User | null): Promise<Role | null> {
   if (!user) return null;
   const token = await user.getIdTokenResult();
@@ -33,9 +43,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<Role | null>(null);
   const [initializing, setInitializing] = useState(true);
+  const signedIn = useRef(false);
+  const leaving = useRef(false);
 
   useEffect(() => {
     return onAuthStateChanged(auth, async (next) => {
+      if (signedIn.current && !next && !leaving.current) sessionEnded = true;
+      signedIn.current = Boolean(next);
+      leaving.current = false;
       setUser(next);
       setRole(await readRole(next));
       setInitializing(false);
@@ -56,7 +71,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Clears the native session as well as the JS one. Phone verification runs on
       // the native SDK, and a native session left signed in could be replayed
       // against the session-exchange callable on a later launch.
-      signOut: signOutEverywhere,
+      signOut: () => {
+        leaving.current = true;
+        return signOutEverywhere();
+      },
     }),
     [user, role, initializing],
   );

@@ -28,6 +28,7 @@ import {
   resolveCommand,
   type DriverCommand,
 } from '../voice/commands';
+import { explainDenied } from '../lib/permissions';
 import {
   abortListening,
   isRecognitionAvailable,
@@ -97,7 +98,8 @@ export function DriverVoiceButton({ onCommand }: DriverVoiceButtonProps) {
 
     const granted = await requestPermission();
     if (!granted) {
-      setStatus('Microphone permission needed');
+      explainDenied('microphone');
+      setStatus('Microphone is off — turn it on in Settings');
       return;
     }
 

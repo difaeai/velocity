@@ -25,10 +25,11 @@ import {
 import { FirebaseError } from 'firebase/app';
 
 import { auth } from '@/lib/firebase';
-import { useAuth } from '@/lib/auth';
+import { takeSessionEnded, useAuth } from '@/lib/auth';
 import { PRIVACY_URL, TERMS_URL } from '@/lib/site';
 import { STUDIO_PLAN_IDS, STUDIO_PLANS, STUDIO_TRIAL_HOURS, type StudioPlanId } from '@/lib/studio';
 import { VelocityIcon } from '@/components/BrandMark';
+import { FieldError } from '@/components/states';
 import { useReducedMotion } from '@/components/site/useReducedMotion';
 import s from './auth.module.css';
 
@@ -71,7 +72,13 @@ function AuthForm({ mode }: { mode: AuthMode }) {
   const [peek, setPeek] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(() =>
+    typeof window !== 'undefined' && takeSessionEnded()
+      ? 'Your session ended, so you were signed out. Log in again — anything you were typing is saved in this browser.'
+      : null,
+  );
+  // Shown after a submit, at the field, with how to fix it — not a grey button with no reason.
+  const [tried, setTried] = useState(false);
 
   useEffect(() => {
     if (!initializing && user) router.replace(homeFor({ isAdmin, workspaceId }, keep));
@@ -118,7 +125,10 @@ function AuthForm({ mode }: { mode: AuthMode }) {
     setNotice(`If ${email.trim()} has an account, a link to set a new password is on its way. Check spam too.`);
   }
 
-  const ready = /\S+@\S+\.\S+/.test(email.trim()) && password.length >= 6;
+  const emailProblem = /\S+@\S+\.\S+/.test(email.trim()) ? null : 'Enter your email like you@business.com.';
+  const passwordProblem =
+    password.length >= 6 ? null : signup ? 'Use at least 6 characters.' : 'Enter your password — it has at least 6 characters.';
+  const ready = !emailProblem && !passwordProblem;
   const signedIn = !initializing && Boolean(user);
 
   return (
@@ -172,6 +182,7 @@ function AuthForm({ mode }: { mode: AuthMode }) {
                     style={{ display: 'grid', gap: 12 }}
                     onSubmit={(e) => {
                       e.preventDefault();
+                      setTried(true);
                       if (ready && !busy) void withEmail();
                     }}
                   >
@@ -190,7 +201,10 @@ function AuthForm({ mode }: { mode: AuthMode }) {
                         type="email"
                         autoComplete="email"
                         placeholder="you@business.com"
+                        aria-invalid={tried && Boolean(emailProblem)}
+                        aria-describedby="studio-email-error"
                       />
+                      <FieldError id="studio-email-error" message={tried ? emailProblem : null} />
                     </label>
                     <label className={s.field}>
                       Password
@@ -202,6 +216,8 @@ function AuthForm({ mode }: { mode: AuthMode }) {
                           type={peek ? 'text' : 'password'}
                           autoComplete={signup ? 'new-password' : 'current-password'}
                           placeholder={signup ? 'At least 6 characters' : ''}
+                          aria-invalid={tried && Boolean(passwordProblem)}
+                          aria-describedby="studio-password-error"
                         />
                         <button
                           type="button"
@@ -212,6 +228,7 @@ function AuthForm({ mode }: { mode: AuthMode }) {
                           {peek ? 'Hide' : 'Show'}
                         </button>
                       </span>
+                      <FieldError id="studio-password-error" message={tried ? passwordProblem : null} />
                     </label>
                     {error ? (
                       <p className={s.error} role="alert">
@@ -223,7 +240,7 @@ function AuthForm({ mode }: { mode: AuthMode }) {
                         {notice}
                       </p>
                     ) : null}
-                    <button type="submit" className={s.primary} disabled={busy || !ready}>
+                    <button type="submit" className={s.primary} disabled={busy}>
                       {busy ? <span className={s.spinner} aria-hidden /> : null}
                       {busy ? 'One moment…' : signup ? 'Create account' : 'Log in'}
                     </button>
@@ -325,9 +342,9 @@ export function authMessage(code: string, mode: AuthMode = 'login'): string {
     case 'auth/popup-blocked':
       return 'Your browser blocked the Google window. Allow pop-ups for this site and try again.';
     case 'auth/network-request-failed':
-      return 'No connection. Check your internet and try again.';
+      return 'You are offline — your connection dropped, not Velocity. Reconnect and try again.';
     default:
-      return 'That did not work. Try again.';
+      return 'Signing in failed on our side — not your fault. Try again in a minute.';
   }
 }
 

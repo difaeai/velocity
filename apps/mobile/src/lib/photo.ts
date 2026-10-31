@@ -10,6 +10,7 @@
  * permission was actually refused, so callers can tell the two apart.
  */
 import * as ImagePicker from 'expo-image-picker';
+import { explainDenied } from './permissions';
 
 /**
  * Take a live photo. Resolves to a local file URI, or null if cancelled.
@@ -20,7 +21,8 @@ import * as ImagePicker from 'expo-image-picker';
 export async function takePhoto(): Promise<string | null> {
   const perm = await ImagePicker.requestCameraPermissionsAsync();
   if (!perm.granted) {
-    throw new Error('Allow camera access to take the photo.');
+    explainDenied('camera');
+    return null;
   }
   const res = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.6 });
   if (res.canceled || !res.assets[0]) return null;
@@ -31,7 +33,8 @@ export async function takePhoto(): Promise<string | null> {
 export async function choosePhoto(): Promise<string | null> {
   const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!perm.granted) {
-    throw new Error('Allow photo access to pick a picture.');
+    explainDenied('photos');
+    return null;
   }
   const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.6 });
   if (res.canceled || !res.assets[0]) return null;

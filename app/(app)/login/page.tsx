@@ -6,9 +6,10 @@ import { signInWithEmailAndPassword } from 'firebase/auth';
 import { FirebaseError } from 'firebase/app';
 
 import { auth } from '@/lib/firebase';
-import { useAuth } from '@/lib/auth';
+import { takeSessionEnded, useAuth } from '@/lib/auth';
 import { colors } from '@/lib/config';
 import { Button, Card } from '@/components/ui';
+import { FieldError } from '@/components/states';
 import { VelocityIcon } from '@/components/BrandMark';
 
 export default function Login() {
@@ -18,6 +19,8 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fields, setFields] = useState<{ email?: string; password?: string }>({});
+  const [sessionEnded] = useState(() => typeof window !== 'undefined' && takeSessionEnded());
 
   useEffect(() => {
     if (!initializing && user && isAdmin) router.replace('/dashboard');
@@ -25,6 +28,12 @@ export default function Login() {
   }, [initializing, user, isAdmin, workspaceId, router]);
 
   async function submit() {
+    const problems = {
+      email: /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim()) ? undefined : 'Enter the email of your admin account, like name@velocityrides.app.',
+      password: password ? undefined : 'Enter your password — it is case-sensitive.',
+    };
+    setFields(problems);
+    if (problems.email || problems.password) return;
     setError(null);
     setLoading(true);
     try {
@@ -64,6 +73,11 @@ export default function Login() {
           </div>
         ) : (
           <div style={{ display: 'grid', gap: 12 }}>
+            {sessionEnded ? (
+              <p role="status" style={{ background: '#fff7e6', border: '1px solid #f5d9a8', borderRadius: 10, padding: 10, fontSize: 13 }}>
+                Your session ended, so you were signed out. Sign in again — anything you were typing is saved in this browser.
+              </p>
+            ) : null}
             <p style={{ color: colors.muted, fontSize: 14 }}>Sign in to the operations console.</p>
             <label style={labelStyle}>Email</label>
             <input
@@ -72,7 +86,10 @@ export default function Login() {
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="email"
               type="email"
+              aria-invalid={Boolean(fields.email)}
+              aria-describedby="login-email-error"
             />
+            <FieldError id="login-email-error" message={fields.email} />
             <label style={labelStyle}>Password</label>
             <input
               style={inputStyle}
@@ -80,7 +97,10 @@ export default function Login() {
               onChange={(e) => setPassword(e.target.value)}
               type="password"
               onKeyDown={(e) => e.key === 'Enter' && submit()}
+              aria-invalid={Boolean(fields.password)}
+              aria-describedby="login-password-error"
             />
+            <FieldError id="login-password-error" message={fields.password} />
             {error ? <p style={{ color: colors.danger, fontSize: 13 }}>{error}</p> : null}
             <Button onClick={submit} disabled={loading}>
               {loading ? 'Signing in…' : 'Sign in'}
@@ -103,11 +123,15 @@ function mapErr(code: string): string {
     case 'auth/invalid-credential':
     case 'auth/wrong-password':
     case 'auth/user-not-found':
-      return 'Incorrect email or password.';
+      return 'That email and password do not match an admin account. Check both for a typo — the password is case-sensitive.';
+    case 'auth/too-many-requests':
+      return 'Too many tries — Firebase paused sign-in for this account for a few minutes. Wait, then try again.';
+    case 'auth/network-request-failed':
+      return 'You are offline — your connection dropped, not Velocity. Reconnect and sign in again.';
     case 'auth/operation-not-allowed':
-      return 'Email/password sign-in is not enabled for this project.';
+      return 'Email sign-in is switched off for this project — our setup, not you. An admin has to enable it in Firebase.';
     default:
-      return 'Sign-in failed. Please try again.';
+      return 'Sign-in failed on our side — not your fault. Try again in a minute.';
   }
 }
 

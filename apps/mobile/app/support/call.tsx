@@ -48,6 +48,7 @@ import {
 } from '../../src/lib/pcm';
 import { themed } from '../../src/theme';
 import { Text } from '../../src/ui/Text';
+import { explainDenied } from '../../src/lib/permissions';
 
 const LIVE_URL =
   'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained';
@@ -184,7 +185,8 @@ export default function HelplineCall() {
     (async () => {
       const perm = await requestMicrophonePermissionsAsync();
       if (!perm.granted) {
-        end('Allow the microphone in Settings to call the helpline.');
+        explainDenied('microphone');
+        end('The helpline needs your microphone — turn it on in Settings, or write to us instead.');
         return;
       }
       const res = await api.startHelplineCall({ actions: true });

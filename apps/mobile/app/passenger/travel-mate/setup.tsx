@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Text, TextInput } from '../../../src/ui/Text';
+import { explainDenied } from '../../../src/lib/permissions';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -110,7 +111,7 @@ export default function TravelMateSetup() {
   async function pickPhoto() {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert('Permission needed', 'Allow photo access to add a profile picture.');
+      explainDenied('photos');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({

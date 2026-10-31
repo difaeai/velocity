@@ -28,6 +28,7 @@ import {
 import { BrandSplash } from '../src/ui/BrandSplash';
 import { IncomingCallWatcher } from '../src/ui/IncomingCallWatcher';
 import { SharedRideConfirmGate } from '../src/ui/SharedRideConfirmGate';
+import { NetworkNotice } from '../src/ui/states';
 import { UpdateGate } from '../src/ui/UpdateGate';
 import { Text } from '../src/ui/Text';
 
@@ -188,6 +189,8 @@ export default function RootLayout() {
         <Fragment key={`${themeVersion}:${languageVersion}`}>
           <Slot />
         </Fragment>
+        {/* Offline or slow, over whatever screen is open — never instead of it. */}
+        <NetworkNotice />
         {/* Last, so it paints over the routes mounting underneath it, and
             outside the keyed Fragment so a theme switch cannot restart it.
             Mounts in the same render that hides the native splash. */}

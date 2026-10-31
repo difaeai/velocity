@@ -18,6 +18,7 @@ import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { themed } from '../theme';
+import { explainDenied } from '../lib/permissions';
 
 /**
  * Light onboarding palette.
@@ -46,7 +47,7 @@ export const oc = {
 export async function pickPhoto(onPicked: (uri: string) => void) {
   const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!perm.granted) {
-    Alert.alert('Permission needed', 'Allow photo access to add your documents.');
+    explainDenied('photos');
     return;
   }
   const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.6 });
