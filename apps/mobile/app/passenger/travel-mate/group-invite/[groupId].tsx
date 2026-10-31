@@ -13,7 +13,7 @@
  * so a slow first response never dead-ends the invite.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Text, TextInput } from '../../../../src/ui/Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -24,6 +24,7 @@ import { useAuth } from '../../../../src/auth/AuthContext';
 import { colors } from '../../../../src/config';
 import { themed } from '../../../../src/theme';
 import { Card, PrimaryButton } from '../../../../src/ui/components';
+import { SkeletonDetail } from '../../../../src/ui/states';
 
 const DAY_LABELS: Record<string, string> = {
   mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun',
@@ -142,7 +143,7 @@ export default function GroupInviteScreen() {
 
       {loading && !preview && (
         <View style={s.center}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <SkeletonDetail />
           <Text style={s.loadingText}>Loading group…</Text>
         </View>
       )}

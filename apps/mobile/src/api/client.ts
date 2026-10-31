@@ -8,6 +8,8 @@
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../firebase';
 import { watchCallable } from '../lib/featureCheck';
+import { isOnline, probe, trackCall } from '../lib/connection';
+import { TRANSPORT, codeOf, explained } from '../lib/explainError';
 import type { Gender, GeoPoint, PaymentMethod, PoolVisibility, RideType, TripStatus } from '../domain/types';
 import type { FaceAgreement, FaceChallenge, FaceScanPurpose } from '../domain/faceScan';
 import type { CityFareConfig, VehicleCategory } from '../lib/fareEngine';
@@ -80,13 +82,30 @@ export interface DashcamClipView {
   sizeBytes: number;
 }
 
+/** Calls that run on their own (warm-ups, polls): a slow one is not something the person is waiting on. */
+const BACKGROUND = /^warm|^(registerFcmToken|getDriverQueueStatus|getSuggestedRides|getTrafficAlerts)$/;
+
 function callable<Req, Res>(name: string, timeoutMs?: number): (data: Req) => Promise<Res> {
   const fn = httpsCallable<Req, Res>(functions, name, timeoutMs ? { timeout: timeoutMs } : undefined);
   // Watched here rather than at the call sites. Every callable that carries a
   // promise to a user is timed and classified against what its feature was
   // built to do (src/lib/featureCheck.ts); a call belonging to no feature
   // contract is handed back untouched, so this costs the rest nothing.
-  return watchCallable<Req, Res>(name, async (data: Req) => (await fn(stripUndefined(data) as Req)).data);
+  const watched = watchCallable<Req, Res>(name, async (data: Req) => (await fn(stripUndefined(data) as Req)).data);
+  // And every screen's slow and failed calls in one place: the NetworkNotice shows the real wait,
+  // and a failure carries what went wrong, whose fault, and the fix (src/lib/connection.ts).
+  return async (data: Req) => {
+    const done = BACKGROUND.test(name) ? () => {} : trackCall(timeoutMs ?? 70_000);
+    try {
+      return await watched(data);
+    } catch (e) {
+      // "internal" can be the phone or the server: ask the internet before saying which.
+      if (TRANSPORT.has(codeOf(e))) await probe();
+      throw explained(e, isOnline());
+    } finally {
+      done();
+    }
+  };
 }
 
 /**

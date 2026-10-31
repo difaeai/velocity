@@ -17,6 +17,7 @@ import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
 import { api } from '../../../src/api/client';
+import { SkeletonDetail } from '../../../src/ui/states';
 
 type CourierStatus = 'pending' | 'accepted' | 'picked_up' | 'delivered' | 'cancelled';
 type PackageType   = 'document' | 'parcel' | 'box';
@@ -106,7 +107,7 @@ export default function CourierOrderScreen() {
   if (loading) {
     return (
       <SafeAreaView style={[styles.safe, { alignItems: 'center', justifyContent: 'center' }]}>
-        <ActivityIndicator color={colors.primary} size="large" />
+        <SkeletonDetail />
       </SafeAreaView>
     );
   }

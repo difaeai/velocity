@@ -31,6 +31,7 @@ import {
 } from '@/lib/api';
 import { colors } from '@/lib/config';
 import { Badge, Button, Card, StatCard } from '@/components/ui';
+import { SkeletonRows } from '@/components/states';
 
 const money = (n: number | null | undefined) =>
   n === null || n === undefined ? '—' : `Rs.${n.toFixed(2)}`;
@@ -103,7 +104,7 @@ export default function PricingEnginePage() {
     });
 
   if (loading) {
-    return <div style={{ color: colors.muted, padding: 24 }}>Loading the pricing engine…</div>;
+    return <div style={{ padding: 24 }}><SkeletonRows rows={6} /></div>;
   }
   if (!data) {
     return (

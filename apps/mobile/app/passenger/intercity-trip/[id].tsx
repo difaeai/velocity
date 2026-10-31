@@ -35,6 +35,7 @@ import {
   TRIP_STATUS_META,
   BOOKING_STATUS_META,
 } from '../../../src/domain/intercityTypes';
+import { SkeletonDetail } from '../../../src/ui/states';
 
 const TRIP_STATUS_ORDER: IntercityTrip['status'][] = ['scheduled', 'boarding', 'in_progress', 'completed'];
 
@@ -148,7 +149,7 @@ export default function IntercityTripScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.safe}>
-        <View style={styles.center}><ActivityIndicator color={colors.primary} size="large" /></View>
+        <View style={styles.center}><SkeletonDetail /></View>
       </SafeAreaView>
     );
   }

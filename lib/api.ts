@@ -1,4 +1,5 @@
 import { httpsCallable } from 'firebase/functions';
+import { explained, trackCall } from './connection';
 import { functions } from './firebase';
 import type { StudioBilling, StudioPlanId } from './studio';
 
@@ -30,7 +31,18 @@ function stripUndefined(value: unknown): unknown {
 
 function callable<Req, Res>(name: string, timeout?: number): (data: Req) => Promise<Res> {
   const fn = httpsCallable<Req, Res>(functions, name, timeout ? { timeout } : undefined);
-  return async (data: Req) => (await fn(stripUndefined(data) as Req)).data;
+  // Every page's slow and failed calls in one place: the NetworkNotice shows the real
+  // wait, and a failure carries what went wrong, whose fault, and the fix (lib/connection.ts).
+  return async (data: Req) => {
+    const done = trackCall(timeout ?? 70_000);
+    try {
+      return (await fn(stripUndefined(data) as Req)).data;
+    } catch (e) {
+      throw explained(e);
+    } finally {
+      done();
+    }
+  };
 }
 
 /**

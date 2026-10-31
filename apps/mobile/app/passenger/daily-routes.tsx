@@ -24,6 +24,7 @@ import { clockTime } from '../../src/lib/rideSearch';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
 import { RIDE_TYPE_LABELS, type Trip, type TripStatus } from '../../src/domain/types';
+import { SkeletonRows } from '../../src/ui/states';
 
 const RADIUS_OPTIONS = [2, 3, 5] as const;
 type PlaceCategory = 'home' | 'work' | 'other';
@@ -390,7 +391,7 @@ export default function DailyRoutesScreen() {
 
       {isLoading ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator color={colors.primary} size="large" />
+          <SkeletonRows />
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.content}>

@@ -29,6 +29,7 @@ import {
   View,
 } from 'react-native';
 import { Text, TextInput } from '../../../src/ui/Text';
+import { explainDenied } from '../../../src/lib/permissions';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { appLink } from '../../../src/share/links';
@@ -57,6 +58,7 @@ import { readCachedValue, writeCachedValue } from '../../../src/lib/cachedResour
 import { InboxModeBar } from '../../../src/ui/InboxModeBar';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
+import { SkeletonRows } from '../../../src/ui/states';
 
 const PAGE_SIZE = 25;
 const FEED_CACHE_KEY = 'travelMateFeedPage1';
@@ -361,7 +363,7 @@ export default function TravelMateFeed() {
   // ── Composer ───────────────────────────────────────────────────────────────
   async function pickImage() {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) { Alert.alert('Permission needed', 'Allow photo access to attach a picture.'); return; }
+    if (!perm.granted) { explainDenied('photos'); return; }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
@@ -380,7 +382,7 @@ export default function TravelMateFeed() {
 
   async function pickVideo() {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) { Alert.alert('Permission needed', 'Allow media access to attach a video.'); return; }
+    if (!perm.granted) { explainDenied('photos'); return; }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Videos,
       allowsEditing: false,
@@ -534,7 +536,7 @@ export default function TravelMateFeed() {
       </View>
 
       {loading ? (
-        <View style={s.centerBox}><ActivityIndicator size="large" color={colors.primary} /></View>
+        <View style={s.centerBox}><SkeletonRows /></View>
       ) : (
         <FlatList
           data={visiblePosts}

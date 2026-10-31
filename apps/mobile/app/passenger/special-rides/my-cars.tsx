@@ -4,7 +4,6 @@ import {
   ScrollView,
   StyleSheet,
   Pressable,
-  ActivityIndicator,
   Alert,
 } from 'react-native';
 import { Text } from '../../../src/ui/Text';
@@ -15,6 +14,7 @@ import { useCallback } from 'react';
 import { api } from '../../../src/api/client';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
+import { SkeletonRows } from '../../../src/ui/states';
 
 export default function MyPostedCarsScreen() {
   const router = useRouter();
@@ -45,7 +45,7 @@ export default function MyPostedCarsScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator color={colors.primary} size="large" />
+          <SkeletonRows />
         </View>
       </SafeAreaView>
     );
@@ -160,7 +160,7 @@ export default function MyPostedCarsScreen() {
                               try {
                                 const res = await api.deleteSpecialRidesListing({});
                                 if (res.ok) {
-                                  Alert.alert('Success', res.message);
+                                  Alert.alert('Listing removed', `${res.message} Renters can no longer find it; you can list a car again at any time.`);
                                   loadDashboard();
                                 }
                               } catch (e) {

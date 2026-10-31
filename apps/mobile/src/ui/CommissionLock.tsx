@@ -4,6 +4,7 @@ import { Text } from './Text';
 import * as ImagePicker from 'expo-image-picker';
 
 import { api } from '../api/client';
+import { explainDenied } from '../lib/permissions';
 import { colors } from '../config';
 import { themed } from '../theme';
 import { uploadDriverDoc } from '../lib/uploadDoc';
@@ -96,7 +97,7 @@ export function CommissionLock({
     if (!uid) return;
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert('Permission needed', 'Allow photo access to upload your payment screenshot.');
+      explainDenied('photos');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({

@@ -7,6 +7,8 @@ import { db } from '@/lib/firebase';
 import { adminApi } from '@/lib/api';
 import { colors } from '@/lib/config';
 import { Button, Card } from '@/components/ui';
+import { EmptyState, NoResults } from '@/components/states';
+import { didYouMean } from '@/lib/didYouMean';
 
 interface PassengerRow {
   id: string;
@@ -355,8 +357,21 @@ export default function PassengersPage() {
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={8} style={{ padding: 24, textAlign: 'center', color: colors.muted }}>
-                    No passengers found.
+                  <td colSpan={8} style={{ padding: 16 }}>
+                    {search.trim() ? (
+                      <NoResults
+                        query={search.trim()}
+                        suggestion={didYouMean(search, new Set(rows.flatMap((r) => (r.displayName ?? '').split(/\s+/))))}
+                        onSuggestion={setSearch}
+                        next="Search by phone number instead — it is exact — or clear the search to see everyone."
+                      />
+                    ) : (
+                      <EmptyState
+                        icon="👥"
+                        title={filter === 'banned' ? 'No banned passengers' : 'No passengers yet'}
+                        why={filter === 'banned' ? 'Nobody is banned right now.' : 'Riders appear here the moment they sign up in the app.'}
+                      />
+                    )}
                   </td>
                 </tr>
               )}

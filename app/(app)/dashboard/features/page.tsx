@@ -7,6 +7,7 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth';
 import { colors } from '@/lib/config';
 import { Card } from '@/components/ui';
+import { SkeletonRows } from '@/components/states';
 
 interface Flags {
   walletTopupEnabled: boolean;
@@ -93,7 +94,7 @@ export default function FeatureFlagsPage() {
       {error && <div style={{ color: colors.danger, fontWeight: 600, marginBottom: 14 }}>{error}</div>}
 
       {loading ? (
-        <div style={{ color: colors.muted }}>Loading…</div>
+        <SkeletonRows rows={6} h={36} />
       ) : (
         <div style={{ display: 'grid', gap: 14, maxWidth: 620 }}>
           {ROWS.map((row) => {

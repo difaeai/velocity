@@ -21,6 +21,7 @@ import { themed } from '../../../src/theme';
 import { Card, PrimaryButton } from '../../../src/ui/components';
 import { ChatModal } from '../../../src/ui/ChatModal';
 import { genderLabel } from '../../../src/lib/genderAccess';
+import { SkeletonDetail } from '../../../src/ui/states';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -120,7 +121,7 @@ export default function PoolPickup() {
   if (!ride) {
     return (
       <SafeAreaView style={styles.safe}>
-        <Text style={styles.loading}>Loading pool ride…</Text>
+        <SkeletonDetail />
       </SafeAreaView>
     );
   }
@@ -416,7 +417,6 @@ export default function PoolPickup() {
 const styles = themed(() => StyleSheet.create({
   safe:       { flex: 1, backgroundColor: colors.background },
   container:  { padding: 18, gap: 14 },
-  loading:    { padding: 20, color: colors.muted },
   title:      { fontSize: 22, fontWeight: '900', color: colors.text },
   sub:        { fontSize: 14, color: colors.muted },
   sectionLabel: { fontSize: 11, fontWeight: '800', color: colors.muted, textTransform: 'uppercase', letterSpacing: 0.5 },

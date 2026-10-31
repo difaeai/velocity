@@ -6,6 +6,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { colors } from '@/lib/config';
 import { Button, Card } from '@/components/ui';
+import { SkeletonRows } from '@/components/states';
 
 interface FareConfig {
   baseFare: number;
@@ -171,7 +172,7 @@ export default function RideSettingsPage() {
     }
   }
 
-  if (loading) return <div style={{ color: colors.muted, padding: 20 }}>Loading…</div>;
+  if (loading) return <div style={{ padding: 20 }}><SkeletonRows rows={5} /></div>;
 
   return (
     <div>

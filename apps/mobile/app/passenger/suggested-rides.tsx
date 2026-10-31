@@ -34,7 +34,6 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
   Pressable,
@@ -79,6 +78,7 @@ import {
 import { useGenderPref } from '../../src/hooks/genderPref';
 import { BookingForPicker } from '../../src/ui/BookingForPicker';
 import { PoolIcon } from '../../src/ui/RideIcons';
+import { SkeletonRows } from '../../src/ui/states';
 
 /** How far out to look, in the rider's own words. */
 const RADIUS_OPTIONS = [2, 5, 10, 25] as const;
@@ -762,7 +762,7 @@ export default function SuggestedRidesScreen() {
         </View>
       ) : loading && rides === null ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <SkeletonRows />
           <Text style={styles.emptySub}>Looking for shared rides around you…</Text>
         </View>
       ) : tab === 'areas' ? (

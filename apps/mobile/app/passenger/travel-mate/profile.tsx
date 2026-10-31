@@ -20,6 +20,7 @@ import { useTravelMateThreads } from '../../../src/hooks/travelMateCommunity';
 import { InboxModeBar } from '../../../src/ui/InboxModeBar';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
+import { SkeletonDetail } from '../../../src/ui/states';
 
 interface TMProfile {
   uid: string;
@@ -125,7 +126,7 @@ export default function TravelMateProfile() {
     return (
       <SafeAreaView style={s.safe}>
         <TopBar router={router} />
-        <View style={s.centered}><Text style={s.muted}>Loading…</Text></View>
+        <View style={s.centered}><SkeletonDetail /></View>
       </SafeAreaView>
     );
   }

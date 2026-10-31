@@ -28,6 +28,7 @@ import { useAuth } from '../../src/auth/AuthContext';
 import { useCachedList } from '../../src/lib/cachedResource';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
+import { SkeletonRows } from '../../src/ui/states';
 
 type PlaceCategory = 'home' | 'work' | 'other';
 
@@ -164,7 +165,7 @@ export default function SavedPlacesScreen() {
 
       {loading ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator color={colors.primary} size="large" />
+          <SkeletonRows />
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.content}>

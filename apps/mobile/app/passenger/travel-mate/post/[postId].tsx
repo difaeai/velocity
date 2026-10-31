@@ -10,7 +10,6 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
   Image,
@@ -45,6 +44,7 @@ import { useBlockedSet } from '../../../../src/hooks/travelMateCommunity';
 import { timeAgo } from '../../../../src/lib/timeAgo';
 import { colors } from '../../../../src/config';
 import { themed } from '../../../../src/theme';
+import { SkeletonDetail } from '../../../../src/ui/states';
 
 
 /** Minimal dark page hosting a native <video> element. */
@@ -225,7 +225,7 @@ export default function PostDetail() {
     return (
       <SafeAreaView style={s.safe}>
         {TopBar}
-        <View style={s.centerBox}><ActivityIndicator size="large" color={colors.primary} /></View>
+        <View style={s.centerBox}><SkeletonDetail /></View>
       </SafeAreaView>
     );
   }

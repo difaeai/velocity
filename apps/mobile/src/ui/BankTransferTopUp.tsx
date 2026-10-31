@@ -40,6 +40,7 @@ import * as ImagePicker from 'expo-image-picker';
 
 import { Text, TextInput } from './Text';
 import { api } from '../api/client';
+import { explainDenied } from '../lib/permissions';
 import { colors } from '../config';
 import { themed } from '../theme';
 import { uploadTopupProof } from '../lib/uploadDoc';
@@ -170,7 +171,7 @@ export function BankTransferTopUpSheet({
     }
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert('Permission needed', 'Allow photo access to upload your payment screenshot.');
+      explainDenied('photos');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({

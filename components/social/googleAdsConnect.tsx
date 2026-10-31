@@ -28,6 +28,7 @@ import {
   type GoogleAdsLink,
 } from '@/lib/api';
 import { Button, Card } from '@/components/ui';
+import { SkeletonRows } from '@/components/states';
 
 type Summary = Awaited<ReturnType<typeof googleAdsApi.summary>>;
 
@@ -192,7 +193,7 @@ export function GoogleAdsConnect({ link }: { link: GoogleAdsLink | null | undefi
             </div>
           </>
         ) : !app ? (
-          <p style={{ color: colors.muted, margin: 0 }}>Loading…</p>
+          <SkeletonRows rows={2} />
         ) : app.ready ? (
           choices ? (
             <div style={{ display: 'grid', gap: 6 }}>

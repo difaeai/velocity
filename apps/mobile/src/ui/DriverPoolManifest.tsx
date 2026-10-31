@@ -30,7 +30,7 @@
  * ---------------------------------------------------------------------------
  */
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 import { callInApp } from '../lib/inAppCall';
 
@@ -38,6 +38,7 @@ import { api, type PoolJoinRequest, type PoolRiderView } from '../api/client';
 import { colors } from '../config';
 import { themed } from '../theme';
 import { useForegroundInterval } from '../hooks/useForegroundInterval';
+import { SkeletonRows } from './states';
 
 const GENDER_MARK: Record<string, string> = { male: '♂', female: '♀' };
 
@@ -168,10 +169,7 @@ export function DriverPoolManifest({
 
   if (loading && !riders) {
     return (
-      <View style={styles.loadingRow}>
-        <ActivityIndicator size="small" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading your passengers…</Text>
-      </View>
+      <SkeletonRows rows={2} height={56} />
     );
   }
 
@@ -271,8 +269,6 @@ export function DriverPoolManifest({
 }
 
 const styles = themed(() => StyleSheet.create({
-  loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10 },
-  loadingText: { color: colors.muted, fontSize: 12, fontWeight: '600' },
 
   card: {
     backgroundColor: colors.card,

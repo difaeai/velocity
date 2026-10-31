@@ -47,6 +47,7 @@ import {
   type FaceScanPurpose,
 } from '../domain/faceScan';
 import { FACE_MIN_WIDTH, JUDGED_ON_PHONE, NO_PROGRESS, judgeFrame } from '../domain/faceLiveness';
+import { explainDenied } from '../lib/permissions';
 
 type Phase = 'intro' | 'running' | 'uploading' | 'done' | 'error';
 
@@ -140,6 +141,7 @@ export function FaceScanRunner(props: FaceScanRunnerProps) {
     if (!permission?.granted) {
       const res = await requestPermission();
       if (!res.granted) {
+        explainDenied('camera');
         setMessage(
           'Camera access is needed for the face check. Allow it in your phone settings and try again.',
         );

@@ -37,6 +37,7 @@ import { Button, Card } from '@/components/ui';
 import { PlatformBadge, PLATFORM_META, StatusPill } from '@/components/social/shared';
 import { InstagramConnect } from '@/components/social/instagramConnect';
 import { GoogleAdsConnect } from '@/components/social/googleAdsConnect';
+import { SkeletonRows } from '@/components/states';
 
 export default function AccountsPage() {
   const { path, includes } = useWorkspace();
@@ -124,7 +125,7 @@ export default function AccountsPage() {
               onToggle={() => setOpenFor(openFor === p.platform ? null : p.platform)}
             />
           ))}
-          {!schema ? <p style={{ color: colors.muted }}>Loading…</p> : null}
+          {!schema ? <SkeletonRows rows={3} /> : null}
         </div>
       ) : null}
     </div>

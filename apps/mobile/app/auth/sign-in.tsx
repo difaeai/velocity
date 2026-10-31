@@ -27,6 +27,7 @@ import { PRIVACY_URL, SUPPORT_EMAIL, TERMS_URL } from '../../src/share/links';
 import { themed } from '../../src/theme';
 import { describePhoneAuthError, SMS_THROTTLE_COOLDOWN_MS } from '../../src/lib/phoneAuthErrors';
 import { checkOtpSendAllowed, noteOtpSendAttempt, noteOtpThrottled } from '../../src/auth/otpGuard';
+import { takeSessionEnded } from '../../src/auth/AuthContext';
 import { RESEND_UI_COOLDOWN_S } from '../../src/lib/otpThrottle';
 
 type Step = 'enter_phone' | 'enter_otp';
@@ -157,6 +158,7 @@ export default function SignIn() {
   const [sending, setSending]           = useState(false);   // Send / Resend OTP
   const [verifying, setVerifying]       = useState(false);   // Verify OTP
   const [error, setErrorText]           = useState<string | null>(null);
+  const [sessionEnded]                  = useState(takeSessionEnded);
   // The native SDK's own words about why a send failed, kept aside rather than
   // shown. A passenger must never read a Firebase exception — but when the cause
   // is a project misconfiguration, this string names the console setting that
@@ -441,6 +443,12 @@ export default function SignIn() {
       {/* Welcome card */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Welcome Back</Text>
+        {sessionEnded ? (
+          <Text style={styles.sessionEnded} accessibilityRole="alert">
+            Your session ended, so you were signed out — not something you did. Sign in again with your number; your
+            rides and messages are all still here.
+          </Text>
+        ) : null}
 
         <Text style={styles.label}>Mobile Number</Text>
         <View style={styles.phoneRow}>
@@ -702,6 +710,15 @@ const styles = themed(() => StyleSheet.create({
     elevation: 6,
   },
   cardTitle: { fontSize: 26, fontWeight: '900', color: '#ffffff', marginBottom: 4 },
+  sessionEnded: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: '#ffffff',
+    backgroundColor: 'rgba(255,170,0,0.16)',
+    borderRadius: 12,
+    padding: 10,
+    marginVertical: 8,
+  },
   label: { fontSize: 15, color: 'rgba(255,255,255,0.75)' },
 
   phoneRow: {

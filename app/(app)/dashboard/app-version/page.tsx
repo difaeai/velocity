@@ -31,6 +31,7 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth';
 import { colors } from '@/lib/config';
 import { Button, Card } from '@/components/ui';
+import { SkeletonRows } from '@/components/states';
 
 const PLAY_URL = 'https://play.google.com/store/apps/details?id=com.velocityridzpk.app';
 
@@ -240,7 +241,7 @@ export default function AppVersionPage() {
     }
   }
 
-  if (loading) return <div style={{ color: colors.muted, padding: 20 }}>Loading…</div>;
+  if (loading) return <div style={{ padding: 20 }}><SkeletonRows rows={4} /></div>;
 
   const forceFloor = form.minSupportedVersion.trim();
 

@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Text, TextInput } from '../../../src/ui/Text';
+import { explainDenied } from '../../../src/lib/permissions';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -22,6 +23,7 @@ import { useAuth } from '../../../src/auth/AuthContext';
 import { useCurrentLocation } from '../../../src/hooks/location';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
+import { SkeletonDetail } from '../../../src/ui/states';
 
 const INTERESTS = [
   'Music', 'Movies', 'Sports', 'Gaming', 'Reading', 'Travel',
@@ -110,7 +112,7 @@ export default function TravelMateSetup() {
   async function pickPhoto() {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert('Permission needed', 'Allow photo access to add a profile picture.');
+      explainDenied('photos');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -201,7 +203,7 @@ export default function TravelMateSetup() {
   if (prefilling) {
     return (
       <SafeAreaView style={s.safe}>
-        <View style={s.center}><Text style={s.muted}>Loading…</Text></View>
+        <View style={s.center}><SkeletonDetail /></View>
       </SafeAreaView>
     );
   }

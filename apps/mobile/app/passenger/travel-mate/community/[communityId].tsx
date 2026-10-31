@@ -41,6 +41,7 @@ import { useBlockedSet } from '../../../../src/hooks/travelMateCommunity';
 import { colors } from '../../../../src/config';
 import { themed } from '../../../../src/theme';
 import { PostCard } from '../feed';
+import { SkeletonDetail } from '../../../../src/ui/states';
 
 const PAGE_SIZE = 25;
 
@@ -228,7 +229,7 @@ export default function CommunityPage() {
     return (
       <SafeAreaView style={s.safe}>
         {TopBar}
-        <View style={s.centerBox}><ActivityIndicator size="large" color={colors.primary} /></View>
+        <View style={s.centerBox}><SkeletonDetail /></View>
       </SafeAreaView>
     );
   }

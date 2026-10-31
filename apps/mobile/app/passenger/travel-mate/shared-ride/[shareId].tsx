@@ -13,7 +13,7 @@
  * same gate server-side; this screen just explains it.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from '../../../../src/ui/Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -23,6 +23,7 @@ import { api, type SharedTravelMateRideResult } from '../../../../src/api/client
 import { colors } from '../../../../src/config';
 import { themed } from '../../../../src/theme';
 import { Card, PrimaryButton } from '../../../../src/ui/components';
+import { SkeletonDetail } from '../../../../src/ui/states';
 
 export default function SharedRideScreen() {
   const params = useLocalSearchParams<{ shareId: string }>();
@@ -89,7 +90,7 @@ export default function SharedRideScreen() {
       </View>
 
       {!result && !error && (
-        <View style={s.center}><ActivityIndicator size="large" color={colors.primary} /></View>
+        <View style={s.center}><SkeletonDetail /></View>
       )}
 
       {error && (

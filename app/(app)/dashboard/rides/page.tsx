@@ -33,6 +33,7 @@ import {
 } from '@/lib/api';
 import { colors } from '@/lib/config';
 import { Button, Card } from '@/components/ui';
+import { SkeletonRows } from '@/components/states';
 
 const STATUSES = [
   'requested',
@@ -338,7 +339,7 @@ export default function RidesPage() {
       {/* ── The ledger ── */}
       <Card>
         {loading && rows.length === 0 ? (
-          <p style={{ color: colors.muted, fontSize: 13 }}>Loading rides…</p>
+          <SkeletonRows rows={6} h={48} />
         ) : rows.length === 0 ? (
           <p style={{ color: colors.muted, fontSize: 13 }}>
             No rides match those filters.
@@ -486,7 +487,7 @@ function RideFile({ tripId, onClose }: { tripId: string; onClose: () => void }) 
           </div>
 
           {error ? <p style={{ color: colors.danger, fontSize: 13 }}>{error}</p> : null}
-          {!d && !error ? <p style={{ color: colors.muted, fontSize: 13 }}>Loading…</p> : null}
+          {!d && !error ? <SkeletonRows rows={3} /> : null}
 
           {d ? (
             <div style={{ display: 'grid', gap: 18 }}>

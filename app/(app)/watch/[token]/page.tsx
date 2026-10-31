@@ -37,6 +37,7 @@ import { httpsCallable } from 'firebase/functions';
 
 import { functions } from '@/lib/firebase';
 import { VelocityMark } from '@/components/BrandMark';
+import { SkeletonRows } from '@/components/states';
 
 /** How often the position refreshes while the ride is live. */
 const POLL_MS = 10_000;
@@ -152,7 +153,7 @@ export default function WatchTripPage() {
         </div>
 
         {loading && !trip ? (
-          <p style={st.sub}>Loading the ride…</p>
+          <SkeletonRows rows={3} />
         ) : error ? (
           <>
             <h1 style={st.title}>Link not active</h1>

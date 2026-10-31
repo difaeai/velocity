@@ -180,11 +180,14 @@ export default function ComposeSpecialRidesScreen() {
       });
 
       if (res.ok) {
-        Alert.alert('Success ✅', 'Your car listing has been submitted for review. Check back soon!');
+        Alert.alert(
+          '🎉 Your car is submitted',
+          'Nothing else to do for now. What happens next: our team checks the papers and photos; once approved it goes live for renters. You can follow it under My cars.',
+        );
         router.replace('/passenger/special-rides');
       }
     } catch (e: unknown) {
-      Alert.alert('Error', (e as { message?: string }).message ?? 'Failed to submit');
+      Alert.alert('Your car was not submitted', (e as { message?: string }).message ?? 'Try again — nothing you typed was lost.');
     } finally {
       setLoading(false);
     }

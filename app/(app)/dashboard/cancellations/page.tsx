@@ -6,6 +6,7 @@ import { collection, doc, getDoc, onSnapshot, query, setDoc, where } from 'fireb
 import { db } from '@/lib/firebase';
 import { colors } from '@/lib/config';
 import { Button, Card } from '@/components/ui';
+import { SkeletonRows } from '@/components/states';
 
 /** Mirrors DEFAULT_CANCELLATION in backend/functions/src/domain/cancellation.ts. */
 const DEFAULTS = { passengerRate: 5, driverRate: 8, outstandingLimit: 300 };
@@ -95,7 +96,7 @@ export default function CancellationSettingsPage() {
       {saved && <div style={{ color: colors.success, fontWeight: 700, marginBottom: 14 }}>✓ Settings saved</div>}
 
       {loading ? (
-        <div style={{ color: colors.muted }}>Loading…</div>
+        <SkeletonRows rows={4} />
       ) : (
         <div style={{ display: 'grid', gap: 20, gridTemplateColumns: 'minmax(340px, 460px) minmax(300px, 1fr)', alignItems: 'start' }}>
           <Card>

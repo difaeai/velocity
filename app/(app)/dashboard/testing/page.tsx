@@ -37,6 +37,7 @@ import { useAuth } from '@/lib/auth';
 import { colors } from '@/lib/config';
 import { qaApi } from '@/lib/api';
 import { Button, Card } from '@/components/ui';
+import { SkeletonRows } from '@/components/states';
 
 type Severity = 'blocker' | 'broken' | 'degraded';
 type Status = 'open' | 'fixed' | 'ignored';
@@ -278,7 +279,7 @@ export default function TestingPage() {
       )}
 
       {loading ? (
-        <p style={{ color: colors.muted }}>Loading the log…</p>
+        <SkeletonRows rows={5} />
       ) : days.length === 0 ? (
         <Card>
           <p style={{ fontWeight: 700, marginBottom: 6 }}>Nothing logged yet.</p>

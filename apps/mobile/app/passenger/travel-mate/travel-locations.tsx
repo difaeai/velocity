@@ -30,6 +30,7 @@ import { useCurrentLocation } from '../../../src/hooks/location';
 import { usePlacesAutocomplete, fetchPlaceDetail, type PlacePrediction } from '../../../src/hooks/places';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
+import { SkeletonRows } from '../../../src/ui/states';
 
 const MAX_LOCATIONS = 5;
 
@@ -170,7 +171,7 @@ export default function TravelLocations() {
   if (loading) {
     return (
       <SafeAreaView style={s.safe}>
-        <View style={s.center}><Text style={s.muted}>Loading…</Text></View>
+        <View style={s.center}><SkeletonRows /></View>
       </SafeAreaView>
     );
   }

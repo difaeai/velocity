@@ -27,6 +27,7 @@ import {
   useDriverProfile,
   type CreditRow,
 } from '../../src/hooks/driver';
+import { EmptyState, SkeletonRows } from '../../src/ui/states';
 
 type Period = 'today' | 'week' | 'month' | 'all';
 
@@ -248,9 +249,13 @@ export default function DriverEarnings() {
 
         {/* Transaction list */}
         <Text style={styles.sectionTitle}>Transaction history</Text>
-        {loading && <Text style={styles.muted}>Loading…</Text>}
+        {loading && <SkeletonRows rows={3} height={52} />}
         {!loading && rows.length === 0 && (
-          <Text style={styles.muted}>No transactions in this period.</Text>
+          <EmptyState
+            icon="🧾"
+            title="No transactions in this period"
+            why="Fares, commission and bonuses are listed here as they happen. Pick a longer period above, or go online to start earning."
+          />
         )}
         {rows.map((r) => (
           <View key={r.id} style={styles.txRow}>

@@ -43,6 +43,7 @@ import {
   type StudioPlanId,
 } from '@/lib/studio';
 import a from '../account.module.css';
+import { FieldError, SkeletonRows, SuccessState } from '@/components/states';
 
 interface ReceivingAccounts {
   easypaisaNumber?: string;
@@ -76,6 +77,7 @@ function Checkout() {
   const [method, setMethod] = useState<string | null>(null);
   const [payments, setPayments] = useState<StudioPaymentDoc[]>([]);
   const [txnId, setTxnId] = useState('');
+  const [tried, setTried] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [agreed, setAgreed] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
@@ -155,6 +157,9 @@ function Checkout() {
     kind === 'agents' ? 'Your AI agents package' : kind === 'credits' ? 'Add credits' : chosen === ws.plan && paidNow ? `Renew ${P.name}` : `Upgrade to ${P.name}`;
 
   async function send() {
+    // What is missing is said at its field, not by a button that stays grey.
+    setTried(true);
+    if (!ready) return;
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -174,7 +179,8 @@ function Checkout() {
       setTxnId('');
       setFile(null);
       setAgreed(false);
-      setNotice('Thank you — we are checking the payment. It switches on as soon as it is approved, usually within a few hours.');
+      setTried(false);
+      setNotice('our team checks it, usually within a few hours. It switches on the moment it is approved, and you can follow it under Payments below.');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'That did not work.');
     } finally {
@@ -261,7 +267,7 @@ function Checkout() {
 
           <h2 className={a.label}>Payment method</h2>
           {accounts === null ? (
-            <p className={a.muted}>Loading where to pay…</p>
+            <SkeletonRows rows={2} />
           ) : !methods.length ? (
             <p className={a.error}>Payment details are being set up. Email business@velocityrides.app and we will send them.</p>
           ) : (
@@ -303,10 +309,22 @@ function Checkout() {
                 <b>{file ? `✓ ${file.name}` : 'Add the receipt screenshot'}</b>
                 <span>{file ? 'Tap to choose a different picture' : 'A photo or screenshot of the transfer, up to 10 MB'}</span>
               </label>
+              <FieldError message={tried && !file ? 'Add the screenshot of your transfer receipt — a photo of the screen is fine.' : null} />
               <label className={a.field}>
                 Transaction ID
-                <input className={a.input} value={txnId} onChange={(e) => setTxnId(e.target.value)} placeholder="From the receipt, e.g. 0123456789" />
+                <input
+                  className={a.input}
+                  value={txnId}
+                  onChange={(e) => setTxnId(e.target.value)}
+                  placeholder="From the receipt, e.g. 0123456789"
+                  aria-invalid={tried && txnId.trim().length < 6}
+                  aria-describedby="txn-error"
+                />
               </label>
+              <FieldError
+                id="txn-error"
+                message={tried && txnId.trim().length < 6 ? 'Type the transaction ID printed on the receipt — at least 6 characters.' : null}
+              />
             </div>
           )}
         </section>
@@ -362,7 +380,13 @@ function Checkout() {
           </p>
 
           {error ? <p className={a.error}>{error}</p> : null}
-          {notice ? <p className={a.notice}>{notice}</p> : null}
+          {notice ? (
+            <SuccessState
+              title="Payment sent — thank you!"
+              reassurance="Your receipt and transaction ID reached us. There is nothing else you need to do."
+              next={notice}
+            />
+          ) : null}
 
           {pending ? null : (
             <>
@@ -373,7 +397,8 @@ function Checkout() {
                   from that transfer.
                 </span>
               </label>
-              <button type="button" className={a.btn} onClick={send} disabled={busy || !ready}>
+              <FieldError message={tried && !agreed ? 'Tick this to confirm the transfer is yours.' : null} />
+              <button type="button" className={a.btn} onClick={send} disabled={busy || amount <= 0 || methods.length === 0}>
                 {busy ? <span className={a.spinner} aria-hidden /> : null}
                 {busy ? 'Sending — our AI is reading the receipt…' : 'Submit payment'}
               </button>

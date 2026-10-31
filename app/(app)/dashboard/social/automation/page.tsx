@@ -32,6 +32,7 @@ import {
 } from '@/lib/api';
 import { Button, Card } from '@/components/ui';
 import { FORMAT_META, PLATFORM_META, PlatformBadge, Readiness } from '@/components/social/shared';
+import { SkeletonRows, ErrorState } from '@/components/states';
 
 export default function AutomationPage() {
   const { path } = useWorkspace();
@@ -95,7 +96,7 @@ export default function AutomationPage() {
   if (!settings) {
     return (
       <Card>
-        <p style={{ margin: 0, color: colors.muted, fontSize: 14 }}>{error ?? 'Loading…'}</p>
+        {error ? <ErrorState error={error} onRetry={() => window.location.reload()} /> : <SkeletonRows rows={4} />}
       </Card>
     );
   }
@@ -519,7 +520,15 @@ function Library({
           ))}
         </ul>
       ) : (
-        <p style={{ fontSize: 13, margin: '0 0 12px' }}>{items ? 'Nothing here yet.' : 'Loading…'}</p>
+        <div style={{ margin: '0 0 12px' }}>
+          {items ? (
+            <p style={{ fontSize: 13, margin: 0 }}>
+              Nothing uploaded here yet — until you add a file, the team works without it. Upload one below.
+            </p>
+          ) : error ? null : (
+            <SkeletonRows rows={2} h={32} />
+          )}
+        </div>
       )}
       <input
         type="file"

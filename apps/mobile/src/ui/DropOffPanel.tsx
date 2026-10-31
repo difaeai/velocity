@@ -17,7 +17,7 @@
  * and reading a list while pulling over is not.
  */
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 import { callInApp } from '../lib/inAppCall';
 
@@ -28,6 +28,7 @@ import { themed } from '../theme';
 import { distanceMeters, formatDistance } from '../lib/geo';
 import { hasCoords, openNavigation } from '../lib/navigate';
 import type { TripStatus } from '../domain/types';
+import { SkeletonRows } from './states';
 
 /** Close enough to a stop that the driver is deciding about it right now. */
 const ARRIVAL_RADIUS_M = 250;
@@ -183,10 +184,7 @@ export function DropOffPanel({
 
   if (loading) {
     return (
-      <View style={styles.loadingRow}>
-        <ActivityIndicator size="small" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading your stops…</Text>
-      </View>
+      <SkeletonRows rows={2} height={48} />
     );
   }
 
@@ -398,8 +396,6 @@ export function DropOffPanel({
 
 const styles = themed(() => StyleSheet.create({
   wrap: { gap: 8, marginBottom: 10 },
-  loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12 },
-  loadingText: { color: colors.muted, fontSize: 12, fontWeight: '600' },
 
   completeBtn: {
     height: 52,

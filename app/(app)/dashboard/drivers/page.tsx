@@ -7,6 +7,7 @@ import { db } from '@/lib/firebase';
 import { adminApi, type DriverCommissionReport } from '@/lib/api';
 import { colors } from '@/lib/config';
 import { Badge, Button, Card } from '@/components/ui';
+import { SkeletonRows } from '@/components/states';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -893,7 +894,7 @@ function DriverCommissionPanel({ driverId }: { driverId: string }) {
       </button>
 
       {!open ? null : loading && !report ? (
-        <div style={{ color: colors.muted, fontSize: 13, padding: '10px 2px' }}>Loading…</div>
+        <SkeletonRows rows={3} h={40} />
       ) : (
         <div style={panelBox}>
           {error && <div style={{ color: colors.danger, fontSize: 13, fontWeight: 600 }}>{error}</div>}

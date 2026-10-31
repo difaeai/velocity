@@ -54,6 +54,7 @@ import {
   summarise,
   toPkr,
 } from '@/lib/costs';
+import { SkeletonRows } from '@/components/states';
 
 /** One grid, used by the header and every row, so the columns line up. */
 const COLS = 'minmax(260px, 2.4fr) 128px 84px 116px 120px 108px';
@@ -222,7 +223,7 @@ export default function CostsPage() {
     }
   }
 
-  if (loading) return <div style={{ color: colors.muted, padding: 20 }}>Loading…</div>;
+  if (loading) return <div style={{ padding: 20 }}><SkeletonRows rows={6} /></div>;
 
   const byCategory = CATEGORIES.map((category) => ({
     category,
