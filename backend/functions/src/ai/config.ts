@@ -82,7 +82,7 @@ export async function loadAi(force = false): Promise<void> {
       try {
         keys[slot] = open(box);
       } catch (e) {
-        logger.error('ai: a stored key could not be opened', { slot, message: (e as Error).message });
+        logger.error('ai: a stored key could not be opened', { slot, error: (e as Error).message });
       }
     }
     const stored = (pub.data()?.budgets ?? {}) as Partial<AiBudgets>;
@@ -92,7 +92,7 @@ export async function loadAi(force = false): Promise<void> {
       atMs: Date.now(),
     };
   } catch (e) {
-    logger.warn('ai: could not read the key settings; using what this instance had', { message: (e as Error).message });
+    logger.warn('ai: could not read the key settings; using what this instance had', { error: (e as Error).message });
     loaded = { keys: loaded?.keys ?? {}, budgets: loaded?.budgets ?? DEFAULT_BUDGETS, atMs: Date.now() };
   }
 }
@@ -118,7 +118,7 @@ async function warmSpend(wid: string): Promise<void> {
       atMs: Date.now(),
     });
   } catch (e) {
-    logger.warn('ai: could not read this month’s spend', { wid, message: (e as Error).message });
+    logger.warn('ai: could not read this month’s spend', { wid, error: (e as Error).message });
   }
 }
 

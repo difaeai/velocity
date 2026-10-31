@@ -117,7 +117,7 @@ Reply with one JSON object and nothing else:
       note: str(data.note, 200) || 'Search brief written.',
     };
   } catch (e) {
-    logger.warn('social: the SEO pass failed; writing without it', { message: (e as Error).message });
+    logger.warn('social: the SEO pass failed; writing without it', { error: (e as Error).message });
     return null;
   }
 }
@@ -211,7 +211,7 @@ Reply with one JSON object and nothing else:
       note: str(data.note, 200) || 'Search metadata written.',
     };
   } catch (e) {
-    logger.warn('social: the search pass failed', { message: (e as Error).message });
+    logger.warn('social: the search pass failed', { error: (e as Error).message });
     return null;
   }
 }
@@ -296,7 +296,7 @@ Reply with one JSON object and nothing else:
       successLooksLike: str(data.successLooksLike, 300),
     };
   } catch (e) {
-    logger.warn('social: the ads brief failed', { message: (e as Error).message });
+    logger.warn('social: the ads brief failed', { error: (e as Error).message });
     return null;
   }
 }

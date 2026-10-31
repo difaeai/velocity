@@ -274,7 +274,7 @@ export const agentVoiceSession = onRequest({ cors: false, invoker: 'public', tim
     });
     res.json(out);
   } catch (e) {
-    logger.error('agents: could not start the voice session', { callId: body.callId, message: (e as Error).message });
+    logger.error('agents: could not start the voice session', { callId: body.callId, error: (e as Error).message });
     await db
       .doc(pathIn(wid, `${CALLS}/${body.callId}`))
       .update({ error: `Could not start the voice: ${(e as Error).message}`.slice(0, 300) })

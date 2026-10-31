@@ -132,7 +132,7 @@ let jsonMode = true;
 
 interface ChatResponse {
   choices?: { message?: { content?: unknown }; finish_reason?: string }[];
-  error?: { message?: string };
+  error?: { message?: string; code?: string };
 }
 
 /** One call, with the free tier's rate limit survived rather than hit. */
@@ -179,6 +179,19 @@ async function post(body: unknown): Promise<ChatResponse> {
     if (res.status === 400 && jsonMode && isJsonModeRefusal(message)) {
       jsonMode = false;
       logger.info('social: this endpoint has no JSON mode, falling back to reading the object out of the reply');
+      const { response_format: _dropped, ...rest } = body as Record<string, unknown>;
+      body = rest;
+      continue;
+    }
+
+    // It has JSON mode, but this one reply failed its own check (Groq's
+    // json_validate_failed, which failed a story on 2026-10-30). Ask once more
+    // without it for this call only; extractJson reads the object out.
+    if (
+      res.status === 400 &&
+      'response_format' in (body as Record<string, unknown>) &&
+      /failed to generate json|json_validate_failed/i.test(`${message} ${parsed?.error?.code ?? ''}`)
+    ) {
       const { response_format: _dropped, ...rest } = body as Record<string, unknown>;
       body = rest;
       continue;

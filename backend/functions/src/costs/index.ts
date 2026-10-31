@@ -19,6 +19,7 @@ import { logger } from 'firebase-functions';
 
 import { db } from '../lib/firebase';
 import { requireAdmin } from '../lib/guards';
+import { adsAccess } from '../social/ads';
 import {
   anthropicAdminConfig,
   cloudBillingSetting,
@@ -134,7 +135,13 @@ export async function refreshCosts(): Promise<RefreshOutcome> {
     }
   }
 
-  const meta = metaCostConfig();
+  // Ad spend through the Ads page's own connection: the WhatsApp token this fell back to
+  // cannot see the ad account ("(#200) … NOT grant ads_management or ads_read", every night).
+  const ads = await adsAccess();
+  const fromEnv = metaCostConfig();
+  const meta = ads
+    ? { token: fromEnv?.token ?? '', wabaId: fromEnv?.wabaId ?? null, adAccountId: ads.adAccountId, adToken: ads.token }
+    : fromEnv;
   if (meta) {
     try {
       const amounts = await fetchMetaCosts(meta, window);

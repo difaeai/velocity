@@ -149,7 +149,7 @@ export function normaliseFunnel(data: Record<string, unknown>): Omit<FunnelPlan,
     stages,
     adBrief: clip(data.adBrief, 600),
     salesKinds: Array.isArray(data.salesKinds)
-      ? data.salesKinds.map((k) => clip(k, 40)).filter((k) => k.length >= 2).slice(0, 6)
+      ? data.salesKinds.map((k) => clip(k, 80)).filter((k) => k.length >= 2).slice(0, 6)
       : [],
     salesCity: clip(data.salesCity, 80),
     openingLine: clip(data.openingLine, 200),
@@ -235,7 +235,7 @@ async function analyseMarket(knowledge: string, links: string[]): Promise<Market
       what: 'The market analysis',
     });
   } catch (e) {
-    logger.warn('launch: the grounded market read failed; reading without search', { message: (e as Error).message });
+    logger.warn('launch: the grounded market read failed; reading without search', { error: (e as Error).message });
     grounded = false;
     result = await generateJson<Record<string, unknown>>({
       model: settings.textModel,
@@ -276,7 +276,7 @@ async function analyseMarket(knowledge: string, links: string[]): Promise<Market
     }
   } catch (e) {
     // The read stands without its test; the box says the test did not run.
-    logger.warn('launch: the audience test failed', { message: (e as Error).message });
+    logger.warn('launch: the audience test failed', { error: (e as Error).message });
   }
 
   return {
@@ -611,6 +611,6 @@ export const adminLaunchMarket = deskCall('any', { timeoutSeconds: 540, memory: 
   );
   await settle('market', out);
   if (out.status === 'failed') throw new HttpsError('unavailable', out.note);
-  await advanceLaunch().catch((e) => logger.warn('launch: could not carry on', { message: (e as Error).message }));
+  await advanceLaunch().catch((e) => logger.warn('launch: could not carry on', { error: (e as Error).message }));
   return { ok: true };
 });

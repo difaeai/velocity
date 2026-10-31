@@ -639,8 +639,8 @@ export const adminRerunDriverVerification = onCall(
   },
 );
 
-/** Admin-only: read or change the engine's thresholds. */
-export const adminVerificationSettings = onCall(async (req) => {
+/** Admin-only: read or change the engine's thresholds. 1GiB: `engineReady` loads the models, which ran 256MiB out of memory. */
+export const adminVerificationSettings = onCall({ memory: '1GiB' }, async (req) => {
   requireAdmin(req);
   const parsed = z
     .object({

@@ -120,7 +120,7 @@ export async function forEachWorkspace(need: Need, fn: () => Promise<void>): Pro
       // left (none configured, or this month's allowance spent) waits.
       await inWorkspace(wid, async () => (wid === HOUSE || modelReady() ? fn() : undefined));
     } catch (e) {
-      logger.error('studio: a workspace job failed', { wid, message: (e as Error).message });
+      logger.error('studio: a workspace job failed', { wid, error: (e as Error).message });
     }
   }
 }

@@ -122,6 +122,8 @@ export interface MetaCostConfig {
   wabaId: string | null;
   /** Ad account id, with or without the `act_` prefix. */
   adAccountId: string | null;
+  /** Reads the ad account when it is not `token` — the Ads page's own connection. */
+  adToken?: string;
 }
 
 /**

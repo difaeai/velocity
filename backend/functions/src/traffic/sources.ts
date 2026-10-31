@@ -47,6 +47,8 @@ export interface TrafficSource {
 
 /**
  * Probed 2026-10-17: every entry returned HTTP 200 with the item count shown.
+ * ProPakistani was dropped 2026-10-31: it answered 403 to our named agent on
+ * all 260 runs of the week before, and we do not pretend to be a browser.
  * The city-section feeds are worth having separately from the national ones —
  * Tribune's Sindh and Punjab sections carry local road stories that never make
  * the national feed.
@@ -60,7 +62,6 @@ export const TRAFFIC_SOURCES: TrafficSource[] = [
   { id: 'geo', name: 'Geo News', url: 'https://www.geo.tv/rss/1/1' },                            // 20 items
   { id: 'ary', name: 'ARY News', url: 'https://arynews.tv/category/pakistan/feed/' },            // 20 items
   { id: 'thenews', name: 'The News', url: 'https://www.thenews.com.pk/rss/1/1' },                // 50 items
-  { id: 'propakistani', name: 'ProPakistani', url: 'https://propakistani.pk/feed/' },            // 10 items
   { id: 'pakobserver', name: 'Pakistan Observer', url: 'https://pakobserver.net/feed/' },        // 10 items
   { id: 'dailypakistan', name: 'Daily Pakistan', url: 'https://en.dailypakistan.com.pk/rss/' },  // 10 items
   { id: 'dailytimes', name: 'Daily Times', url: 'https://dailytimes.com.pk/feed/' },             // 10 items

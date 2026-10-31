@@ -228,7 +228,7 @@ async function stockClips(scenes: string[], orientation: 'portrait' | 'landscape
       usedBy.add(hit.user_id);
       paths.push(out);
     } catch (e) {
-      logger.warn('social: a stock clip did not arrive', { scene, message: (e as Error).message });
+      logger.warn('social: a stock clip did not arrive', { scene, error: (e as Error).message });
     }
   }
   return paths;
@@ -303,7 +303,7 @@ export async function underlay(params: {
   const dir = await mkdtemp(path.join(tmpdir(), 'velocity-underlay-'));
   const cleanup = () => rm(dir, { recursive: true, force: true }).catch(() => {});
   const soft = <T>(what: string, fallback: T) => (e: unknown) => {
-    logger.warn(`social: could not fetch ${what}`, { message: (e as Error).message });
+    logger.warn(`social: could not fetch ${what}`, { error: (e as Error).message });
     return fallback;
   };
 

@@ -449,7 +449,7 @@ async function instagramRecentPosts(
     } catch (e) {
       // A post older than the insights window, or a metric this media type
       // does not carry, is not a reason to lose the other forty posts.
-      logger.warn('social: no insights for one media', { id: mediaId, names, message: (e as Error).message });
+      logger.warn('social: no insights for one media', { id: mediaId, names, error: (e as Error).message });
       return {};
     }
   };
@@ -458,7 +458,7 @@ async function instagramRecentPosts(
   for (const media of list.data ?? []) {
     const values = await metrics(media.id, 'reach,saved,shares');
     const video =
-      media.media_type === 'VIDEO' ? await metrics(media.id, 'plays') : ({} as Record<string, number>);
+      media.media_type === 'VIDEO' ? await metrics(media.id, 'views') : ({} as Record<string, number>);
 
     posts.push({
       platform: 'instagram',
@@ -472,7 +472,7 @@ async function instagramRecentPosts(
       sends: values.shares ?? 0,
       comments: media.comments_count ?? 0,
       likes: media.like_count ?? 0,
-      plays: video.plays ?? video.views ?? 0,
+      plays: video.views ?? 0,
     });
   }
   return posts;
@@ -857,7 +857,7 @@ async function publishX(c: PlatformCredentials, p: PublishPayload): Promise<{ id
     } catch (e) {
       // A text post that goes out beats a post that didn't because the image
       // endpoint moved. The error is logged, not swallowed silently.
-      logger.warn('social: X would not take the image; posting text only', { message: (e as Error).message });
+      logger.warn('social: X would not take the image; posting text only', { error: (e as Error).message });
     }
   }
 
@@ -936,7 +936,7 @@ async function publishLinkedIn(c: PlatformCredentials, p: PublishPayload): Promi
       assetUrn = await linkedinUploadImage(c, image);
     } catch (e) {
       logger.warn('social: LinkedIn would not take the image; posting text only', {
-        message: (e as Error).message,
+        error: (e as Error).message,
       });
     }
   }

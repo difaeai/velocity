@@ -910,7 +910,7 @@ async function reelArt(params: {
     };
     return { cover, key: pic ? key : null, picture: pic?.path ?? null, source: pic?.source ?? 'no', cleanup };
   } catch (e) {
-    logger.warn('social: the reel cover could not be made', { id: params.id, message: (e as Error).message });
+    logger.warn('social: the reel cover could not be made', { id: params.id, error: (e as Error).message });
     return { cover: params.existing?.cover ?? null, key: params.existing?.coverKey ?? null, picture: null, source: 'no', cleanup };
   }
 }
@@ -1026,7 +1026,7 @@ async function downloadForRender(
   } catch (e) {
     // A slide that will not download is not worth losing the video over: the
     // typography render needs no images at all.
-    logger.warn('social: could not fetch the slides for the render', { message: (e as Error).message });
+    logger.warn('social: could not fetch the slides for the render', { error: (e as Error).message });
     await cleanup();
     return { paths: [], cleanup: async () => {} };
   }
@@ -1292,7 +1292,7 @@ async function runDaily(date: string): Promise<string> {
       await createPost({ date, format, ...(slot ? fromSlot(slot) : {}) });
       made.push(format);
     } catch (e) {
-      logger.error('social: a scheduled piece failed', { date, format, message: (e as Error).message });
+      logger.error('social: a scheduled piece failed', { date, format, error: (e as Error).message });
     }
   };
 
@@ -1337,7 +1337,7 @@ export const socialDailyContent = onSchedule(
 
 /** One workspace's hourly check: is it this desk's hour, and is anyone hired. */
 async function daily(): Promise<void> {
-    await healAccounts().catch((e) => logger.error('social: account re-check failed', { message: (e as Error).message }));
+    await healAccounts().catch((e) => logger.error('social: account re-check failed', { error: (e as Error).message }));
     const settings = await getSocialSettings();
     if (!settings.enabled) return;
 
@@ -1346,7 +1346,7 @@ async function daily(): Promise<void> {
       // Every other hour the desk works ahead on the calendar, one piece at a time.
       if (settings.makeAheadDays > 0) {
         await makeAhead(settings).catch((e) =>
-          logger.error('social: making ahead failed', { message: (e as Error).message }),
+          logger.error('social: making ahead failed', { error: (e as Error).message }),
         );
       }
       return;
@@ -1453,7 +1453,7 @@ async function makeAhead(settings: SocialSettings): Promise<void> {
       if ((await postRef(postIdFor(date, piece.format)).get()).exists) continue;
       if (made >= BATCH_PER_TICK || Date.now() - started > BATCH_TICK_MS || !batchAllows()) return;
       await createPost({ date, format: piece.format, ...(piece.slot ? fromSlot(piece.slot) : {}) }).catch((e) =>
-        logger.error('social: a piece in the batch failed', { date, format: piece.format, message: (e as Error).message }),
+        logger.error('social: a piece in the batch failed', { date, format: piece.format, error: (e as Error).message }),
       );
       made++;
     }
@@ -1669,7 +1669,7 @@ async function readReference(
   try {
     return await watchReference({ settings, date, youtube, file });
   } catch (e) {
-    logger.error('social: could not watch the reference', { message: (e as Error).message });
+    logger.error('social: could not watch the reference', { error: (e as Error).message });
     throw new HttpsError('failed-precondition', `The team could not watch that video: ${(e as Error).message}`);
   }
 }

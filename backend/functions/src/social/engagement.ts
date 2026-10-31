@@ -216,7 +216,7 @@ export async function draftReplies(
         });
         replies = Array.isArray(data.replies) ? (data.replies as typeof replies) : [];
       } catch (e) {
-        logger.error('social: could not draft comment replies', { message: (e as Error).message });
+        logger.error('social: could not draft comment replies', { error: (e as Error).message });
         continue;
       }
     }
@@ -338,7 +338,7 @@ export const socialEngagement = onSchedule(
         const summary = await runEngagement();
         logger.info('social: engagement pass finished', { summary });
       } catch (e) {
-        logger.error('social: engagement pass failed', { message: (e as Error).message });
+        logger.error('social: engagement pass failed', { error: (e as Error).message });
       }
     }),
 );

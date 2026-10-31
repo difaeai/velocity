@@ -6,7 +6,7 @@
  * machine-readable answer to that. No traffic police force in the country
  * publishes a feed, there is no national incidents API, and the commercial ones
  * could not be confirmed to carry Pakistani incidents at all. What does exist
- * is the newsroom: Dawn, Tribune, Geo, ARY, The News, ProPakistani and Pakistan
+ * is the newsroom: Dawn, Tribune, Geo, ARY, The News and Pakistan
  * Observer all serve working RSS, and between them they report a closure within
  * the hour it happens.
  *

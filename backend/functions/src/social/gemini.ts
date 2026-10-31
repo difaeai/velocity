@@ -355,7 +355,7 @@ export async function geminiSpeech(text: string, style: string, voice = 'Puck'):
       last = new GeminiError('Gemini returned no audio.');
     } catch (e) {
       last = e;
-      logger.warn('social: a voice model refused, trying the next', { model, message: (e as Error).message });
+      logger.warn('social: a voice model refused, trying the next', { model, error: (e as Error).message });
     }
   }
   throw last instanceof Error ? last : new GeminiError('Gemini returned no audio.');

@@ -302,7 +302,7 @@ async function reviseIfNeeded(args: {
   } catch (e) {
     // A failed rewrite is not a failed run: the first draft is readable, and
     // its scorecard tells the admin exactly what the checks did not like.
-    logger.warn('social: the rewrite failed; keeping the first draft', { message: (e as Error).message });
+    logger.warn('social: the rewrite failed; keeping the first draft', { error: (e as Error).message });
     return draft;
   }
 }

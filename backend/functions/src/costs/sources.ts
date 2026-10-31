@@ -340,7 +340,7 @@ export async function fetchMetaCosts(
       const res = await fetch(
         `${GRAPH}/${cfg.adAccountId}/insights?fields=spend,account_currency` +
           `&time_range=${encodeURIComponent(timeRange)}` +
-          `&access_token=${encodeURIComponent(cfg.token)}`,
+          `&access_token=${encodeURIComponent(cfg.adToken ?? cfg.token)}`,
         { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
       );
       const body = (await res.json()) as {

@@ -173,7 +173,7 @@ export async function checkStudioPayment(paymentId: string): Promise<void> {
     const analysis: PaymentAnalysis = { ...result, imageSha, atMs: Date.now() };
     await ref.update({ analysis, imageSha });
   } catch (e) {
-    logger.error('studio: the payment check failed', { paymentId, message: (e as Error).message });
+    logger.error('studio: the payment check failed', { paymentId, error: (e as Error).message });
     await ref
       .update({
         analysis: {

@@ -481,7 +481,7 @@ class PayFastProvider implements PaymentProvider {
       // only success signal, so treat its absence as a decline.
       const data = (await res.json()) as { ACCESS_TOKEN?: string; Message?: string };
       if (!data.ACCESS_TOKEN) {
-        logger.error('PayFast token declined', { basketId, message: data.Message ?? null });
+        logger.error('PayFast token declined', { basketId, error: data.Message ?? null });
         return null;
       }
       return data.ACCESS_TOKEN;

@@ -79,7 +79,7 @@ export async function pictureFor(params: {
       await writeFile(params.out, bytes);
       return { path: params.out, source: 'drawn' };
     } catch (e) {
-      logger.warn('social: the picture could not be drawn; trying stock', { message: (e as Error).message });
+      logger.warn('social: the picture could not be drawn; trying stock', { error: (e as Error).message });
     }
   }
   try {
@@ -91,7 +91,7 @@ export async function pictureFor(params: {
     });
     return path ? { path, source: 'stock' } : null;
   } catch (e) {
-    logger.warn('social: no stock photo either; the card gets the gradient', { message: (e as Error).message });
+    logger.warn('social: no stock photo either; the card gets the gradient', { error: (e as Error).message });
     return null;
   }
 }

@@ -11,7 +11,7 @@
  * WHY THE WHOLE COLLECTION IS READ
  * --------------------------------
  * Because it is tiny. The classifier keeps on the order of one item in a
- * hundred, which on fourteen feeds is a handful of live alerts at any moment,
+ * hundred, which on thirteen feeds is a handful of live alerts at any moment,
  * and
  * expired ones are deleted by the run rather than accumulating. One range query
  * on `expiresAt` returns all of them, needs no composite index — and therefore

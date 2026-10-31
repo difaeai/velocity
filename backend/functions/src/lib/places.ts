@@ -125,7 +125,7 @@ async function callPlaces(
         url,
         httpStatus: res.status,
         status: data?.error?.status,
-        message: data?.error?.message,
+        error: data?.error?.message,
       });
       return null;
     }
@@ -263,7 +263,7 @@ async function geocodeFromGoogle(
       if (data.status !== 'ZERO_RESULTS') {
         logger.error('Geocoding API rejected the request', {
           status: data.status,
-          message: data.error_message,
+          error: data.error_message,
         });
       }
       return null;

@@ -1,7 +1,7 @@
 /**
  * Road alerts — what the rest of the backend sees.
  *
- * The pipeline is: `sources.ts` fetches fourteen Pakistani news feeds — two of
+ * The pipeline is: `sources.ts` fetches thirteen Pakistani news feeds — two of
  * them Islamabad-specific, one of which carries Islamabad Traffic Police
  * advisories verbatim — `classify.ts` refuses roughly 99% of what they carry,
  * `gazetteer.ts` turns the surviving road names into our own coordinates,

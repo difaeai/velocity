@@ -191,7 +191,7 @@ export async function readOwnPage(settings: SocialSettings, opts: { interpret?: 
       if (!credentials) continue;
       posts.push(...(await ADAPTERS[platform].recentPosts!(credentials, SAMPLE)));
     } catch (e) {
-      logger.warn('social: could not read our own numbers', { platform, message: (e as Error).message });
+      logger.warn('social: could not read our own numbers', { platform, error: (e as Error).message });
     }
   }
 
@@ -278,7 +278,7 @@ export async function readOwnPage(settings: SocialSettings, opts: { interpret?: 
     read.useMore = list(data.useMore, 4);
     read.useLess = list(data.useLess, 3);
   } catch (e) {
-    logger.warn('social: could not interpret our own numbers', { message: (e as Error).message });
+    logger.warn('social: could not interpret our own numbers', { error: (e as Error).message });
   }
 
   return read;
