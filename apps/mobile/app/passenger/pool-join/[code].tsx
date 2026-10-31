@@ -17,7 +17,7 @@
  * or does not join.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from '../../../src/ui/Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -29,6 +29,7 @@ import { themed } from '../../../src/theme';
 import { RIDE_TYPE_LABELS, type RideType } from '../../../src/domain/types';
 import { poolGenderSummary } from '../../../src/lib/genderAccess';
 import { coRiderStandingLabel } from '../../../src/lib/coRider';
+import { SkeletonDetail } from '../../../src/ui/states';
 
 export default function PoolJoinScreen() {
   const params = useLocalSearchParams<{ code: string; bookedFor?: string }>();
@@ -160,7 +161,7 @@ export default function PoolJoinScreen() {
         </View>
       ) : !info ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <SkeletonDetail />
           <Text style={styles.errorSub}>Opening invite…</Text>
         </View>
       ) : (

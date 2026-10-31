@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -21,6 +20,7 @@ import {
   VEHICLE_TYPE_LABELS,
   BOOKING_STATUS_META,
 } from '../../src/domain/intercityTypes';
+import { SkeletonRows } from '../../src/ui/states';
 
 function formatDate(ms: number) {
   return new Date(ms).toLocaleString('en-PK', {
@@ -66,7 +66,7 @@ export default function IntercityActivityScreen() {
       </View>
 
       {loading ? (
-        <View style={styles.center}><ActivityIndicator color={colors.primary} size="large" /></View>
+        <View style={styles.center}><SkeletonRows /></View>
       ) : bookings.length === 0 ? (
         <View style={styles.empty}>
           <Text style={styles.emptyIcon}>🚌</Text>

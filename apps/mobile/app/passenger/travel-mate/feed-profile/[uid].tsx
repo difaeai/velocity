@@ -51,6 +51,7 @@ import { areaSummary } from '../../../../src/lib/areaLabel';
 import { colors } from '../../../../src/config';
 import { themed } from '../../../../src/theme';
 import { PostCard } from '../feed';
+import { SkeletonDetail } from '../../../../src/ui/states';
 
 
 interface TravelPoint { lat: number; lng: number; label: string }
@@ -446,7 +447,7 @@ export default function FeedProfile() {
     return (
       <SafeAreaView style={s.safe}>
         {TopBar}
-        <View style={s.centerBox}><ActivityIndicator size="large" color={colors.primary} /></View>
+        <View style={s.centerBox}><SkeletonDetail /></View>
       </SafeAreaView>
     );
   }

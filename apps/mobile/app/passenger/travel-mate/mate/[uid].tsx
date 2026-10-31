@@ -14,7 +14,6 @@
  */
 import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   Image,
   Pressable,
   ScrollView,
@@ -32,6 +31,7 @@ import { areaLabel } from '../../../../src/lib/areaLabel';
 import { colors } from '../../../../src/config';
 import { themed } from '../../../../src/theme';
 import { PrimaryButton } from '../../../../src/ui/components';
+import { SkeletonDetail } from '../../../../src/ui/states';
 
 interface TravelPoint { lat: number; lng: number; label: string }
 
@@ -99,7 +99,7 @@ export default function TravelMateVisitorProfile() {
       </View>
 
       {loading && (
-        <View style={s.center}><ActivityIndicator size="large" color={colors.primary} /></View>
+        <View style={s.center}><SkeletonDetail /></View>
       )}
 
       {!loading && (notFound || !profile) && (

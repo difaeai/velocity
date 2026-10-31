@@ -30,6 +30,8 @@ import { api, type SupportCategory } from '../../src/api/client';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
 import { PrimaryButton } from '../../src/ui/components';
+import { useDraft } from '../../src/lib/draft';
+import { FieldError } from '../../src/ui/states';
 
 /** Mirrors CATEGORY_LABELS in the backend's support/types.ts. */
 const CATEGORIES: { key: SupportCategory; label: string; icon: string; hint: string }[] = [
@@ -67,9 +69,11 @@ export default function NewSupportTicket() {
   }, [params.category]);
 
   const [category, setCategory] = useState<SupportCategory | null>(initial);
-  const [subject, setSubject] = useState('');
-  const [message, setMessage] = useState('');
+  // Kept on the phone until sent: a complaint typed out is not lost to a crash or a sign-in that ended.
+  const [subject, setSubject, clearSubject] = useDraft('support.subject');
+  const [message, setMessage, clearMessage] = useDraft('support.message');
   const [busy, setBusy] = useState(false);
+  const [problems, setProblems] = useState<{ subject?: string; message?: string }>({});
 
   const tripId = typeof params.tripId === 'string' ? params.tripId : undefined;
   const humanOnly = !!category && HUMAN_ONLY.has(category);
@@ -78,14 +82,12 @@ export default function NewSupportTicket() {
     if (!category || busy) return;
     const trimmedSubject = subject.trim();
     const trimmedMessage = message.trim();
-    if (trimmedSubject.length < 3) {
-      Alert.alert('Add a short title', 'One line is enough — e.g. "Driver took a wrong route".');
-      return;
-    }
-    if (trimmedMessage.length < 3) {
-      Alert.alert('Tell us what happened', 'Even a sentence or two helps us act faster.');
-      return;
-    }
+    const found = {
+      subject: trimmedSubject.length < 3 ? 'Add a short title — one line is enough, e.g. "Driver took a wrong route".' : undefined,
+      message: trimmedMessage.length < 3 ? 'Tell us what happened — even a sentence or two helps us act faster.' : undefined,
+    };
+    setProblems(found);
+    if (found.subject || found.message) return;
     setBusy(true);
     try {
       const res = await api.openSupportTicket({
@@ -94,6 +96,8 @@ export default function NewSupportTicket() {
         message: trimmedMessage,
         tripId,
       });
+      clearSubject();
+      clearMessage();
       // Straight into the thread — the first reply is already waiting there.
       router.replace(`/support/${res.ticketId}`);
     } catch (e) {
@@ -183,6 +187,7 @@ export default function NewSupportTicket() {
             onChangeText={setSubject}
             maxLength={120}
           />
+          <FieldError message={problems.subject} />
 
           <Text style={styles.label}>What happened?</Text>
           <TextInput
@@ -194,6 +199,7 @@ export default function NewSupportTicket() {
             multiline
             maxLength={2000}
           />
+          <FieldError message={problems.message} />
           <Text style={styles.counter}>{message.length}/2000</Text>
 
           <View style={{ height: 8 }} />

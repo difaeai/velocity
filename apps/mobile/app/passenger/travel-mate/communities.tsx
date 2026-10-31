@@ -7,7 +7,6 @@
  */
 import { useCallback, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Modal,
   Pressable,
@@ -29,6 +28,7 @@ import { PAKISTAN_CITIES } from '../../../src/domain/intercityTypes';
 import { useCachedResource } from '../../../src/lib/cachedResource';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
+import { SkeletonRows } from '../../../src/ui/states';
 
 
 export default function TravelMateCommunities() {
@@ -147,7 +147,7 @@ export default function TravelMateCommunities() {
       </View>
 
       {loading ? (
-        <View style={s.centerBox}><ActivityIndicator size="large" color={colors.primary} /></View>
+        <View style={s.centerBox}><SkeletonRows /></View>
       ) : error ? (
         // A failed read with nothing cached used to be an Alert over an empty
         // list, which left the screen claiming there are no groups. Say what

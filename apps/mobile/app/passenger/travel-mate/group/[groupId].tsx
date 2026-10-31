@@ -41,6 +41,7 @@ import { api } from '../../../../src/api/client';
 import { colors } from '../../../../src/config';
 import { themed } from '../../../../src/theme';
 import { Card } from '../../../../src/ui/components';
+import { SkeletonRows } from '../../../../src/ui/states';
 
 interface Group {
   name: string;
@@ -187,7 +188,7 @@ export default function TravelMateGroup() {
           <View style={{ width: 36 }} />
         </View>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ color: colors.muted }}>Loading…</Text>
+          <SkeletonRows />
         </View>
       </SafeAreaView>
     );

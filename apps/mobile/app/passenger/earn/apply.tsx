@@ -60,6 +60,8 @@ import { uploadCnicDoc, uploadPartnerPaymentProof } from '../../../src/lib/uploa
 import { PrimaryButton } from '../../../src/ui/components';
 import { pickPhoto } from '../../../src/ui/onboarding';
 import { formatPKR, Skeleton } from '../../../src/ui/partner';
+import { NoResults } from '../../../src/ui/states';
+import { didYouMean } from '../../../src/lib/didYouMean';
 
 const CNIC_RE = /^\d{5}-\d{7}-\d$/;
 
@@ -719,7 +721,12 @@ function CityPicker({
               </Pressable>
             )}
             ListEmptyComponent={
-              <Text style={s.cityEmpty}>No match — choose Other below and type it.</Text>
+              <NoResults
+                query={search.trim()}
+                suggestion={didYouMean(search, PK_CITIES)}
+                onSuggestion={setSearch}
+                next="Not in the list? Choose “Other” below and type your city."
+              />
             }
           />
 
@@ -1002,7 +1009,6 @@ const s = themed(() => StyleSheet.create({
     borderBottomColor: colors.border,
   },
   cityRowText: { color: colors.text, fontSize: 15, fontWeight: '600' },
-  cityEmpty: { color: colors.muted, fontSize: 13, paddingVertical: 16, textAlign: 'center' },
   cityOther: {
     marginTop: 10,
     backgroundColor: colors.surface,

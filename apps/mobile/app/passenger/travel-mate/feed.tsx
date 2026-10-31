@@ -58,6 +58,7 @@ import { readCachedValue, writeCachedValue } from '../../../src/lib/cachedResour
 import { InboxModeBar } from '../../../src/ui/InboxModeBar';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
+import { SkeletonRows } from '../../../src/ui/states';
 
 const PAGE_SIZE = 25;
 const FEED_CACHE_KEY = 'travelMateFeedPage1';
@@ -535,7 +536,7 @@ export default function TravelMateFeed() {
       </View>
 
       {loading ? (
-        <View style={s.centerBox}><ActivityIndicator size="large" color={colors.primary} /></View>
+        <View style={s.centerBox}><SkeletonRows /></View>
       ) : (
         <FlatList
           data={visiblePosts}

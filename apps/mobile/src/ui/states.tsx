@@ -68,10 +68,23 @@ export function Skeleton({
 /** A list that has not arrived yet: rows shaped like the rows that will. */
 export function SkeletonRows({ rows = 4, height = 64 }: { rows?: number; height?: number }) {
   return (
-    <View accessible accessibilityLabel="Loading" style={{ gap: 12 }}>
+    <View accessible accessibilityLabel="Loading" style={s.skeletonWrap}>
       {Array.from({ length: rows }, (_, i) => (
         <Skeleton key={i} height={height} radius={14} />
       ))}
+    </View>
+  );
+}
+
+/** One thing that has not arrived yet — a trip, a profile, a post: its picture, its lines, its card. */
+export function SkeletonDetail() {
+  return (
+    <View accessible accessibilityLabel="Loading" style={s.skeletonWrap}>
+      <Skeleton height={160} radius={18} />
+      <Skeleton height={22} width="60%" />
+      <Skeleton height={14} width="85%" />
+      <Skeleton height={14} width="70%" />
+      <Skeleton height={96} radius={16} />
     </View>
   );
 }
@@ -253,6 +266,8 @@ export function NetworkNotice() {
 const s = themed(() =>
   StyleSheet.create({
     skeleton: { backgroundColor: colors.glassStrong },
+    // Stretched, because most loading spots are centring containers built for a spinner.
+    skeletonWrap: { gap: 12, alignSelf: 'stretch', width: '100%', padding: 16 },
     box: {
       alignItems: 'center',
       paddingVertical: 28,

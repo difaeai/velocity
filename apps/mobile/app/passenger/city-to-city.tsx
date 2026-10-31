@@ -32,6 +32,9 @@ import {
   VEHICLE_TYPE_LABELS,
   VEHICLE_TYPE_ICONS,
 } from '../../src/domain/intercityTypes';
+import { SkeletonRows } from '../../src/ui/states';
+import { NoResults } from '../../src/ui/states';
+import { didYouMean } from '../../src/lib/didYouMean';
 
 // Days available for selection
 function buildDays() {
@@ -171,7 +174,12 @@ function CityPickerModal({
           keyboardShouldPersistTaps="handled"
           ListEmptyComponent={
             <View style={modal.emptyBox}>
-              <Text style={modal.emptyText}>No cities match "{search}"</Text>
+              <NoResults
+                query={search.trim()}
+                suggestion={didYouMean(search, PAKISTAN_CITIES.filter((c) => c.id !== exclude).map((c) => c.name))}
+                onSuggestion={setSearch}
+                next="Try the nearest big city, or search by province — Punjab, Sindh, KPK."
+              />
             </View>
           }
         />
@@ -422,7 +430,7 @@ export default function CityToCityScreen() {
         <View style={styles.dragIndicator} />
 
         {loadingTrips ? (
-          <View style={styles.sheetCenter}><ActivityIndicator color={colors.primary} size="large" /></View>
+          <View style={styles.sheetCenter}><SkeletonRows /></View>
         ) : trips.length === 0 ? (
           <View style={styles.emptyBox}>
             <Text style={styles.emptyIcon}>🚌</Text>
@@ -631,5 +639,4 @@ const modal = themed(() => StyleSheet.create({
   cityName: { fontSize: 15, fontWeight: '700', color: colors.text },
   cityProvince: { fontSize: 12, color: colors.muted },
   emptyBox: { alignItems: 'center', padding: 32 },
-  emptyText: { fontSize: 14, color: colors.muted },
 }));

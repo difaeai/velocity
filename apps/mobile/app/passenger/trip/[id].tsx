@@ -46,6 +46,7 @@ import { dashcamWatchable } from '../../../src/domain/dashcam';
 import { distanceMeters, formatDistance } from '../../../src/lib/geo';
 import { callInApp, useWarmRideLine } from '../../../src/lib/inAppCall';
 import { useUnreadChat } from '../../../src/hooks/useUnreadChat';
+import { SkeletonDetail } from '../../../src/ui/states';
 
 /**
  * How long a pool stays visible to riders going the same way while it looks for
@@ -439,7 +440,7 @@ export default function TripScreen() {
   if (loading || !trip) {
     return (
       <SafeAreaView style={[styles.safe, styles.center]}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <SkeletonDetail />
       </SafeAreaView>
     );
   }

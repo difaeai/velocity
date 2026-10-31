@@ -21,6 +21,7 @@ import { colors } from '../config';
 import { timeAgo } from '../lib/timeAgo';
 import { themed } from '../theme';
 import { Text } from './Text';
+import { SkeletonRows } from './states';
 
 const pct = (part: number, whole: number) =>
   whole > 0 ? Math.min(100, Math.round((part / whole) * 100)) : 0;
@@ -185,7 +186,7 @@ export function QueriesSection({
   if (loading) {
     return (
       <View style={s.card}>
-        <Text style={s.muted}>Loading questions…</Text>
+        <SkeletonRows rows={3} height={44} />
       </View>
     );
   }

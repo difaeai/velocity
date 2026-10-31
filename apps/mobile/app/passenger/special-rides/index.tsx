@@ -4,7 +4,6 @@ import {
   ScrollView,
   StyleSheet,
   Pressable,
-  ActivityIndicator,
   Alert,
 } from 'react-native';
 import { Text } from '../../../src/ui/Text';
@@ -15,6 +14,7 @@ import { useAuth } from '../../../src/auth/AuthContext';
 import { api } from '../../../src/api/client';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
+import { SkeletonRows } from '../../../src/ui/states';
 
 export default function SpecialRidesScreen() {
   const { user } = useAuth();
@@ -153,7 +153,7 @@ export default function SpecialRidesScreen() {
           </Pressable>
 
           <Text style={styles.sectionLabel}>Browse All Rentals</Text>
-          {loading && <ActivityIndicator color={colors.primary} size="large" />}
+          {loading && <SkeletonRows />}
           {!loading && listings.length === 0 && (
             <View style={styles.empty}>
               <Text style={styles.emptyText}>No cars available yet</Text>
@@ -216,7 +216,7 @@ export default function SpecialRidesScreen() {
         </Pressable>
 
         <Text style={styles.sectionLabel}>Available Rentals</Text>
-        {loading && <ActivityIndicator color={colors.primary} size="large" />}
+        {loading && <SkeletonRows />}
         {!loading && listings.length === 0 && (
           <View style={styles.empty}>
             <Text style={styles.emptyText}>No cars available yet</Text>

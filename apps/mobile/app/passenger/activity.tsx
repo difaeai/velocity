@@ -1,4 +1,4 @@
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from '../../src/ui/Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -8,6 +8,7 @@ import { usePassengerTrips } from '../../src/hooks/passenger';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
 import { RIDE_TYPE_LABELS, type TripStatus } from '../../src/domain/types';
+import { SkeletonRows } from '../../src/ui/states';
 
 const STATUS_META: Record<TripStatus, { label: string; color: string }> = {
   requested: { label: 'Finding driver', color: '#ccff00' },
@@ -45,7 +46,7 @@ export default function Activity() {
 
       {loading ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <SkeletonRows />
         </View>
       ) : trips.length === 0 ? (
         <View style={styles.center}>

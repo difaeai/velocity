@@ -14,6 +14,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { api } from '../../../src/api/client';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
+import { SkeletonDetail } from '../../../src/ui/states';
 
 export default function SpecialRidesDetailsScreen() {
   const router = useRouter();
@@ -92,7 +93,7 @@ export default function SpecialRidesDetailsScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator color={colors.primary} size="large" />
+          <SkeletonDetail />
         </View>
       </SafeAreaView>
     );

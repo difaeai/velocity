@@ -14,7 +14,7 @@
  * Tuesday go" is the question behind almost every look at this screen.
  */
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from '../../src/ui/Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -25,6 +25,7 @@ import { themed } from '../../src/theme';
 import { useDriverTrips, useRideHistoryDays, type RideHistoryDay } from '../../src/hooks/driverHistory';
 import { RIDE_TYPE_LABELS, type Trip, type TripStatus } from '../../src/domain/types';
 import { dashcamWatchable } from '../../src/domain/dashcam';
+import { SkeletonRows } from '../../src/ui/states';
 
 type Period = 'today' | 'week' | 'month' | 'all';
 
@@ -141,7 +142,7 @@ export default function DriverRideHistory() {
 
       {loading ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <SkeletonRows />
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.content}>

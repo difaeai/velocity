@@ -23,6 +23,7 @@ import { useAuth } from '../../../src/auth/AuthContext';
 import { useCurrentLocation } from '../../../src/hooks/location';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
+import { SkeletonDetail } from '../../../src/ui/states';
 
 const INTERESTS = [
   'Music', 'Movies', 'Sports', 'Gaming', 'Reading', 'Travel',
@@ -202,7 +203,7 @@ export default function TravelMateSetup() {
   if (prefilling) {
     return (
       <SafeAreaView style={s.safe}>
-        <View style={s.center}><Text style={s.muted}>Loading…</Text></View>
+        <View style={s.center}><SkeletonDetail /></View>
       </SafeAreaView>
     );
   }

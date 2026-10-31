@@ -26,6 +26,7 @@ import { api, type DashcamClipView } from '../../src/api/client';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
 import { useForegroundInterval } from '../../src/hooks/useForegroundInterval';
+import { SkeletonDetail } from '../../src/ui/states';
 
 type Clips = Awaited<ReturnType<typeof api.getDashcamClips>>;
 
@@ -162,7 +163,7 @@ export default function DashcamViewer() {
 
       {!data && !error ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <SkeletonDetail />
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.content}>
