@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import { leadId } from '../index';
 import { fromOsm, osmQuery } from '../find';
-import { assertPublicUrl, contactLink, privateAddress, readSite } from '../site';
+import { assertPublicUrl, contactLink, namesCity, privateAddress, readSite } from '../site';
 import { callScriptFallback, emailProblems, withFooter } from '../write';
 
 describe('callScriptFallback — the call script with no model', () => {
@@ -84,6 +84,11 @@ describe('readSite', () => {
     );
     expect(wp.title).toBe('The 1 Properties & Services Islamabad – Your Number 1');
     expect(wp.emails).toEqual(['info@time2rent.net']);
+  });
+
+  it('knows whether a page names the city, in any case, and never from a script', () => {
+    expect(namesCity('<footer>Plot 4, F-11 Markaz, ISLAMABAD</footer>', 'Islamabad')).toBe(true);
+    expect(namesCity('<p>Development partners in London</p><script>var c="Islamabad"</script>', 'Islamabad')).toBe(false);
   });
 
   it('takes the WhatsApp number when a shop gives no other', () => {

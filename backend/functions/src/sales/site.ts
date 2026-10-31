@@ -172,27 +172,35 @@ export function contactLink(html: string, pageUrl: string): string | null {
   return null;
 }
 
+/** True when a page's own words name the city — the address in the footer or on the contact page. Pure. */
+export function namesCity(html: string, city: string): boolean {
+  return textOf(html).toLowerCase().includes(city.trim().toLowerCase());
+}
+
 /**
  * A business as its own site describes it: the home page, then — only when the
- * home page gives no address or no number — its contact page, where most small
- * businesses put them. Two extra pages at most, each through fetchPage's guard.
+ * home page gives no address or no number, or never names `city` — its contact
+ * page, where most small businesses put them. Two extra pages at most, each
+ * through fetchPage's guard.
  */
-export async function readBusiness(website: string): Promise<{ url: string; site: SiteRead }> {
+export async function readBusiness(website: string, city?: string): Promise<{ url: string; site: SiteRead; inCity: boolean }> {
   const home = await fetchPage(website);
   const site = readSite(home.html, home.url);
+  let inCity = !city || namesCity(home.html, city);
   const tries = [contactLink(home.html, home.url), new URL('/contact', home.url).href].filter(
     (u, i, all): u is string => Boolean(u) && u !== home.url && all.indexOf(u) === i,
   );
   for (const next of tries) {
-    if (site.emails.length && site.phones.length) break;
+    if (site.emails.length && site.phones.length && inCity) break;
     try {
       const page = await fetchPage(next);
       const more = readSite(page.html, page.url);
       site.emails = [...new Set([...site.emails, ...more.emails])].slice(0, 5);
       site.phones = [...new Set([...site.phones, ...more.phones])].slice(0, 3);
+      inCity ||= namesCity(page.html, city!);
     } catch {
       /* no contact page is normal */
     }
   }
-  return { url: home.url, site };
+  return { url: home.url, site, inCity };
 }
