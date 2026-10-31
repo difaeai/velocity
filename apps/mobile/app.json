@@ -3,7 +3,13 @@
     "name": "Velocity Rides",
     "slug": "velocity",
     "scheme": "velocity",
-    "version": "1.23.0",
+    "version": "1.23.1",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/f4fed526-6bfd-491d-b6c4-047d857995fc"
+    },
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
