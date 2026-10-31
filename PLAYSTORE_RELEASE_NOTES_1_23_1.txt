@@ -1,0 +1,55 @@
+VELOCITY RIDES 1.23.1  ·  Android versionCode = next EAS number  ·  iOS build = next EAS number
+=================================================================
+(Build numbers are EAS's remote auto-increment; the build list is the truth.)
+
+WHY 1.23.1. iOS 1.23.0 (build 26) is READY_FOR_SALE, read from the App Store
+Connect API on 31 Oct before choosing — an approved version string closes its
+train, so nothing more can go up as 1.23.0.
+
+WHAT IT CARRIES. The screen states (PR #155): every error says what went wrong,
+whose fault it is and how to fix it; offline and slow-network notices; permission
+explanations with Open Settings; skeletons instead of spinners on 32 screens; typo
+fixes in the city pickers; inline errors and a kept draft on the support form.
+No native module was added.
+
+OVER-THE-AIR UPDATES START WITH THIS BUILD. app.json now carries
+runtimeVersion { policy: appVersion } and the EAS Update URL; eas.json's
+production profile builds on channel "production". From 1.23.1 on, a JS-only
+change ships with `eas update --channel production` from apps/mobile — no store
+review. Anything that adds or changes NATIVE code still needs a version bump and
+a store build (the runtime is the app version, so a 1.24.0 build never receives an
+update made for 1.23.1).
+
+VERSION STATE — check the stores, not this file.
+  iOS      Live: 1.23.0 build 26. This release needs a NEW 1.23.1 version
+           record with the What's New below and the new build attached.
+  Android  Play's state cannot be read from this machine (no Play API key).
+           The new AAB supersedes vc51; roll it into EVERY track holding an
+           older bundle.
+
+AFTER THE ROLLOUT: publish admin → App version INCLUDING the build number,
+or the in-app update prompt tells nobody. iOS only once Apple has RELEASED it.
+
+
+PLAY CONSOLE "WHAT'S NEW" (copy the block below, max 500 chars)
+---------------------------------------------------------------
+A calmer, clearer Velocity.
+
+• Screens show the shape of what's loading instead of a spinner
+• Offline? The app says so and keeps what's on screen
+• Slow connection? You see the real progress
+• Errors say what happened and how to fix it
+• Asking for camera, location or mic now explains why, with a link to Settings
+• City search fixes typos for you
+• Support: mistakes are flagged at the field, and your message is saved until it's sent
+
+
+APP STORE "WHAT'S NEW" (set on a NEW 1.23.1 version record)
+-----------------------------------------------------------
+A calmer, clearer Velocity.
+
+Screens now show the shape of what's loading instead of a spinner. If you lose your connection, the app tells you, keeps what's on screen and says what still works; on a slow connection you see the real progress.
+
+When something goes wrong, the message says what happened, whose side it was on and how to fix it. When the app needs your camera, location or microphone, it explains why and takes you to Settings.
+
+City search fixes typos for you, and the support form points to the exact field that needs fixing — and keeps your message until it's sent.
