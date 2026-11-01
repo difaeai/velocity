@@ -2564,6 +2564,35 @@ export interface AdPretest {
   panel?: AudiencePersona[];
 }
 
+/** One cut of a campaign's week — a placement, an age and gender, a region. Mirrors backend `Slice` (adsCost.ts). */
+export interface AdSlice {
+  key: string;
+  label: string;
+  spend: number;
+  impressions: number;
+  results: number;
+  share: number;
+  cpm: number;
+  costPerResult: number;
+}
+
+export type AdRanking = 'ABOVE_AVERAGE' | 'AVERAGE' | 'BELOW_AVERAGE_35' | 'BELOW_AVERAGE_20' | 'BELOW_AVERAGE_10';
+
+/** Why a campaign's views cost what they do this week, and where its money buys least. Mirrors backend `CostRead`. */
+export interface AdCostRead {
+  atMs: number;
+  cpm: number;
+  level: 'high' | 'normal' | 'low' | 'unknown';
+  reasons: string[];
+  placements: AdSlice[];
+  people: AdSlice[];
+  regions: AdSlice[];
+  quality: AdRanking | null;
+  engagement: AdRanking | null;
+  conversion: AdRanking | null;
+  waste: { platform: string; label: string; weekSpend: number; timesDearer: number | null; saveWeek: number } | null;
+}
+
 /** socialAds/{campaignId} — one campaign, as the desk last read and judged it. */
 export interface AdCampaignDoc {
   id: string;
@@ -2591,6 +2620,10 @@ export interface AdCampaignDoc {
   budgetNote?: string | null;
   /** The simulated audience it met before Meta (backend `pretestAd`). */
   pretest?: AdPretest | null;
+  /** Why its views cost what they do this week (absent before 2026-11-01, or under 1,000 views). */
+  cost?: AdCostRead | null;
+  /** When the expert last stopped a platform for it. */
+  trimmedAtMs?: number | null;
   engine?: string;
   plannedBy?: string;
   /** Fresh creatives the expert has made for it, and when it last did. */
@@ -2646,7 +2679,7 @@ export const adsApi = {
   >('adminDesignAd', 3 * 60_000),
   // Ten minutes: "apply" on a worn-out campaign draws its fresh creative.
   action: callable<
-    { campaignId: string; action: 'launch' | 'pause' | 'resume' | 'budget' | 'apply' | 'end'; dailyBudget?: number },
+    { campaignId: string; action: 'launch' | 'pause' | 'resume' | 'budget' | 'apply' | 'end' | 'trim'; dailyBudget?: number },
     { ok: boolean; message: string }
   >('adminAdAction', 10 * 60_000),
   sync: callable<Record<string, never>, { ok: boolean; status: string }>('adminSyncAds', 6 * 60_000),

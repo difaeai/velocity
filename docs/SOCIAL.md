@@ -577,6 +577,31 @@ creative" button. The plan and the daily note also read `planningResearch()` —
 this morning's market read plus the launch analysis — so a new angle is one
 the competition is not already running.
 
+### Why the CPM is what it is, and where the money buys least (2026-11-01)
+
+Every sync also reads the week cut three ways — by placement
+(`publisher_platform,platform_position`), by age and gender, by region — and
+every ad's `quality_ranking` / `engagement_rate_ranking` /
+`conversion_rate_ranking`. These are four extra Insights calls for the whole
+account, and a refused one never stops the sync. `adsCost.ts` (pure, tested)
+turns them into `cost` on each campaign with 1,000+ views in the week:
+
+- **CPM level:** high, normal or low against the yardstick.
+- **Reasons, biggest first:**
+  - a below-average quality ranking;
+  - the dearest placement, people or region that took 25% or more of the money at 1.4x or more the cheapest;
+  - frequency above 3;
+  - a cheap CPM that came from Audience Network.
+- **The slices themselves.**
+- **The waste:** a whole platform that took 10% or more of the money and bought its results at twice the campaign's price or more (or nothing at all), while another platform still delivers.
+
+In `direct` mode the expert stops that platform on the ad set itself
+(`withoutPlatform` keeps the rest of the targeting; Messenger goes with
+Facebook; Facebook or Instagram always stays). It does this at most once a week
+per campaign (`trimmedAtMs`), because a targeting change restarts learning. In
+`ask` mode it is a "Stop showing on …" button (`adminAdAction` `trim`). The
+daily note reads the reasons and the waste too.
+
 ### It does not wait to be asked
 
 When none of the desk's own campaigns is running or waiting for an Approve, the

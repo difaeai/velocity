@@ -74,6 +74,17 @@ import {
   type InsightRow,
   type Verdict,
 } from './adsExpert';
+import {
+  peopleLabel,
+  placementLabel,
+  readCost,
+  slicesFrom,
+  withoutPlatform,
+  worstRanking,
+  type BreakdownRow,
+  type CostRead,
+  type RankingRow,
+} from './adsCost';
 import { downloadAsset, refreshAssetUrls, storeFile } from './assets';
 import { brandBlock, brandName, briefBlock, hardRules, marketName, researchBlock, standingInstructions, wordmark } from './crew';
 import { activeTeam, employeeIntro } from './employees';
@@ -922,6 +933,43 @@ interface CampaignDoc {
   previewUrl?: string | null;
   refreshes?: number;
   lastRefreshMs?: number | null;
+  /** Why its views cost what they do this week, and where its money buys least (`adsCost.ts`). */
+  cost?: CostRead | null;
+  /** When the expert last stopped a platform for it: a targeting change restarts learning, so once a week at most. */
+  trimmedAtMs?: number | null;
+}
+
+/** How long after one platform cut the expert waits before it may make another. */
+const TRIM_EVERY_MS = 7 * 86_400_000;
+
+/** One campaign as the sync judged it, for the account review. */
+interface Judged {
+  name: string;
+  objective: AdObjective;
+  verdict: Verdict;
+  week: AdMetrics;
+  managed: boolean;
+  cost: CostRead | null;
+}
+
+/** The waste, as one line: what was stopped (or should be) and why. */
+function wasteDetail(w: NonNullable<CostRead['waste']>, currency: string): string {
+  return `stopped showing on ${w.label}: ${money(w.weekSpend, currency)} there last week bought ${
+    w.timesDearer === null ? 'nothing' : `results at ${w.timesDearer}× the campaign's price`
+  }, about ${money(w.saveWeek, currency)} a week better spent elsewhere`;
+}
+
+/**
+ * Stop showing an ad set on one platform: its targeting read back from Meta,
+ * the platform taken out, and the rest left exactly as it was. Returns false
+ * when the cut would leave nothing worth running (see `withoutPlatform`).
+ */
+async function trimPlatform(token: string, adsetId: string, platform: string): Promise<boolean> {
+  const { targeting } = await graph<{ targeting?: Record<string, unknown> }>(token, `${adsetId}?fields=targeting`);
+  const next = withoutPlatform(targeting ?? {}, platform);
+  if (!next) return false;
+  await graph(token, adsetId, { form: { targeting: JSON.stringify(next) } });
+  return true;
 }
 
 /**
@@ -1058,13 +1106,34 @@ async function syncAds(): Promise<string> {
     ),
   ]);
 
+  // Why it costs what it does: the same week cut by placement, by age and gender and by region, and every ad's
+  // rankings. Extra reads, so one Meta refuses never stops the sync — the campaign is judged without it.
+  const cutFields = 'campaign_id,spend,impressions,reach,inline_link_clicks,actions,video_thruplay_watched_actions';
+  const extra = <R>(what: string, path: string) =>
+    graph<{ data?: R[] }>(token, path).then(
+      (r) => r.data ?? [],
+      (e: Error) => {
+        logger.warn('ads: a breakdown read failed', { what, error: e.message });
+        return [] as R[];
+      },
+    );
+  const [byPlacement, byPeople, byRegion, rankings] = await Promise.all([
+    extra<BreakdownRow>('placement', `${act}/insights?level=campaign&date_preset=last_7d&limit=500&breakdowns=publisher_platform,platform_position&fields=${cutFields}`),
+    extra<BreakdownRow>('people', `${act}/insights?level=campaign&date_preset=last_7d&limit=500&breakdowns=age,gender&fields=${cutFields}`),
+    extra<BreakdownRow>('region', `${act}/insights?level=campaign&date_preset=last_7d&limit=500&breakdowns=region&fields=${cutFields}`),
+    extra<RankingRow>(
+      'rankings',
+      `${act}/insights?level=ad&date_preset=last_7d&limit=500&fields=campaign_id,impressions,quality_ranking,engagement_rate_ranking,conversion_rate_ranking`,
+    ),
+  ]);
+
   const byId = <R extends { campaign_id: string }>(rows: R[]) => new Map(rows.map((r) => [r.campaign_id, r]));
   const life = byId(lifetime.data ?? []);
   const recent = byId(week.data ?? []);
 
   let committed = await committedDaily();
   const actions: string[] = [];
-  const judged: { name: string; objective: AdObjective; verdict: Verdict; week: AdMetrics; managed: boolean }[] = [];
+  const judged: Judged[] = [];
 
   for (const c of campaigns.data ?? []) {
     const ref = campaignRef(c.id);
@@ -1092,6 +1161,30 @@ async function syncAds(): Promise<string> {
       valuePerConversion: cfg.valuePerConversion,
     });
 
+    const of = <R extends { campaign_id?: string }>(rows: R[]) => rows.filter((r) => r.campaign_id === c.id);
+    const placed = of(byPlacement);
+    const cost: CostRead | null =
+      weekM.impressions >= 1000
+        ? readCost({
+            atMs: now,
+            week: weekM,
+            band: bench?.cpm ?? null,
+            currency: cfg.currency,
+            placements: slicesFrom(
+              placed,
+              (r) => `${r.publisher_platform}/${r.platform_position}`,
+              (r) => placementLabel(r.publisher_platform ?? '', r.platform_position),
+              resultAction,
+            ),
+            platforms: slicesFrom(placed, (r) => r.publisher_platform ?? '', (r) => placementLabel(r.publisher_platform ?? ''), resultAction),
+            people: slicesFrom(of(byPeople), (r) => `${r.gender}/${r.age}`, (r) => peopleLabel(r.gender ?? '', r.age ?? ''), resultAction),
+            regions: slicesFrom(of(byRegion), (r) => r.region ?? '', (r) => r.region ?? '', resultAction),
+            quality: worstRanking(of(rankings), 'quality_ranking'),
+            engagement: worstRanking(of(rankings), 'engagement_rate_ranking'),
+            conversion: worstRanking(of(rankings), 'conversion_rate_ranking'),
+          })
+        : null;
+
     const rejected = (ads.data ?? []).filter((a) => a.campaign_id === c.id && a.effective_status === 'DISAPPROVED');
     const inReview = (ads.data ?? []).some((a) => a.campaign_id === c.id && a.effective_status === 'PENDING_REVIEW');
     const update: Record<string, unknown> = {
@@ -1107,6 +1200,7 @@ async function syncAds(): Promise<string> {
       lifetime: lifetimeM,
       week: weekM,
       verdict,
+      cost,
       review: inReview
         ? 'In Meta review'
         : rejected.length
@@ -1131,6 +1225,8 @@ async function syncAds(): Promise<string> {
       }
     }
 
+    // What the desk did on its own this pass, recorded together so one record never overwrites another.
+    const auto: { atMs: number; kind: string; detail: string }[] = [];
     // The desk steers only what it made, and only when the owner said it may.
     if (managed && cfg.mode === 'direct' && active) {
       if (verdict.action.kind === 'pause') {
@@ -1138,7 +1234,7 @@ async function syncAds(): Promise<string> {
         update.status = 'PAUSED';
         committed -= dailyBudget ?? 0;
         actions.push(`Paused "${c.name}" — ${verdict.headline}`);
-        update.autoActions = FieldValue.arrayUnion({ atMs: now, kind: 'pause', detail: verdict.action.why });
+        auto.push({ atMs: now, kind: 'pause', detail: verdict.action.why });
       } else if (verdict.action.kind === 'scale' && dailyBudget) {
         const { budget } = clampBudget({
           requested: verdict.action.to,
@@ -1153,11 +1249,7 @@ async function syncAds(): Promise<string> {
           update.dailyBudget = budget;
           update.lastScaledMs = now;
           actions.push(`Raised "${c.name}" to ${money(budget, cfg.currency)} a day — ${verdict.headline}`);
-          update.autoActions = FieldValue.arrayUnion({
-            atMs: now,
-            kind: 'scale',
-            detail: `${money(dailyBudget, cfg.currency)} → ${money(budget, cfg.currency)} a day`,
-          });
+          auto.push({ atMs: now, kind: 'scale', detail: `${money(dailyBudget, cfg.currency)} → ${money(budget, cfg.currency)} a day` });
         }
       } else if (
         verdict.action.kind === 'refresh' &&
@@ -1172,13 +1264,30 @@ async function syncAds(): Promise<string> {
         });
         if (did) {
           actions.push(`Refreshed "${c.name}" — ${did}.`);
-          update.autoActions = FieldValue.arrayUnion({ atMs: now, kind: 'refresh', detail: did });
+          auto.push({ atMs: now, kind: 'refresh', detail: did });
+        }
+      }
+
+      // Where its money buys least: a platform buying results at twice the price or more is stopped,
+      // once a week at most, because a targeting change restarts Meta's learning.
+      const waste = cost?.waste;
+      if (waste && mine?.adsetId && update.status !== 'PAUSED' && now - (mine.trimmedAtMs ?? 0) >= TRIM_EVERY_MS) {
+        const did = await trimPlatform(token, mine.adsetId, waste.platform).catch((e: Error) => {
+          logger.warn('ads: could not stop a platform', { campaign: c.id, platform: waste.platform, error: e.message });
+          return false;
+        });
+        if (did) {
+          update.trimmedAtMs = now;
+          const detail = wasteDetail(waste, cfg.currency);
+          actions.push(`"${c.name}": ${detail}.`);
+          auto.push({ atMs: now, kind: 'trim', detail });
         }
       }
     }
+    if (auto.length) update.autoActions = FieldValue.arrayUnion(...auto);
 
     await ref.set(update, { merge: true });
-    judged.push({ name: c.name, objective, verdict, week: weekM, managed });
+    judged.push({ name: c.name, objective, verdict, week: weekM, managed, cost });
   }
 
   // The account at a glance, for the console's chart and tiles.
@@ -1282,7 +1391,7 @@ async function proposeIfIdle(cfg: AdsConfig, now: number): Promise<string | null
 /** A few sentences on the whole account: what is working, where the next rupee goes. */
 async function reviewAccount(
   cfg: AdsConfig,
-  judged: { name: string; objective: AdObjective; verdict: Verdict; week: AdMetrics; managed: boolean }[],
+  judged: Judged[],
   totals: AdMetrics,
   returns: Blended | null,
 ): Promise<AdsConfig['review']> {
@@ -1305,7 +1414,10 @@ async function reviewAccount(
           .map((g) => `${live.filter((j) => j.verdict.grade === g).length} ${g === 'good' ? 'winning' : g === 'bad' ? 'underperforming' : g}`)
           .join(', ')}. ${money(totals.spend, cfg.currency)} spent this week. ${business}`.trim()
       : 'Nothing is running. The expert proposes a campaign on its own once a week — or tell it what you want an ad to do.',
-    moves: live.filter((j) => j.verdict.action.kind !== 'none').map((j) => `${j.name}: ${(j.verdict.action as { why: string }).why}`),
+    moves: [
+      ...live.filter((j) => j.verdict.action.kind !== 'none').map((j) => `${j.name}: ${(j.verdict.action as { why: string }).why}`),
+      ...live.filter((j) => j.cost?.waste).map((j) => `${j.name}: ${wasteDetail(j.cost!.waste!, cfg.currency).replace(/^stopped/, 'stop')}.`),
+    ],
     engine: 'local',
   });
   if (!modelReady() || !live.length) return local();
@@ -1319,7 +1431,9 @@ async function reviewAccount(
         `frequency ${j.week.frequency.toFixed(1)}` +
         (j.week.conversions ? `, ${j.week.conversions} conversions at ${money(j.week.costPerConversion ?? 0, cfg.currency)}` : '') +
         (j.week.roas != null ? `, ROAS ${j.week.roas.toFixed(2)}` : '') +
-        ` — verdict: ${j.verdict.headline}`,
+        ` — verdict: ${j.verdict.headline}` +
+        (j.cost && j.cost.level !== 'unknown' ? ` CPM is ${j.cost.level}: ${j.cost.reasons.join(' ')}` : '') +
+        (j.cost?.waste ? ` Waste: ${wasteDetail(j.cost.waste, cfg.currency).replace(/^stopped/, 'stop')}.` : ''),
     )
     .join('\n');
   try {
@@ -1597,7 +1711,7 @@ export const adminAdAction = deskCall('ads', { timeoutSeconds: 540, memory: '2Gi
   const parsed = z
     .object({
       campaignId: z.string().regex(/^\d{5,40}$/),
-      action: z.enum(['launch', 'pause', 'resume', 'budget', 'apply', 'end']),
+      action: z.enum(['launch', 'pause', 'resume', 'budget', 'apply', 'end', 'trim']),
       dailyBudget: z.number().positive().max(10_000_000).optional(),
     })
     .safeParse(req.data);
@@ -1693,6 +1807,19 @@ export const adminAdAction = deskCall('ads', { timeoutSeconds: 540, memory: '2Gi
         } else {
           what = `Raised to ${money(await setBudget(next.to), cfg.currency)} a day, as recommended.`;
         }
+        break;
+      }
+      case 'trim': {
+        const waste = doc.cost?.waste;
+        if (!waste) throw new HttpsError('failed-precondition', 'There is no platform to stop for this campaign right now.');
+        if (!doc.managed || !doc.adsetId) {
+          throw new HttpsError('failed-precondition', 'Only a campaign the desk made can have its placements changed from here.');
+        }
+        if (!(await trimPlatform(token, doc.adsetId, waste.platform))) {
+          throw new HttpsError('failed-precondition', `Stopping ${waste.label} would leave nothing worth running.`);
+        }
+        Object.assign(update, { trimmedAtMs: Date.now(), cost: { ...doc.cost, waste: null } });
+        what = `${wasteDetail(waste, cfg.currency).replace(/^s/, 'S')}.`;
         break;
       }
     }
