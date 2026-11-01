@@ -630,7 +630,7 @@ function CampaignRow({
             <Num label="CPC" value={m.cpc ? adMoney(m.cpc, cur) : '—'} />
             {m.conversions ? (
               <>
-                <Num label="Conversions" value={m.conversions.toLocaleString('en-PK')} />
+                <Num label={c.salesFrom === 'store' ? 'Store orders' : 'Conversions'} value={m.conversions.toLocaleString('en-PK')} />
                 <Num label="Per conversion" value={adMoney(m.costPerConversion ?? 0, cur)} />
                 <Num label="ROAS" value={m.roas != null ? `${m.roas.toFixed(2)}×` : '—'} />
               </>

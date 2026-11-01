@@ -38,6 +38,7 @@ import { Button, Card } from '@/components/ui';
 import { PlatformBadge, PLATFORM_META, StatusPill } from '@/components/social/shared';
 import { InstagramConnect } from '@/components/social/instagramConnect';
 import { GoogleAdsConnect } from '@/components/social/googleAdsConnect';
+import { StoreConnect } from '@/components/social/storeConnect';
 import { SkeletonRows } from '@/components/states';
 
 export default function AccountsPage() {
@@ -96,6 +97,7 @@ export default function AccountsPage() {
 
       {showAds ? <AdsAccount cfg={ads} postingPageId={accounts.facebook?.externalId ?? null} /> : null}
       {showAds ? <GoogleAdsConnect link={ads?.google} /> : null}
+      {showAds ? <StoreConnect /> : null}
 
       {schema && !schema.vaultReady ? (
         <Card style={{ marginBottom: 16, borderColor: '#fab219', background: '#fab2190f' }}>

@@ -99,6 +99,7 @@ import { googleAdsSpend } from './googleAds';
 import { getSocialSettings } from './settings';
 import { planRef, type MonthPlan } from './strategy';
 import { open, tokenVaultReady, type SealedSecret } from './secrets';
+import { UTM_TAGS, storeSales, withStoreSales } from './store';
 import { accentFor, planStill, renderStill } from './still';
 import { postMedia, type Employee, type SocialPost } from './types';
 
@@ -335,7 +336,7 @@ async function buildCreative(
         object_id: cfg.pageId ?? '',
         ...(cfg.instagramId ? { instagram_user_id: cfg.instagramId } : {}),
         source_instagram_media_id: source.mediaId,
-        ...(plan.objective === 'traffic' ? { call_to_action: JSON.stringify(cta) } : {}),
+        ...(plan.objective === 'traffic' ? { call_to_action: JSON.stringify(cta), url_tags: UTM_TAGS } : {}),
       },
     });
     return { spec: { creative_id: res.id }, video: false, previewUrl: null };
@@ -444,7 +445,8 @@ async function buildCreative(
       };
 
   const res = await graph<{ id: string }>(token, `${cfg.adAccountId}/adcreatives`, {
-    form: { name: plan.name, object_story_spec: JSON.stringify(story) },
+    // Tagged so the owner's store can tell which campaign sent each order (store.ts).
+    form: { name: plan.name, object_story_spec: JSON.stringify(story), url_tags: UTM_TAGS },
   });
   return { spec: { creative_id: res.id }, video: Boolean(videoUrl), previewUrl: preview.url };
 }
@@ -1130,6 +1132,8 @@ async function syncAds(): Promise<string> {
   const byId = <R extends { campaign_id: string }>(rows: R[]) => new Map(rows.map((r) => [r.campaign_id, r]));
   const life = byId(lifetime.data ?? []);
   const recent = byId(week.data ?? []);
+  // The owner's own store, when connected: the orders each campaign really brought (store.ts).
+  const store = await storeSales().catch(() => null);
 
   let committed = await committedDaily();
   const actions: string[] = [];
@@ -1142,7 +1146,8 @@ async function syncAds(): Promise<string> {
     const objective = mine?.objectiveKind ?? OBJECTIVE_KIND[c.objective] ?? 'traffic';
     const resultAction = resultActionFor(c.objective, mine?.video);
     const lifetimeM = metricsFrom(life.get(c.id) ?? {}, resultAction, cfg.valuePerConversion);
-    const weekM = metricsFrom(recent.get(c.id) ?? {}, resultAction, cfg.valuePerConversion);
+    const metaWeek = metricsFrom(recent.get(c.id) ?? {}, resultAction, cfg.valuePerConversion);
+    const weekM = store ? withStoreSales(metaWeek, store.byCampaign[c.id], store.currency, cfg.currency) : metaWeek;
     const dailyBudget = c.daily_budget ? fromMinor(Number(c.daily_budget), cfg.currency) : null;
     const endMs = c.stop_time ? Date.parse(c.stop_time) : (mine?.endMs ?? null);
     const active = c.effective_status === 'ACTIVE' && !(endMs && endMs < now);
@@ -1199,6 +1204,8 @@ async function syncAds(): Promise<string> {
       endMs,
       lifetime: lifetimeM,
       week: weekM,
+      // Where its conversions came from when Meta saw none: the store's own orders.
+      salesFrom: weekM === metaWeek ? null : 'store',
       verdict,
       cost,
       review: inReview
