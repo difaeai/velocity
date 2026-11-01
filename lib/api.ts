@@ -2560,6 +2560,8 @@ export interface AdPretest {
   objections: string[];
   firstScore: number | null;
   rewritten: boolean;
+  /** The simulated people who saw the version that went ahead. Absent on tests made before 2026-11-01. */
+  panel?: AudiencePersona[];
 }
 
 /** socialAds/{campaignId} — one campaign, as the desk last read and judged it. */
@@ -2654,6 +2656,33 @@ export const adsApi = {
     | { ok: true; accountName: string; permanent: boolean; pageId: string | null }
     | { ok: false; choose: { id: string; name: string; active: boolean }[] }
   >('adminConnectAdsToken'),
+};
+
+/**
+ * `researchTests/{id}` — one of the Research Assistant's dummy campaigns: planned
+ * like a real one, shown to a simulated audience, priced, and nothing spent.
+ * Mirrors backend `DummyCampaign` (ads.ts).
+ */
+export interface DummyCampaignDoc {
+  id: string;
+  atMs: number;
+  /** `owner`: run on the Research page; `manager`: the dummy every real campaign gets before Meta. */
+  by: 'owner' | 'manager';
+  brief: string;
+  plan: AdPlan;
+  pretest: AdPretest | null;
+  forecast: AdForecast | null;
+  currency: string;
+  engine: string;
+  campaignId: string | null;
+}
+
+export const researchApi = {
+  /** Plans the campaign, shows it to the simulated audience and prices it — about a minute, nothing spent. */
+  dummyCampaign: callable<{ brief: string; dailyBudget?: number; days?: number }, { ok: boolean; id: string }>(
+    'researchDummyCampaign',
+    6 * 60_000,
+  ),
 };
 
 /**

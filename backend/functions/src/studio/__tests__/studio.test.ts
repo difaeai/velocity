@@ -187,7 +187,7 @@ describe('whose desk a call reaches', () => {
 
   it('refuses what the plan does not include', async () => {
     const wid = await signUp('content');
-    await expect(deskWorkspace(asUser({}, OWNER, { ws: wid }), 'ads')).rejects.toThrow(/does not include the Meta Ad Expert/);
+    await expect(deskWorkspace(asUser({}, OWNER, { ws: wid }), 'ads')).rejects.toThrow(/does not include the Meta & Google Ad Expert/);
   });
 
   it('refuses everything once the trial is over and nothing is paid', async () => {
@@ -236,15 +236,15 @@ describe('paying', () => {
   it('a yearly payment is priced 13% off and adds a year when approved', async () => {
     const wid = await signUp('content');
     const res = (await studioSubmitPayment.run(
-      asUser(paid(wid, 'sales', 'EP-445566', { billing: 'year' }), OWNER, { ws: wid }),
+      asUser(paid(wid, 'research', 'EP-445566', { billing: 'year' }), OWNER, { ws: wid }),
     )) as { paymentId: string };
     const pay = (await db().doc(`studioPayments/${res.paymentId}`).get()).data()!;
-    expect(pay).toMatchObject({ billing: 'year', amountUsd: 177 });
+    expect(pay).toMatchObject({ billing: 'year', amountUsd: 208 });
 
     const before = Date.now();
     await adminDecideStudioPayment.run(asUser({ paymentId: res.paymentId, approve: true }, ADMIN, { role: 'admin' }));
     const ws = (await db().doc(`workspaces/${wid}`).get()).data()!;
-    expect(ws.plan).toBe('sales');
+    expect(ws.plan).toBe('research');
     expect(ws.paidUntilMs).toBeGreaterThanOrEqual(before + YEAR_MS);
   });
 
@@ -297,10 +297,10 @@ describe('paying', () => {
     await adminDecideStudioPayment.run(asUser({ paymentId: res.paymentId, approve: true }, ADMIN, { role: 'admin' }));
     const ws = (await db().doc(`workspaces/${wid}`).get()).data()!;
     expect(ws.plan).toBe('all');
-    // 300 days of $24 are worth ~225 days of $32, plus the month just paid — not 330 days of the whole team.
+    // 300 days of $26 are worth ~244 days of $32, plus the month just paid — not 330 days of the whole team.
     const days = (ws.paidUntilMs - before) / 86_400_000;
-    expect(days).toBeGreaterThan(254);
-    expect(days).toBeLessThan(256);
+    expect(days).toBeGreaterThan(273);
+    expect(days).toBeLessThan(275);
   });
 
   it('sells an AI agents package only on the plan that can use it', async () => {
@@ -310,8 +310,11 @@ describe('paying', () => {
       studioSubmitPayment.run(
         asUser({ agents: pkg, txnId: 'EP-343434', screenshotPath: `workspaces/${wid}/payments/a.jpg` }, OWNER, { ws: wid }),
       );
-    await expect(send()).rejects.toThrow(/Everything plan/);
-    // The Sales agents plan works from the Sales page too, so it can buy the package.
+    await expect(send()).rejects.toThrow(/Social Media Manager \+ Meta & Google Ad Expert plan/);
+    // The Research Assistant has no one to call on its own behalf either.
+    await db().doc(`workspaces/${wid}`).update({ plan: 'research' });
+    await expect(send()).rejects.toThrow(/Social Media Manager \+ Meta & Google Ad Expert plan/);
+    // A workspace still on the old Sales agents plan works from the Sales page too, so it can buy the package.
     await db().doc(`workspaces/${wid}`).update({ plan: 'sales' });
     await expect(send()).resolves.toMatchObject({ ok: true });
   });
@@ -367,10 +370,10 @@ describe('managing a customer', () => {
   it('changes the plan, keeps a note the customer cannot read, and logs who did it', async () => {
     const wid = await signUp('content');
     const admin1 = (data: Record<string, unknown>) => asUser({ wid, ...data }, ADMIN, { role: 'admin' });
-    await adminManageStudioCustomer.run(admin1({ action: 'setPlan', plan: 'sales' }));
+    await adminManageStudioCustomer.run(admin1({ action: 'setPlan', plan: 'research' }));
     await adminManageStudioCustomer.run(admin1({ action: 'note', note: 'Called them, paying Friday.' }));
     const ws = (await db().doc(`workspaces/${wid}`).get()).data()!;
-    expect(ws.plan).toBe('sales');
+    expect(ws.plan).toBe('research');
     // The workspace doc is the customer's to read (firestore.rules); the note lives on the admin-only row.
     expect(ws.adminNote).toBeUndefined();
     expect((await db().doc(`studioUsers/${OWNER}`).get()).get('adminNote')).toBe('Called them, paying Friday.');

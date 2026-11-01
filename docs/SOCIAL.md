@@ -619,6 +619,30 @@ step waiting on the owner (`needs_you`) lets the next one go ahead, so a
 customer still waiting on Meta's App Review still gets a funnel. Studio only:
 the house never has a `socialLaunch/state`, so the sweep skips it.
 
+### The plans, and the Research Assistant (2026-11-01)
+
+Three plans are sold (`studio/plans.ts`, mirrored in `lib/studio.ts`): the
+**Research Assistant for Social Media** ($20, `research`), **Content** ($26,
+`content`) and the **Social Media Manager + Meta & Google Ad Expert** ($32,
+`all` — research, content, ads, and the sales, calling and email agents). The
+old Sales agents ($17, `sales`) and ads-only (`ads`) plans are no longer sold
+but stay in `PLANS`, so a workspace already on one keeps working. A page two
+plans share takes several needs (`deskCall(['content', 'research'], …)`, a
+`NEED_OF` array): Analytics (the page read and the profile audit) is the
+content team's and the Research Assistant's both.
+
+The Research Assistant's own job is the **dummy campaign** (`dummyCampaign` in
+`ads.ts`, `researchDummyCampaign` callable, the Research page): the campaign is
+planned the way the Ad Expert would (`planAd`), shown to the simulated panel and
+rewritten once if weak (`pretestAd`), and priced (`forecast`) — nothing is made
+at Meta and nothing is spent, so no daily limit applies. Each run is kept at
+`researchTests/{id}`. Its results reach the **Social Media Manager** two ways:
+`planContext` puts the owner's five latest dummies in front of every campaign the
+manager plans, and every real campaign's own pretest is kept there too
+(`by: 'manager'`), so the Research page shows what was tested before Meta saw it.
+"Hand to the Social Media Manager" opens the Ad Expert's designer with the tested
+campaign as its brief.
+
 **Velocity's own desk is day by day since 2026-10-28** (`makeAheadDays` default 0):
 the owner found the 30-day batch meant a month written before a single morning's
 research, and wanted the cost a day at a time. The 10am run reads the market and
@@ -986,7 +1010,8 @@ for text, `pictureFor` for pictures, `voiceOver` for the voice, `watchReference`
 for a reference video — and `overBudget` stops `CAP_RESERVE_USD` ($0.10) short of
 the cap, so the call that would cross it is never made (each instance's view of
 the spend can be a minute old). The month's ceiling is the plan's `aiUsd` — $3
-Content and Sales, $5 Meta Ad Expert and Everything — plus credit days bought.
+the Research Assistant and Content, $5 the whole team (and the legacy ads-only
+plan) — plus credit days bought.
 AI phone calls are recorded with `apart: true`: they stay on the meter's total
 (`usd`) but also land in `apartUsd`, which `allowanceUsd` subtracts, because the
 agent package pays for them and they must never use up the content month.

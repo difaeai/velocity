@@ -16,7 +16,7 @@
  * the owner's call.
  *
  * Everything lives in the caller's workspace (`sdb`), and every callable needs
- * the `sales` part of a plan (Everything).
+ * the `sales` part of a plan (Social Media Manager + Meta & Google Ad Expert).
  */
 import { createHash } from 'node:crypto';
 

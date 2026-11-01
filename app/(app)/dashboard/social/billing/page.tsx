@@ -217,8 +217,8 @@ function Checkout() {
 
           {askedPkg && !agentPkg ? (
             <p className={a.error}>
-              AI agents come with the Sales agents and Meta Ad Expert + Everything plans. Pay for one of them first, then add the
-              package from the Sales page.
+              AI calling agents come with the {STUDIO_PLANS.all.name} plan. Pay for it first, then add the package from the
+              Sales page.
             </p>
           ) : null}
 

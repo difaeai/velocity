@@ -7,13 +7,55 @@
  * it. Change one, change the other.
  */
 
-export type StudioPlanId = 'sales' | 'content' | 'ads' | 'all';
-export type StudioNeed = 'content' | 'ads' | 'sales' | 'any';
+export type StudioPlanId = 'research' | 'content' | 'all' | 'sales' | 'ads';
+export type StudioNeed = 'research' | 'content' | 'ads' | 'sales' | 'any';
+/** One part of a plan, or several of which any one will do — a page two plans share. */
+export type StudioNeeds = StudioNeed | readonly StudioNeed[];
 
 export const STUDIO_PLANS: Record<
   StudioPlanId,
   { name: string; usd: number; can: Exclude<StudioNeed, 'any'>[]; tagline: string; includes: string[] }
 > = {
+  research: {
+    name: 'Research Assistant for Social Media',
+    usd: 20,
+    can: ['research'],
+    tagline: 'Researches your market and tests every campaign for free, before you spend.',
+    includes: [
+      'Reads your market and your competitors — plus your own notes and links',
+      'Analyses your Instagram and Facebook: what travelled, and how your profile looks to a stranger',
+      'Runs a dummy campaign before any real one: a simulated audience reacts, nothing is spent',
+      'Shows what the money would buy, what put people off, and a better version of the ad',
+      'Hands every result to the Social Media Manager — ours on the full team, or your own',
+    ],
+  },
+  content: {
+    name: 'Content',
+    usd: 26,
+    can: ['content'],
+    tagline: 'Your social media team, posting every day.',
+    includes: [
+      'A market analysis of your business on day one — plus your own notes and links',
+      '30 days of content made ahead on a calendar you can change',
+      'Reels with voice-over and music, posts, stories, carousels',
+      'Posts at your time to Instagram and Facebook, answers comments',
+      'Learns from your own best posts',
+    ],
+  },
+  all: {
+    name: 'Social Media Manager + Meta & Google Ad Expert',
+    usd: 32,
+    can: ['research', 'content', 'ads', 'sales'],
+    tagline: 'The whole team: research, content, Meta & Google ads, and sales by email and phone.',
+    includes: [
+      'Everything in the Research Assistant and Content',
+      'Social Media Manager: plans every campaign from the Research Assistant’s free dummy runs',
+      'Meta & Google Ad Expert: runs Facebook & Instagram ads inside your daily limit, reads Google Ads beside them',
+      'Sales agents and email marketing: finds buyers, writes from your own mailbox, follows up twice',
+      'AI calling & WhatsApp agents for your leads — a package on top of the plan',
+    ],
+  },
+  // No longer sold: kept so a workspace already on one keeps working.
   sales: {
     name: 'Sales agents',
     usd: 17,
@@ -27,20 +69,6 @@ export const STUDIO_PLANS: Record<
       'A sales funnel built from the research',
     ],
   },
-  content: {
-    name: 'Content',
-    usd: 24,
-    can: ['content'],
-    tagline: 'Your social media team, posting every day.',
-    includes: [
-      'A market analysis of your business on day one — plus your own notes and links',
-      '30 days of content made ahead on a calendar you can change',
-      'Reels with voice-over and music, posts, stories, carousels',
-      'Posts at your time to Instagram and Facebook, answers comments',
-      'Learns from your own best posts',
-    ],
-  },
-  // No longer sold: kept so a workspace already on it keeps working.
   ads: {
     name: 'Meta Ad Expert (ads only)',
     usd: 24,
@@ -54,23 +82,10 @@ export const STUDIO_PLANS: Record<
       'Your daily budget limit, enforced in code',
     ],
   },
-  all: {
-    name: 'Meta Ad Expert + Everything',
-    usd: 32,
-    can: ['content', 'ads', 'sales'],
-    tagline: 'The Meta Ad Expert with the whole team: content, ads and sales.',
-    includes: [
-      'Everything in Sales agents and Content',
-      'Meta Ad Expert: plans, writes and launches Facebook & Instagram ads',
-      'Watches cost, conversions and ROAS every day — keeps winners, pauses losers',
-      'Refreshes tired ads on its own, inside your daily budget limit',
-      'Reads the market and your competitors before every move',
-    ],
-  },
 };
 
 /** The plans on sale, left to right as the pricing page shows them. */
-export const STUDIO_PLAN_IDS: StudioPlanId[] = ['sales', 'content', 'all'];
+export const STUDIO_PLAN_IDS: StudioPlanId[] = ['research', 'content', 'all'];
 
 /** The "From $… a month" the pages quote: the cheapest plan on sale. */
 export const STUDIO_FROM_USD = Math.min(...STUDIO_PLAN_IDS.map((id) => STUDIO_PLANS[id].usd));
@@ -167,14 +182,14 @@ export function studioPaidAfter(
 
 export function studioCanUse(
   ws: Pick<StudioWorkspace, 'plan' | 'trialEndsAtMs' | 'paidUntilMs' | 'suspended'>,
-  need: StudioNeed,
+  need: StudioNeeds,
   nowMs: number,
 ): boolean {
   if (ws.suspended) return false;
   if (Math.max(ws.trialEndsAtMs, ws.paidUntilMs) <= nowMs) return false;
-  return need === 'any' || STUDIO_PLANS[ws.plan].can.includes(need);
+  return planIncludes(ws.plan, need);
 }
 
-/** Whether the plan includes `need` at all, live or not — for what the nav shows. */
-export const planIncludes = (plan: StudioPlanId, need: StudioNeed): boolean =>
-  need === 'any' || STUDIO_PLANS[plan].can.includes(need);
+/** Whether the plan includes `need` (or any one of several) at all, live or not — for what the nav shows. */
+export const planIncludes = (plan: StudioPlanId, need: StudioNeeds): boolean =>
+  (typeof need === 'string' ? [need] : need).some((n) => n === 'any' || STUDIO_PLANS[plan].can.includes(n));

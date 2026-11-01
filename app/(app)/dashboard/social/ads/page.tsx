@@ -156,8 +156,8 @@ export default function AdsPage() {
         <span className="fx-orb b" />
         <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 260 }}>
-            <div className="fx-eyebrow">Facebook + Instagram ads</div>
-            <h1 style={{ fontSize: 26 }}>Meta Ad Expert</h1>
+            <div className="fx-eyebrow">Facebook + Instagram ads · Google Ads</div>
+            <h1 style={{ fontSize: 26 }}>Meta &amp; Google Ad Expert</h1>
             <p style={{ maxWidth: 680 }}>
               {manager ? `${manager} plans` : 'Your expert plans'} {house ? 'Velocity Rides’' : `${ws?.name ?? 'your'}’s`} ads,
               launches them and watches every rupee: winners keep running, losers are paused.
@@ -173,6 +173,10 @@ export default function AdsPage() {
                 {adMoney(cfg!.dailyCap, cfg!.currency)}/day · {cfg!.mode === 'direct' ? 'launches itself' : 'asks first'}
               </span>
             ) : null}
+            {/* Google Ads is read, not run: its numbers sit with the connection, on Connected accounts. */}
+            <Link href="/dashboard/social/accounts" className="fx-hero-chip">
+              Google Ads · {cfg?.google ? 'connected' : 'connect'} →
+            </Link>
             {connected ? (
               <button type="button" className="fx-btn lime small" onClick={refresh} disabled={syncing}>
                 {syncing ? 'Reading Meta…' : '↻ Refresh numbers'}

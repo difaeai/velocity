@@ -16,7 +16,8 @@
  * The Meta Ad Expert's ad account is connected here too (the Ads page sends
  * you here when it is not). It has no Disconnect, and a System User token —
  * the only kind Meta lets live forever — is never swapped for a 60-day one.
- * A plan without ads sees no ads card; a plan without content sees only it.
+ * A plan without ads sees no ads card; a plan without content sees only it. The
+ * Research Assistant reads the same Instagram and Facebook it would post to.
  */
 
 import { useEffect, useState } from 'react';
@@ -47,7 +48,7 @@ export default function AccountsPage() {
   const [openFor, setOpenFor] = useState<SocialPlatform | null>(null);
   const [error, setError] = useState<string | null>(null);
   const showAds = includes('ads');
-  const showContent = includes('content');
+  const showContent = includes(['content', 'research']);
 
   useEffect(() => {
     socialApi

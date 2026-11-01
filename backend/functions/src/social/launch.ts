@@ -329,17 +329,17 @@ export function notInPlan(id: StepId, can: readonly string[]): Outcome | null {
   if (id === 'content' || id === 'execute') {
     return can.includes('content')
       ? null
-      : { status: 'skipped', note: 'The content team comes with the Content and Meta Ad Expert + Everything plans.' };
+      : { status: 'skipped', note: 'The content team comes with the Content and Social Media Manager + Meta & Google Ad Expert plans.' };
   }
   if (id === 'funnel') {
     return can.includes('ads') || can.includes('sales')
       ? null
-      : { status: 'skipped', note: 'The sales funnel comes with the Sales agents and Meta Ad Expert + Everything plans.' };
+      : { status: 'skipped', note: 'The sales funnel comes with the Social Media Manager + Meta & Google Ad Expert plan.' };
   }
   if (id === 'close') {
     return can.includes('sales')
       ? null
-      : { status: 'skipped', note: 'The sales agent comes with the Sales agents and Meta Ad Expert + Everything plans.' };
+      : { status: 'skipped', note: 'The sales, calling and email agents come with the Social Media Manager + Meta & Google Ad Expert plan.' };
   }
   return null;
 }

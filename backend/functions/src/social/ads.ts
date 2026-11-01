@@ -553,6 +553,8 @@ export interface AdPretest {
   /** The score before the one rewrite, when the rewrite won. */
   firstScore: number | null;
   rewritten: boolean;
+  /** The simulated people who saw the version that went ahead. Absent on tests made before 2026-11-01. */
+  panel?: Persona[];
 }
 
 const AD_TEST_TASK = `Test this ad on a panel before it spends anything. Build 10 realistic people from its audience (the cities, ages, genders and interests below), at least three of them sceptics, because most people scroll past most ads. Show each one the ad exactly as it would appear in their feed — the words on the picture, the text above it, the headline and the button — and let them react honestly, in character: would they stop, would they tap and do what it asks, what is in the way. A reaction may be in English, Urdu or Roman Urdu, as that person would think it.
@@ -600,7 +602,13 @@ export async function pretestAd(plan: AdPlanSpec): Promise<AdPretest | null> {
   const first = await panelOn(plan).catch(() => null);
   if (!first?.panel.length) return null;
   const a = verdictFor(first.panel);
-  const firstResult: AdPretest = { ...a, objections: topObjections(first.panel), firstScore: null, rewritten: false };
+  const firstResult: AdPretest = {
+    ...a,
+    objections: topObjections(first.panel),
+    firstScore: null,
+    rewritten: false,
+    panel: first.panel,
+  };
   if (a.verdict === 'go' || !Object.keys(first.rewrite).length) return firstResult;
 
   const was = { lines: plan.lines, primaryText: plan.primaryText, headline: plan.headline };
@@ -611,7 +619,80 @@ export async function pretestAd(plan: AdPlanSpec): Promise<AdPretest | null> {
     Object.assign(plan, was);
     return firstResult;
   }
-  return { ...b, objections: topObjections(second!.panel), firstScore: a.score, rewritten: true };
+  return { ...b, objections: topObjections(second!.panel), firstScore: a.score, rewritten: true, panel: second!.panel };
+}
+
+// ── the Research Assistant's dummy campaigns ────────────────────────────────
+
+/**
+ * `researchTests/{id}` — a campaign run on a simulated audience instead of
+ * Meta: planned like a real one, met by the test panel, and priced at what the
+ * yardstick says the money would buy. Nothing is made at Meta and nothing is
+ * spent. `owner` runs were asked for on the Research page; `manager` runs are
+ * the dummy every real campaign gets before Meta sees it.
+ */
+export interface DummyCampaign {
+  atMs: number;
+  by: 'owner' | 'manager';
+  brief: string;
+  plan: AdPlanSpec;
+  pretest: AdPretest | null;
+  forecast: ReturnType<typeof forecast> | null;
+  currency: string;
+  engine: string;
+  /** The real campaign it became. */
+  campaignId: string | null;
+}
+
+export const dummiesRef = () => sdb.collection('researchTests');
+
+/** Everything a real campaign gets before Meta, and nothing after: the Research Assistant's dummy run. */
+export async function dummyCampaign(params: { brief: string; dailyBudget?: number; days?: number }): Promise<string> {
+  const cfg = await adsConfig();
+  const bench = await benchmarksNow(cfg);
+  const { plan, engine } = await planAd({
+    brief: params.brief,
+    cfg,
+    bench,
+    requestedBudget: params.dailyBudget,
+    requestedDays: params.days,
+    source: { kind: 'make' },
+  });
+  // A dummy spends nothing, so no limit holds it — only Meta's floor, so the figures describe a campaign that could run.
+  plan.dailyBudget = Math.max(params.dailyBudget ?? plan.dailyBudget, minDailyFor(cfg.currency));
+  if (params.days) plan.days = params.days;
+  const pretest = await pretestAd(plan);
+  const ref = await dummiesRef().add({
+    atMs: Date.now(),
+    by: 'owner',
+    brief: params.brief,
+    plan,
+    pretest,
+    forecast: bench ? forecast({ objective: plan.objective, dailyBudget: plan.dailyBudget, days: plan.days, bench }) : null,
+    currency: cfg.currency,
+    engine,
+    campaignId: null,
+  } satisfies DummyCampaign);
+  return ref.id;
+}
+
+/** What the owner's latest dummies found, as the Social Media Manager reads them before planning a real campaign. */
+async function dummiesBlock(): Promise<string> {
+  // Ordered on one field and filtered here: an equality on `by` as well would need a composite index.
+  const snap = await dummiesRef().orderBy('atMs', 'desc').limit(15).get();
+  const tests = snap.docs
+    .map((d) => d.data() as DummyCampaign)
+    .filter((t) => t.by === 'owner' && t.pretest)
+    .slice(0, 5);
+  if (!tests.length) return '';
+  return `WHAT THE RESEARCH ASSISTANT'S DUMMY CAMPAIGNS FOUND — simulated panels, nothing spent. Build on what scored best and answer the doubts:\n${tests
+    .map(
+      (t) =>
+        `- "${t.plan.name}" (${t.plan.objective}; ${t.plan.audience.cities.join(', ') || 'the whole market'}): panel ` +
+        `${Math.round(t.pretest!.score * 100)}%, ${t.pretest!.verdict}; hook "${t.plan.lines[0] ?? t.plan.headline}"` +
+        (t.pretest!.objections.length ? `; doubts: ${t.pretest!.objections.join('; ')}` : ''),
+    )
+    .join('\n')}`;
 }
 
 /** The plan as JSON, the one shape both planning and designing answer in. */
@@ -660,6 +741,8 @@ async function planContext(cfg: AdsConfig, bench: Benchmarks | null): Promise<st
       `At most ${cfg.maxDays} days. Ads send people to ${cfg.link}.`,
     yard,
     past.length ? `HOW OUR OWN CAMPAIGNS DID — evidence, weigh it above the yardstick:\n${past.join('\n')}` : '',
+    // The Research Assistant hands its free tests to the manager here.
+    await dummiesBlock(),
     // The market and the competition, so the angle is one nobody else is already running.
     researchBlock(await planningResearch()),
   ]
@@ -1484,6 +1567,22 @@ export async function launchCampaign(params: {
     verdict: null,
     updatedAt: FieldValue.serverTimestamp(),
   });
+  // The Research Assistant's dummy run of it, shown on the Research page beside the owner's own. The campaign stands either way.
+  if (pretest) {
+    await dummiesRef()
+      .add({
+        atMs: Date.now(),
+        by: 'manager',
+        brief: params.brief,
+        plan,
+        pretest,
+        forecast: expected,
+        currency: cfg.currency,
+        engine,
+        campaignId: made.campaignId,
+      } satisfies DummyCampaign)
+      .catch((e: Error) => logger.warn('ads: could not keep the dummy run', { error: e.message }));
+  }
 
   return { campaignId: made.campaignId, launched: launch, budget, note, plan, forecast: expected, pretest };
 }

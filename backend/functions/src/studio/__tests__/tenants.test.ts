@@ -75,10 +75,10 @@ afterAll(() => {
 });
 
 describe('every plan gets exactly its parts', () => {
-  const NEEDS: Need[] = ['content', 'ads', 'sales', 'any'];
+  const NEEDS: Need[] = ['research', 'content', 'ads', 'sales', 'any'];
 
-  it('across all four plans at once, each customer reaches only what they paid for', async () => {
-    const plans: PlanId[] = ['sales', 'content', 'ads', 'all'];
+  it('across all five plans at once, each customer reaches only what they paid for', async () => {
+    const plans: PlanId[] = ['research', 'content', 'all', 'sales', 'ads'];
     for (const plan of plans) await customer(`c-${plan}`, plan);
 
     for (const plan of plans) {
@@ -89,6 +89,15 @@ describe('every plan gets exactly its parts', () => {
         else await expect(call).rejects.toThrow(/does not include/);
       }
     }
+  });
+
+  it('opens a page two plans share — Analytics — to both of them and nobody else', async () => {
+    for (const plan of ['research', 'content', 'all', 'sales'] as PlanId[]) await customer(`s-${plan}`, plan);
+    const shared = (id: string) => deskWorkspace(asUser({}, `owner-${id}`, { ws: id }), ['content', 'research']);
+    await expect(shared('s-research')).resolves.toBe('s-research');
+    await expect(shared('s-content')).resolves.toBe('s-content');
+    await expect(shared('s-all')).resolves.toBe('s-all');
+    await expect(shared('s-sales')).rejects.toThrow(/does not include the content team/);
   });
 
   it('a lapsed or paused customer reaches nothing, whatever their plan includes', async () => {
