@@ -70,6 +70,7 @@ export { socialAdsSync, adminSyncAds, adminSetAdsSettings, adminCreateAd, adminD
 /** The Research Assistant's own job: a campaign run on a simulated audience before anything is spent. */
 export { researchDummyCampaign } from './researchAssistant';
 export { researchAddCompetitorAd, researchRemoveCompetitorAd } from './competitorAds';
+export { researchFetchCompetitorAds, researchAdLibraryState, adminSetAdLibraryKey, competitorAdsWeekly } from './adLibrary';
 
 /** The owner's WooCommerce store: real orders per campaign, totals only. */
 export { storeStartConnect, storeWooCallback, storeSyncNow, storeDisconnect, storeSalesSync } from './store';

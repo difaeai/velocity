@@ -23,6 +23,9 @@
 import { useEffect, useState } from 'react';
 import { collection, doc, onSnapshot } from 'firebase/firestore';
 
+import Link from 'next/link';
+
+import { useDraft } from '@/lib/draft';
 import { db } from '@/lib/firebase';
 import { useWorkspace } from '@/lib/workspace';
 import { colors } from '@/lib/config';
@@ -49,6 +52,8 @@ export default function AccountsPage() {
   const [openFor, setOpenFor] = useState<SocialPlatform | null>(null);
   const [error, setError] = useState<string | null>(null);
   const showAds = includes('ads');
+  // A campaign handed to the Ad Expert before the ad account was connected waits for it (the Ads page keeps it).
+  const [handed] = useDraft('ads.handedBrief');
   const showContent = includes(['content', 'research']);
 
   useEffect(() => {
@@ -95,6 +100,18 @@ export default function AccountsPage() {
 
       {error ? <p style={{ color: colors.danger, marginBottom: 14 }}>{error}</p> : null}
 
+      {showAds && handed ? (
+        <Card style={{ marginBottom: 16, borderColor: colors.secondary }}>
+          <strong style={{ fontSize: 14 }}>A campaign is waiting for the Ad Expert</strong>
+          <p style={{ fontSize: 13, color: colors.muted, margin: '6px 0 0', lineHeight: 1.55 }}>
+            It was handed over before the ad account was connected. Connect the account below, then open the{' '}
+            <Link href="/dashboard/social/ads" style={{ color: colors.secondary, fontWeight: 800 }}>
+              Meta &amp; Google Ad Expert
+            </Link>{' '}
+            — it starts designing from that campaign on its own.
+          </p>
+        </Card>
+      ) : null}
       {showAds ? <AdsAccount cfg={ads} postingPageId={accounts.facebook?.externalId ?? null} /> : null}
       {showAds ? <GoogleAdsConnect link={ads?.google} /> : null}
       {showAds ? <StoreConnect /> : null}

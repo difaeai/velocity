@@ -706,7 +706,25 @@ So the owner brings the ads:
 
 Ads are ranked by days running, because an ad that runs for weeks is paying for itself. Spend is never shown, because Meta does not publish it.
 
-`competitorAdsBlock` puts the five longest-running ads in front of every campaign the manager plans.
+`competitorAdsBlock` puts the five strongest ads in front of every campaign the manager plans.
+
+**Fetched automatically (`adLibrary.ts`, since 2026-11-01).** SearchApi's `meta_ad_library` engine reads the Library as a service:
+
+- **The search:** `country=PK`, `active_status=active`, `sort_by=impressions_high_to_low`. "Fetch their live ads" returns a competitor's live ads, the most impressions first.
+  - `fromLibrary` keeps only the competitor's own Page when it is among the keyword results.
+  - It ranks them as `impressionsRank` and counts days running.
+  - One model call reads the whole list.
+- **Refresh:** a new fetch replaces that competitor's last one. Pasted ads stay. `competitorAdsWeekly` (Monday 08:00 PKT) refreshes up to five watched competitors.
+- **Order:** the list and the manager's block sort by `byStrength`: impressions rank, then days running.
+- **What is never involved:** no one's Meta account, and no spend figure, because Meta does not publish one.
+- **The key:** Velocity's admin pastes the SearchApi key once on the house Research page (`adminSetAdLibraryKey`). It is proved with one search, sealed at the root `system/adLibrary/secret/credentials`, and shared by every workspace. `SEARCHAPI_KEY` in the deploy secrets is the fallback.
+- **Budget:** each workspace gets `MONTHLY_SEARCHES` (40) searches a month (house 300), counted at `system/adLibraryUsage`.
+
+**A campaign handed to the Ad Expert before the ad account is connected waits.**
+
+1. The Ads page takes `?brief=` (from the overview's brain or the Research Assistant) into a `useDraft('ads.handedBrief')`. It survives the redirect to Connected accounts and a reload.
+2. Connected accounts says a campaign is waiting.
+3. The designer sends it as its first message once the account is connected, then lets it go.
 
 **Velocity's own desk is day by day since 2026-10-28** (`makeAheadDays` default 0):
 the owner found the 30-day batch meant a month written before a single morning's

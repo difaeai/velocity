@@ -46,9 +46,16 @@ export interface CompetitorAd {
   angle: string;
   /** The pattern to learn from it, never its words. */
   lesson: string;
-  source: 'paste' | 'screenshot';
+  /** Pasted or screenshotted by the owner, or fetched from the Library (adLibrary.ts). */
+  source: 'paste' | 'screenshot' | 'library';
   engine: string;
+  /** Fetched ads only: 1 = the competitor's ad with the most impressions right now. */
+  impressionsRank?: number;
 }
+
+/** The order the owner and the manager read them in: most impressions first, then the longest-running. Pure. */
+export const byStrength = (a: CompetitorAd, b: CompetitorAd): number =>
+  (a.impressionsRank ?? 999) - (b.impressionsRank ?? 999) || (b.daysRunning ?? -1) - (a.daysRunning ?? -1);
 
 export const competitorAdsRef = () => sdb.collection('competitorAds');
 
@@ -170,18 +177,18 @@ export const researchRemoveCompetitorAd = deskCall('research', async (req) => {
   return { ok: true };
 });
 
-/** The competition's longest-running ads, for the Social Media Manager's plan: patterns, never words. */
+/** The competition's strongest ads, for the Social Media Manager's plan: patterns, never words. */
 export async function competitorAdsBlock(): Promise<string> {
-  const snap = await competitorAdsRef().orderBy('atMs', 'desc').limit(40).get();
+  const snap = await competitorAdsRef().orderBy('atMs', 'desc').limit(60).get();
   const ads = snap.docs
     .map((d) => d.data() as CompetitorAd)
-    .sort((a, b) => (b.daysRunning ?? -1) - (a.daysRunning ?? -1))
+    .sort(byStrength)
     .slice(0, 5);
   if (!ads.length) return '';
-  return `THE COMPETITION'S LONGEST-RUNNING ADS — an ad that runs for weeks is paying for itself. Learn the pattern; never copy their words:\n${ads
+  return `THE COMPETITION'S STRONGEST ADS — the most impressions right now, and the ones running longest (an ad that runs for weeks is paying for itself). Learn the pattern; never copy their words:\n${ads
     .map(
       (a) =>
-        `- ${a.competitor}: ${a.daysRunning !== null ? `running ${a.daysRunning} days` : 'start unknown'}` +
+        `- ${a.competitor}: ${a.impressionsRank ? `#${a.impressionsRank} by impressions, ` : ''}${a.daysRunning !== null ? `running ${a.daysRunning} days` : 'start unknown'}` +
         (a.versions ? `, ${a.versions} versions` : '') +
         `; hook "${a.hook}"` +
         (a.offer ? `; offer: ${a.offer}` : '') +
