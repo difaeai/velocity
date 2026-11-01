@@ -595,6 +595,8 @@ export {
   adminReadOwnPage,
   adminAuditProfile,
   researchDummyCampaign,
+  researchAddCompetitorAd,
+  researchRemoveCompetitorAd,
   storeStartConnect,
   storeWooCallback,
   storeSyncNow,

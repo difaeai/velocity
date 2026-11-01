@@ -13,17 +13,22 @@
  * dummies before planning any campaign, every real campaign is run as a dummy
  * first (those runs are listed here too), and "Hand to the Social Media
  * Manager" opens the Ad Expert with the tested campaign as its brief.
+ *
+ * Competitor ads: Meta's Ad Library API gives no commercial ads for Pakistan
+ * and no spend for anyone, so the owner brings them — pasted or a screenshot —
+ * and they are ranked by how long they have run (backend `competitorAds.ts`).
  */
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { collection, doc, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { ref, uploadBytes } from 'firebase/storage';
 
-import { db } from '@/lib/firebase';
+import { db, storage } from '@/lib/firebase';
 import { useWorkspace } from '@/lib/workspace';
 import { colors } from '@/lib/config';
 import { STUDIO_PLANS } from '@/lib/studio';
-import { researchApi, type DummyCampaignDoc } from '@/lib/api';
+import { researchApi, type CompetitorAdDoc, type DummyCampaignDoc, type MarketAnalysisDoc } from '@/lib/api';
 import { Button, Card } from '@/components/ui';
 import { FX_CSS } from '@/components/social/fx';
 import { adMoney } from '@/components/social/ads';
@@ -162,6 +167,8 @@ export default function ResearchPage() {
         ) : null}
       </Card>
 
+      <CompetitorAds />
+
       {tests === null ? (
         error ? (
           <ErrorState error={error} onRetry={() => window.location.reload()} />
@@ -292,6 +299,183 @@ function DummyCard({ test: t, canHandOver }: { test: DummyCampaignDoc; canHandOv
           </span>
         )}
       </div>
+    </Card>
+  );
+}
+
+/** Meta's Ad Library, searching a competitor's live ads in Pakistan. */
+const libraryUrl = (q: string) =>
+  `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=PK&media_type=all&search_type=keyword_unordered&q=${encodeURIComponent(q)}`;
+
+/**
+ * The competition's ads, brought by the owner from the Ad Library and ranked
+ * by how long they have run: the one signal of "it works" anyone outside the
+ * advertiser can see.
+ */
+function CompetitorAds() {
+  const { path } = useWorkspace();
+  const [ads, setAds] = useState<CompetitorAdDoc[]>([]);
+  const [known, setKnown] = useState<string[]>([]);
+  const [competitor, setCompetitor] = useState('');
+  const [text, setText] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(
+    () =>
+      onSnapshot(
+        query(collection(db, path('competitorAds')), orderBy('atMs', 'desc'), limit(60)),
+        (snap) =>
+          setAds(
+            snap.docs
+              .map((d) => ({ ...(d.data() as CompetitorAdDoc), id: d.id }))
+              .sort((a, b) => (b.daysRunning ?? -1) - (a.daysRunning ?? -1)),
+          ),
+        (e) => setError(e.message),
+      ),
+    [path],
+  );
+  // The competitors the market read found, offered as names to pick.
+  useEffect(
+    () =>
+      onSnapshot(
+        doc(db, path('socialLaunch/market')),
+        (snap) => setKnown(((snap.data() as MarketAnalysisDoc | undefined)?.competitors ?? []).map((c) => c.name)),
+        () => setKnown([]),
+      ),
+    [path],
+  );
+
+  async function add() {
+    setBusy(true);
+    setError(null);
+    try {
+      let storagePath: string | undefined;
+      if (file) {
+        storagePath = path(`socialUploads/compad-${Date.now()}-${file.name.replace(/[^\w.-]/g, '').slice(-40)}`);
+        await uploadBytes(ref(storage, storagePath), file, { contentType: file.type || 'image/png' });
+      }
+      await researchApi.addCompetitorAd({
+        competitor: competitor.trim(),
+        ...(text.trim() ? { text } : {}),
+        ...(storagePath ? { storagePath } : {}),
+      });
+      setText('');
+      setFile(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'That ad could not be read.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card>
+      <h2 style={{ fontSize: 17, fontWeight: 900, margin: '0 0 4px' }}>Competitor ads</h2>
+      <p style={{ fontSize: 13, color: colors.muted, margin: '0 0 12px', lineHeight: 1.55 }}>
+        Meta does not hand out other businesses’ ads in Pakistan through its API, and never says what anyone spends. So open a
+        competitor’s live ads in the Ad Library, then paste an ad here — or add a screenshot of it. The assistant reads how long
+        it has run (an ad that runs for weeks is paying for itself) and what it does, and your Social Media Manager plans
+        against the longest-running ones.
+      </p>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <div style={{ flex: 1, minWidth: 220 }}>
+          <label htmlFor="comp-name" style={label}>
+            Competitor
+          </label>
+          <input
+            id="comp-name"
+            list="comp-known"
+            value={competitor}
+            onChange={(e) => setCompetitor(e.target.value)}
+            placeholder="Their page or brand name"
+            style={field}
+          />
+          <datalist id="comp-known">
+            {known.map((n) => (
+              <option key={n} value={n} />
+            ))}
+          </datalist>
+        </div>
+        {competitor.trim() ? (
+          <a
+            href={libraryUrl(competitor.trim())}
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: colors.secondary, fontWeight: 800, fontSize: 13.5, paddingBottom: 9 }}
+          >
+            Open their ads in the Ad Library ↗
+          </a>
+        ) : null}
+      </div>
+      <label htmlFor="comp-text" style={{ ...label, marginTop: 10 }}>
+        The ad — paste its card from the Library
+      </label>
+      <textarea
+        id="comp-text"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={4}
+        maxLength={6000}
+        placeholder="Started running on 12 Oct 2026 · 3 ads use this creative and text · the ad’s words…"
+        style={{ ...field, resize: 'vertical' }}
+      />
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
+        <label htmlFor="comp-shot" style={{ fontSize: 13, color: colors.muted }}>
+          or a screenshot:{' '}
+          <input id="comp-shot" type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+        </label>
+        <Button onClick={add} disabled={busy || !competitor.trim() || (!text.trim() && !file)}>
+          {busy ? 'Reading the ad…' : 'Read this ad'}
+        </Button>
+      </div>
+      {error ? (
+        <p role="alert" style={{ color: colors.danger, fontSize: 13, margin: '10px 0 0' }}>
+          {error}
+        </p>
+      ) : null}
+
+      {ads.length ? (
+        <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
+          {ads.map((a) => (
+            <div key={a.id} style={{ border: `1px solid ${colors.border}`, borderRadius: 12, padding: 12 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                <strong style={{ fontSize: 14 }}>{a.competitor}</strong>
+                <span style={{ fontSize: 12, fontWeight: 800, color: (a.daysRunning ?? 0) >= 30 ? colors.success : colors.muted }}>
+                  {a.daysRunning !== null ? `running ${a.daysRunning} days` : 'start date unknown'}
+                  {a.versions ? ` · ${a.versions} versions` : ''}
+                </span>
+                <span style={{ flex: 1 }} />
+                {a.libraryId ? (
+                  <a
+                    href={`https://www.facebook.com/ads/library/?id=${a.libraryId}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ fontSize: 12.5, color: colors.secondary }}
+                  >
+                    In the Library ↗
+                  </a>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() =>
+                    researchApi.removeCompetitorAd({ id: a.id }).catch((e) => setError(e instanceof Error ? e.message : 'Could not remove it.'))
+                  }
+                  style={{ border: 'none', background: 'none', color: colors.muted, cursor: 'pointer', fontSize: 12.5 }}
+                >
+                  Remove
+                </button>
+              </div>
+              <div style={{ fontSize: 13.5, fontWeight: 800, marginTop: 4 }}>{a.hook}</div>
+              <div style={{ fontSize: 12.5, color: colors.muted, marginTop: 2 }}>
+                {[a.offer, a.angle ? `angle: ${a.angle}` : ''].filter(Boolean).join(' · ')}
+              </div>
+              {a.lesson ? <p style={{ fontSize: 13, margin: '6px 0 0', lineHeight: 1.5 }}>{a.lesson}</p> : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
     </Card>
   );
 }
