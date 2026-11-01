@@ -22,6 +22,18 @@ describe('canUse', () => {
     expect(canUse({ ...live, plan: 'all' }, 'sales', NOW)).toBe(true);
     expect(canUse({ ...live, plan: 'all' }, 'content', NOW)).toBe(true);
     expect(canUse({ ...live, plan: 'all' }, 'ads', NOW)).toBe(true);
+    expect(canUse({ ...live, plan: 'research' }, 'research', NOW)).toBe(true);
+    expect(canUse({ ...live, plan: 'research' }, 'content', NOW)).toBe(false);
+    expect(canUse({ ...live, plan: 'research' }, 'ads', NOW)).toBe(false);
+    expect(canUse({ ...live, plan: 'research' }, 'sales', NOW)).toBe(false);
+    expect(canUse({ ...live, plan: 'content' }, 'research', NOW)).toBe(false);
+    expect(canUse({ ...live, plan: 'all' }, 'research', NOW)).toBe(true);
+  });
+
+  it('opens a page two plans share to either of them, and to nobody else', () => {
+    expect(canUse({ ...live, plan: 'research' }, ['content', 'research'], NOW)).toBe(true);
+    expect(canUse({ ...live, plan: 'content' }, ['content', 'research'], NOW)).toBe(true);
+    expect(canUse({ ...live, plan: 'sales' }, ['content', 'research'], NOW)).toBe(false);
   });
 
   it('lets any live plan reach the shared parts', () => {
@@ -47,7 +59,11 @@ describe('refusal', () => {
     expect(refusal({ plan: 'content', trialEndsAtMs: NOW - 9, paidUntilMs: NOW - 1 }, 'content', NOW)).toMatch(/run out/);
   });
   it('names what the plan lacks', () => {
-    expect(refusal({ ...live, plan: 'content' }, 'sales', NOW)).toMatch(/does not include the sales agent/);
+    expect(refusal({ ...live, plan: 'content' }, 'sales', NOW)).toMatch(/does not include the sales, calling and email agents/);
+    expect(refusal({ ...live, plan: 'research' }, 'ads', NOW)).toMatch(
+      /Research Assistant for Social Media plan does not include the Meta & Google Ad Expert/,
+    );
+    expect(refusal({ ...live, plan: 'sales' }, ['content', 'research'], NOW)).toMatch(/does not include the content team/);
   });
   it('is null when allowed', () => {
     expect(refusal({ ...live, plan: 'all' }, 'sales', NOW)).toBeNull();
@@ -75,11 +91,11 @@ describe('paidAfter', () => {
     expect(paidAfter({ plan: 'ads', paidUntilMs: 0 }, 'all', NOW, YEAR_MS)).toBe(NOW + YEAR_MS);
   });
   it('converts the days left on an upgrade at what they were worth', () => {
-    // 32 days of Content ($24) are worth 24 days of the whole team ($32).
-    expect(paidAfter({ plan: 'content', paidUntilMs: NOW + 32 * DAY }, 'all', NOW)).toBe(NOW + 24 * DAY + PERIOD_MS);
+    // 32 days of Content ($26) are worth 26 days of the whole team ($32).
+    expect(paidAfter({ plan: 'content', paidUntilMs: NOW + 32 * DAY }, 'all', NOW)).toBe(NOW + 26 * DAY + PERIOD_MS);
   });
   it('keeps their worth on a downgrade, so nothing paid is thrown away', () => {
-    expect(paidAfter({ plan: 'all', paidUntilMs: NOW + 24 * DAY }, 'content', NOW)).toBe(NOW + 32 * DAY + PERIOD_MS);
+    expect(paidAfter({ plan: 'all', paidUntilMs: NOW + 26 * DAY }, 'content', NOW)).toBe(NOW + 32 * DAY + PERIOD_MS);
   });
 });
 
@@ -88,12 +104,15 @@ describe('priceUsd', () => {
     expect(priceUsd('content', 'month')).toBe(PLANS.content.usd);
   });
   it('prices a year at the figures the site shows', () => {
-    expect([priceUsd('sales', 'year'), priceUsd('content', 'year'), priceUsd('all', 'year')]).toEqual([177, 250, 334]);
+    expect([priceUsd('research', 'year'), priceUsd('content', 'year'), priceUsd('all', 'year')]).toEqual([208, 271, 334]);
   });
-  it('sells Sales agents, Content and the whole team, left to right — not the old ads-only plan', () => {
-    expect(PLAN_IDS).toEqual(['sales', 'content', 'all']);
-    expect([PLANS.sales.usd, PLANS.content.usd, PLANS.all.usd]).toEqual([17, 24, 32]);
-    expect(PLANS.all.name).toMatch(/Meta Ad Expert.*Everything/);
+  it('sells the Research Assistant, Content and the whole team, left to right — not the old sales-only or ads-only plans', () => {
+    expect(PLAN_IDS).toEqual(['research', 'content', 'all']);
+    expect([PLANS.research.usd, PLANS.content.usd, PLANS.all.usd]).toEqual([20, 26, 32]);
+    expect(PLANS.research.name).toBe('Research Assistant for Social Media');
+    expect(PLANS.all.name).toBe('Social Media Manager + Meta & Google Ad Expert');
+    // The whole team carries the sales, calling and email agents the old Sales plan sold on their own.
+    expect(PLANS.all.can).toEqual(expect.arrayContaining(['research', 'content', 'ads', 'sales']));
   });
   it('never saves less than 13% on twelve months', () => {
     for (const id of PLAN_IDS) expect(priceUsd(id, 'year')).toBeLessThanOrEqual(PLANS[id].usd * 12 * 0.87);

@@ -22,7 +22,7 @@ import Link from 'next/link';
 
 import { useAuth } from '@/lib/auth';
 import { SUPPORT_EMAIL } from '@/lib/site';
-import { STUDIO_PLANS, type StudioNeed } from '@/lib/studio';
+import { STUDIO_PLAN_IDS, STUDIO_PLANS, planIncludes, type StudioNeed, type StudioNeeds } from '@/lib/studio';
 import { WorkspaceProvider, useWorkspace } from '@/lib/workspace';
 import { colors } from '@/lib/config';
 import { Button } from '@/components/ui';
@@ -117,10 +117,11 @@ const SOCIAL_NAV: NavGroup[] = [
     title: 'Every day',
     items: [
       { href: '/dashboard/social/queue', label: '🎬 Content & calendar', also: ['/dashboard/social/calendar'] },
-      { href: '/dashboard/social/ads', label: '💸 Meta Ad Expert' },
+      { href: '/dashboard/social/research', label: '🔬 Research Assistant' },
+      { href: '/dashboard/social/ads', label: '💸 Meta & Google Ad Expert' },
       { href: '/dashboard/social/inbox', label: '💬 Comments' },
       { href: '/dashboard/social/performance', label: '📈 Analytics' },
-      { href: '/dashboard/social/sales', label: '🤝 Sales agent' },
+      { href: '/dashboard/social/sales', label: '🤝 Sales, calls & email' },
     ],
   },
   {
@@ -149,16 +150,18 @@ const STUDIO_ADMIN_NAV: NavGroup = {
  * Every page a customer may open, and the plan part it belongs to; a customer
  * sees only what theirs includes. A page missing here (Velocity's own admin
  * pages, anything new) is not theirs at all. The AI agents and the settings
- * are the content team's tools. Connected accounts holds both the posting
- * networks and the Meta Ad Expert's ad account, so every plan opens it and the
+ * are the content team's tools. Analytics is the content team's and the
+ * Research Assistant's both. Connected accounts holds both the posting
+ * networks and the Ad Expert's ad accounts, so every plan opens it and the
  * page shows each plan only its own cards.
  */
-const NEED_OF: Record<string, StudioNeed> = {
+const NEED_OF: Record<string, StudioNeeds> = {
   '/dashboard/social': 'content',
   '/dashboard/social/queue': 'content',
   '/dashboard/social/calendar': 'content',
   '/dashboard/social/inbox': 'content',
-  '/dashboard/social/performance': 'content',
+  '/dashboard/social/performance': ['content', 'research'],
+  '/dashboard/social/research': 'research',
   '/dashboard/social/accounts': 'any',
   '/dashboard/social/employees': 'content',
   '/dashboard/social/crew': 'content',
@@ -180,6 +183,14 @@ const ACCOUNT_NAV: NavGroup = {
     { href: UPGRADE, label: '⬆️ Plans & upgrade', also: [BILLING] },
     { href: USAGE, label: '📊 Usage & credits' },
   ],
+};
+
+/** Who does each part, as the "Not in your plan" note names them. */
+const WHO: Partial<Record<StudioNeed, string>> = {
+  research: 'The Research Assistant',
+  content: 'The content team',
+  ads: 'The Meta & Google Ad Expert',
+  sales: 'The sales, calling and email agents',
 };
 
 const SECTIONS = [
@@ -353,7 +364,9 @@ function StudioShell({ email, name, signOut, children }: ShellProps) {
       ? '/dashboard/social'
       : includes('ads')
         ? '/dashboard/social/ads'
-        : '/dashboard/social/sales';
+        : includes('research')
+          ? '/dashboard/social/research'
+          : '/dashboard/social/sales';
 
   // A customer opens only their desk's own pages — never Velocity's admin ones — and only billing while locked.
   const need = NEED_OF[pathname];
@@ -370,11 +383,11 @@ function StudioShell({ email, name, signOut, children }: ShellProps) {
     : [
         ...SOCIAL_NAV.map((g) => ({
           ...g,
-          // A Sales agents plan has nothing on Connected accounts: its mailbox is set on the Sales page.
+          // The old Sales agents plan has nothing on Connected accounts: its mailbox is set on the Sales page.
           items: g.items.filter(
             (i) =>
               includes(NEED_OF[i.href] ?? 'any') &&
-              (i.href !== '/dashboard/social/accounts' || includes('content') || includes('ads')),
+              (i.href !== '/dashboard/social/accounts' || includes(['content', 'ads', 'research'])),
           ),
         })),
         ACCOUNT_NAV,
@@ -382,7 +395,11 @@ function StudioShell({ email, name, signOut, children }: ShellProps) {
 
   const hoursLeft = Math.max(1, Math.ceil((ws.trialEndsAtMs - nowMs) / 3600_000));
   const trial = nowMs > 0 && ws.paidUntilMs <= nowMs && ws.trialEndsAtMs > nowMs;
-  const what = need === 'ads' ? 'The Meta Ad Expert' : need === 'sales' ? 'The sales agent' : 'The content team';
+  // A page two plans share belongs to neither team alone, so it is named as the page.
+  const what = (typeof need === 'string' ? WHO[need] : null) ?? 'This page';
+  // The plans on sale that include it, named as the pricing page names them: "the A, the B and the C plans".
+  const sold = need ? STUDIO_PLAN_IDS.filter((id) => planIncludes(id, need)).map((id) => `the ${STUDIO_PLANS[id].name}`) : [];
+  const soldIn = sold.length > 1 ? `${sold.slice(0, -1).join(', ')} and ${sold[sold.length - 1]} plans` : `${sold[0] ?? 'a paid'} plan`;
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
@@ -456,13 +473,7 @@ function StudioShell({ email, name, signOut, children }: ShellProps) {
           <div style={{ maxWidth: 520, margin: '60px auto', textAlign: 'center', display: 'grid', gap: 12 }}>
             <strong style={{ fontSize: 18 }}>Not in your {STUDIO_PLANS[ws.plan].name} plan</strong>
             <span style={{ color: colors.muted, fontSize: 14, lineHeight: 1.6 }}>
-              {what} comes with{' '}
-              {need === 'ads'
-                ? 'the Meta Ad Expert + Everything plan'
-                : need === 'content'
-                  ? 'the Content and Meta Ad Expert + Everything plans'
-                  : 'the Sales agents and Meta Ad Expert + Everything plans'}
-              .
+              {`${what} ${what.endsWith('agents') ? 'come' : 'comes'} with ${soldIn}.`}
             </span>
             <Link href={UPGRADE} style={{ color: colors.secondary, fontWeight: 800 }}>
               See the plans →

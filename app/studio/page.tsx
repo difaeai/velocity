@@ -31,7 +31,11 @@ export const metadata: Metadata = {
 };
 
 const TEAM = [
-  { name: 'Hina', role: 'Research', does: 'Searches your market every morning: what is going viral, what competitors post, which sounds are trending.' },
+  {
+    name: 'Hina',
+    role: 'Research Assistant',
+    does: 'Searches your market every morning — what is going viral, what competitors post — and runs every campaign as a free dummy before you spend.',
+  },
   { name: 'Qalam', role: 'Writer', does: 'Writes the hook, the script, the voice-over and the caption — in the language your customers speak.' },
   { name: 'Rang', role: 'Designer', does: 'Makes the post, story and carousel pictures, in your look.' },
   { name: 'Raftar', role: 'Video editor', does: 'Cuts reels with real footage, music and a spoken voice-over.' },
@@ -42,7 +46,7 @@ const TEAM = [
     role: 'Meta Ad Expert',
     does: 'Runs your Meta ads inside the daily limit you set, and improves them every day — cost, conversions and ROAS.',
   },
-  { name: 'Sales', role: 'Sales agent', does: 'Finds businesses that could buy from you and writes each one a short, personal email.' },
+  { name: 'Sales', role: 'Sales, calling & email agents', does: 'Finds businesses that could buy from you, emails each one from your own mailbox, follows up, and phones your leads.' },
 ];
 
 const MAKES = [

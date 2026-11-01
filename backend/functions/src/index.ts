@@ -594,6 +594,7 @@ export {
   socialProfileAudit,
   adminReadOwnPage,
   adminAuditProfile,
+  researchDummyCampaign,
 } from './social';
 
 // Velocity Studio — the desk sold to other businesses: sign-up, manual payments, approvals

@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Manage social → Sales agent.
+ * Manage social → Sales, calls & email: the sales, calling and email agents.
  *
  * Harvey's loop as one page: tell it what you sell and who to look for; it
  * finds businesses (map + verified web search), reads their sites, and writes
@@ -116,7 +116,7 @@ export default function SalesPage() {
         <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 260 }}>
             <div className="fx-eyebrow">Find · write · follow up · call</div>
-            <h1 style={{ fontSize: 26 }}>Sales agents</h1>
+            <h1 style={{ fontSize: 26 }}>Sales, calling &amp; email agents</h1>
             <p style={{ maxWidth: 680 }}>
               {mailbox
                 ? `Finds businesses, writes to each from ${settings.smtp!.from} — ${sentToday} of ${settings.dailyCap} today — follows up twice and drafts your answer to every reply.`
@@ -130,7 +130,7 @@ export default function SalesPage() {
           </div>
         </div>
       </section>
-      {/* A Sales agents workspace lands here, so its market research and launch steps live here too. */}
+      {/* A workspace on the old Sales agents plan lands here, so its market research and launch steps live here too. */}
       {!house && !includes('content') && !includes('ads') ? <LaunchSequence settings={null} /> : null}
       <header style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 260 }}>

@@ -69,7 +69,7 @@ const STEPS: Step[] = [
   },
   {
     key: 'ads',
-    nav: '💸 Meta Ad Expert',
+    nav: '💸 Meta & Google Ad Expert',
     page: 'Meta Ad Expert',
     title: 'The Meta Ad Expert runs your ads',
     body: 'It launches Facebook and Instagram ads inside the daily limit you set, reads cost and results every day, keeps the winners running and pauses the losers.',
@@ -109,7 +109,7 @@ const STEPS: Step[] = [
   },
   {
     key: 'sales',
-    nav: '🤝 Sales agent',
+    nav: '🤝 Sales, calls & email',
     page: 'Sales agent',
     title: 'Sales agents bring customers',
     body: 'They find businesses that could buy from you, write to each one from your own mailbox, follow up twice, and draft your answer when someone replies.',
@@ -150,9 +150,10 @@ const STEPS: Step[] = [
 const NAV = [
   '🏠 Dashboard',
   '🎬 Content & calendar',
-  '💸 Meta Ad Expert',
+  '🔬 Research Assistant',
+  '💸 Meta & Google Ad Expert',
   '💬 Comments',
-  '🤝 Sales agent',
+  '🤝 Sales, calls & email',
   '📊 Usage & credits',
 ];
 const LAST = STEPS.length - 1;

@@ -23,7 +23,7 @@ import {
 } from '@/lib/studio';
 import a from '../account.module.css';
 
-const ICON: Record<StudioPlanId, string> = { sales: '🤝', content: '🎬', ads: '📈', all: '🚀' };
+const ICON: Record<StudioPlanId, string> = { research: '🔬', sales: '🤝', content: '🎬', ads: '📈', all: '🚀' };
 
 export default function UpgradePage() {
   const { ws } = useWorkspace();

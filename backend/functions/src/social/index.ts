@@ -67,6 +67,9 @@ export {
 /** The paid side: Meta campaigns planned, made, measured and steered here. */
 export { socialAdsSync, adminSyncAds, adminSetAdsSettings, adminCreateAd, adminDesignAd, adminAdAction } from './ads';
 
+/** The Research Assistant's own job: a campaign run on a simulated audience before anything is spent. */
+export { researchDummyCampaign } from './researchAssistant';
+
 export {
   socialPageRead,
   socialProfileAudit,

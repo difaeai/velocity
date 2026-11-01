@@ -483,13 +483,14 @@ export const socialProfileAudit = onSchedule(
 
 // ── on demand ───────────────────────────────────────────────────────────────
 
-export const adminReadOwnPage = deskCall('content', { timeoutSeconds: 540, memory: '1GiB' }, async () => {
+// Reading the page and scoring the profile is the Research Assistant's job as much as the content team's.
+export const adminReadOwnPage = deskCall(['content', 'research'], { timeoutSeconds: 540, memory: '1GiB' }, async () => {
   const read = await readOwnPage(await getSocialSettings());
   await sdb.doc(INSIGHTS_PATH).set(read);
   return read;
 });
 
-export const adminAuditProfile = deskCall('content', { timeoutSeconds: 540, memory: '1GiB' }, async () => {
+export const adminAuditProfile = deskCall(['content', 'research'], { timeoutSeconds: 540, memory: '1GiB' }, async () => {
   const audit = await auditProfile(await getSocialSettings());
   await sdb.doc(AUDIT_PATH).set({ ...audit, updatedAt: FieldValue.serverTimestamp() });
   return audit;

@@ -201,7 +201,7 @@ export const studioSubmitPayment = onCall({ timeoutSeconds: 120, memory: '1GiB' 
   if (agents && !PLANS[ws.plan].can.includes('sales')) {
     throw new HttpsError(
       'failed-precondition',
-      'AI agents come with the Sales agents and Meta Ad Expert + Everything plans. Upgrade first, then add the package.',
+      'AI calling agents come with the Social Media Manager + Meta & Google Ad Expert plan. Upgrade first, then add the package.',
     );
   }
   // An agent package keeps the plan the workspace already has; its price comes from the rate card, never the client.

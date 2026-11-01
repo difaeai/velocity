@@ -737,6 +737,15 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ----- researchTests/{id} -----------------------------------------------
+    // The Research Assistant's dummy campaigns: planned, shown to a simulated
+    // audience and priced, with nothing made at Meta and nothing spent. Written
+    // only by the backend.
+    match /researchTests/{testId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // ----- socialComments/{platform_commentId} ------------------------------
     // What people said under our own posts, and the reply the manager drafted.
     // Written only by the backend: a reply that leaves this collection is

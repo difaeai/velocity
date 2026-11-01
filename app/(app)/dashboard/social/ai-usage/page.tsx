@@ -479,7 +479,7 @@ export default function AiUsagePage() {
                   used up stops Gemini until the 1st and the team carries on more plainly. 0 means no cap.
                 </p>
                 <p style={{ color: colors.muted, fontSize: 13, margin: '6px 0 0' }}>
-                  A Studio customer’s month comes from their plan — Sales agents and Content $3, Meta Ad Expert + Everything $5 —
+                  A Studio customer’s month comes from their plan — the Research Assistant and Content $3, the whole team $5 —
                   and each credit day they use adds $0.20 on top (they are shown $1 a day). The customer figure below is only the
                   fallback while a plan cannot be read; a workspace’s own figure beats both.
                 </p>

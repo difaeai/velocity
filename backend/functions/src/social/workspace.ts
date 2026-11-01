@@ -22,7 +22,7 @@ import { logger } from 'firebase-functions';
 import { overBudget, warmAi } from '../ai/config';
 import { db } from '../lib/firebase';
 import { isDocId, requireAuth } from '../lib/guards';
-import { canUse, refusal, type Need, type Workspace } from '../studio/plans';
+import { canUse, refusal, type Needs, type Workspace } from '../studio/plans';
 import { creditDue, spendCreditDay } from '../studio/credits';
 import { modelReady } from './engine';
 import { HOUSE, currentWorkspace, scope } from './scope';
@@ -60,7 +60,7 @@ export async function inWorkspace<T>(wid: string, fn: () => Promise<T>): Promise
  * workspace in their `ws` claim (set by the backend when they sign up), and only
  * for what their plan includes, and only while the trial or a paid month runs.
  */
-export async function deskWorkspace(req: CallableRequest, need: Need): Promise<string> {
+export async function deskWorkspace(req: CallableRequest, need: Needs): Promise<string> {
   const ctx = requireAuth(req);
   const wid = ctx.token.ws;
   if (ctx.role === 'admin' && wid === undefined) return HOUSE;
@@ -94,15 +94,15 @@ type Handler<T> = (req: CallableRequest) => Promise<T>;
  * `onCall` for the desk: checks the caller's plan for `need`, then runs the
  * handler inside their workspace. Handlers only need `requireAuth` for the uid.
  */
-export function deskCall<T>(need: Need, handler: Handler<T>): ReturnType<typeof onCall>;
-export function deskCall<T>(need: Need, opts: CallableOptions, handler: Handler<T>): ReturnType<typeof onCall>;
-export function deskCall<T>(need: Need, a: CallableOptions | Handler<T>, b?: Handler<T>): ReturnType<typeof onCall> {
+export function deskCall<T>(need: Needs, handler: Handler<T>): ReturnType<typeof onCall>;
+export function deskCall<T>(need: Needs, opts: CallableOptions, handler: Handler<T>): ReturnType<typeof onCall>;
+export function deskCall<T>(need: Needs, a: CallableOptions | Handler<T>, b?: Handler<T>): ReturnType<typeof onCall> {
   const [opts, handler] = typeof a === 'function' ? [{}, a] : [a, b as Handler<T>];
   return onCall(opts, async (req) => inWorkspace(await deskWorkspace(req, need), () => handler(req)));
 }
 
 /** The customer workspaces a scheduler should visit for `need` right now. */
-export async function liveWorkspaces(need: Need, nowMs = Date.now()): Promise<string[]> {
+export async function liveWorkspaces(need: Needs, nowMs = Date.now()): Promise<string[]> {
   const snap = await db.collection('workspaces').where('accessUntilMs', '>', nowMs).get();
   return snap.docs.filter((d) => canUse(d.data() as Workspace, need, nowMs)).map((d) => d.id);
 }
@@ -112,7 +112,7 @@ export async function liveWorkspaces(need: Need, nowMs = Date.now()): Promise<st
  * whose plan covers `need`. One workspace failing never stops the rest.
  */
 // shortcut: workspaces run one after another inside one invocation; past ~20 live customers per job, fan out through a job queue.
-export async function forEachWorkspace(need: Need, fn: () => Promise<void>): Promise<void> {
+export async function forEachWorkspace(need: Needs, fn: () => Promise<void>): Promise<void> {
   const others = await liveWorkspaces(need).catch(() => []);
   for (const wid of [HOUSE, ...others]) {
     try {

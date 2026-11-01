@@ -30,6 +30,12 @@ import styles from './pricing.module.css';
 
 /** `src` is the film without its extension: `.mp4` plays, `.jpg` is its poster. */
 const FILMS: Record<StudioPlanId, { src: string; chip: string; alt: string }> = {
+  // The ads-only plan is no longer sold, so its film of charts and a winning ad shows the research plan's testing.
+  research: {
+    src: '/site/plan-ads',
+    chip: 'Testing before you spend',
+    alt: 'An ads dashboard whose charts climb while the winning ad glows and a losing one sits paused',
+  },
   sales: {
     src: '/site/step5',
     chip: 'Closing your leads',

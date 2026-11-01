@@ -14,7 +14,7 @@ import { doc, onSnapshot } from 'firebase/firestore';
 
 import { useAuth } from './auth';
 import { db } from './firebase';
-import { planIncludes, studioCanUse, type StudioNeed, type StudioWorkspace } from './studio';
+import { planIncludes, studioCanUse, type StudioNeeds, type StudioWorkspace } from './studio';
 
 interface WorkspaceState {
   /** Null for Velocity's own desk. */
@@ -24,10 +24,10 @@ interface WorkspaceState {
   ws: StudioWorkspace | null;
   /** A desk path for this console: unchanged in the house, under the workspace otherwise. */
   path: (p: string) => string;
-  /** Whether the plan includes this part (live or not). The house has everything. */
-  includes: (need: StudioNeed) => boolean;
+  /** Whether the plan includes this part, or any one of several (live or not). The house has everything. */
+  includes: (need: StudioNeeds) => boolean;
   /** Whether it may be used right now (trial or paid month running). */
-  live: (need: StudioNeed) => boolean;
+  live: (need: StudioNeeds) => boolean;
 }
 
 const WorkspaceContext = createContext<WorkspaceState | null>(null);

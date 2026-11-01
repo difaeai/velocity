@@ -56,10 +56,15 @@ describe('notInPlan', () => {
     expect(left(['content'])).toEqual(['funnel', 'close']);
     expect(left(['ads'])).toEqual(['content', 'execute', 'close']);
     expect(left(['sales'])).toEqual(['content', 'execute']);
-    expect(left(['content', 'ads', 'sales'])).toEqual([]);
+    expect(left(['research', 'content', 'ads', 'sales'])).toEqual([]);
+    // The Research Assistant alone: the market read, and nothing it would hand to a team it does not have.
+    expect(left(['research'])).toEqual(['content', 'execute', 'funnel', 'close']);
   });
   it('says it is skipped, so the sweep can bring the step back after an upgrade', () => {
-    expect(notInPlan('close', ['content'])).toMatchObject({ status: 'skipped', note: expect.stringMatching(/Everything plan/) });
+    expect(notInPlan('close', ['content'])).toMatchObject({
+      status: 'skipped',
+      note: expect.stringMatching(/Social Media Manager \+ Meta & Google Ad Expert plan/),
+    });
     expect(notInPlan('market', [])).toBeNull();
   });
 });

@@ -382,7 +382,7 @@ export function AdsSection({
         </span>
         <div>
           <h2 id="ads-h" className="fx-h2">
-            Meta Ad Expert
+            Meta &amp; Google Ad Expert
           </h2>
           <p className="fx-sub">How your ads are running</p>
         </div>
@@ -592,7 +592,7 @@ export function SalesSection({
         </span>
         <div>
           <h2 id="sales-h" className="fx-h2">
-            Sales agents
+            Sales, calls &amp; email
           </h2>
           <p className="fx-sub">How they are doing</p>
         </div>

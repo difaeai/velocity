@@ -77,8 +77,9 @@ describe('budgets', () => {
     expect(budgetFor('wsA', { ...DEFAULT_BUDGETS, perWorkspace: { wsA: 10 } })).toBe(10);
   });
 
-  it('a plan sets the month: Content $3, the Meta Ad Expert $5; an admin figure still wins', () => {
+  it('a plan sets the month: Content and the Research Assistant $3, the whole team $5; an admin figure still wins', () => {
     expect(budgetFor('wsA', DEFAULT_BUDGETS, 'content', 0)).toBe(3);
+    expect(budgetFor('wsA', DEFAULT_BUDGETS, 'research', 0)).toBe(3);
     expect(budgetFor('wsA', DEFAULT_BUDGETS, 'all', 0)).toBe(5);
     expect(budgetFor('wsA', { ...DEFAULT_BUDGETS, perWorkspace: { wsA: 8 } }, 'all', 0)).toBe(8);
   });

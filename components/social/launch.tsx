@@ -67,7 +67,7 @@ export function LaunchSequence({ settings }: { settings: SocialSettings | null }
     id === 'content' || id === 'execute'
       ? includes('content')
       : id === 'funnel'
-        ? includes('ads') || includes('sales')
+        ? includes(['ads', 'sales'])
         : id === 'close'
           ? includes('sales')
           : true,
@@ -327,8 +327,14 @@ function MarketResult({ market: m }: { market: MarketAnalysisDoc }) {
   );
 }
 
-/** The panel's verdict, its doubts and every simulated person — labelled as a simulation. */
-function AudienceTest({ test }: { test: NonNullable<MarketAnalysisDoc['test']> }) {
+/** The panel's verdict, its doubts and every simulated person — labelled as a simulation. Also the Research page's dummy campaigns. */
+export function AudienceTest({
+  test,
+  label = 'Pre-launch audience test',
+}: {
+  test: NonNullable<MarketAnalysisDoc['test']>;
+  label?: string;
+}) {
   const v = VERDICT[test.verdict];
   return (
     <div className="ln-test">
@@ -337,7 +343,7 @@ function AudienceTest({ test }: { test: NonNullable<MarketAnalysisDoc['test']> }
           <span>{Math.round(test.score * 100)}%</span>
         </div>
         <div style={{ flex: 1, minWidth: 220 }}>
-          <div className="ln-label">Pre-launch audience test · a simulated panel, not real people</div>
+          <div className="ln-label">{label} · a simulated panel, not real people</div>
           <div style={{ fontSize: 15, fontWeight: 900, color: v.colour }}>{v.label}</div>
           <div style={{ fontSize: 12.5, color: colors.muted, marginTop: 2 }}>
             Shown: “{test.offer}”{test.bestHook ? ` · best hook: “${test.bestHook}”` : ''}
@@ -553,7 +559,7 @@ function ClosePanel({ note }: { note: string | null }) {
   );
 }
 
-const LAUNCH_CSS = `
+export const LAUNCH_CSS = `
 .ln-row { list-style: none; margin: 14px 0 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; counter-reset: ln; }
 @media (max-width: 1100px) { .ln-row { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); } }
 .ln-step { position: relative; min-width: 0; }
