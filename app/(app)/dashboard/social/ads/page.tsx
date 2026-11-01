@@ -31,6 +31,9 @@ import { colors } from '@/lib/config';
 import {
   adsApi,
   type AdCampaignDoc,
+  type AdCostRead,
+  type AdRanking,
+  type AdSlice,
   type AdPlan,
   type AdForecast,
   type AdsConfigDoc,
@@ -558,7 +561,7 @@ function CampaignRow({
   const pending = c.approval === 'pending' && c.status !== 'ACTIVE';
   const next = c.verdict?.action;
 
-  async function act(action: 'launch' | 'pause' | 'resume' | 'budget' | 'apply' | 'end', dailyBudget?: number) {
+  async function act(action: 'launch' | 'pause' | 'resume' | 'budget' | 'apply' | 'end' | 'trim', dailyBudget?: number) {
     if (action === 'end' && !confirm(`End "${c.name}"? It stops for good; its numbers stay here.`)) return;
     setBusy(action);
     try {
@@ -705,6 +708,16 @@ function CampaignRow({
           A fresh creative is in Meta review; the old one steps aside once it is approved.
         </p>
       ) : null}
+      {c.cost && c.cost.level !== 'unknown' ? (
+        <CostPanel
+          cost={c.cost}
+          currency={cur}
+          canTrim={Boolean(c.managed) && c.status === 'ACTIVE'}
+          auto={cfg.mode === 'direct'}
+          busy={busy === 'trim'}
+          onTrim={() => act('trim')}
+        />
+      ) : null}
       {open && c.plan ? <PlanCard plan={c.plan} forecast={c.forecast} currency={cur} note={c.budgetNote} /> : null}
       {(c.autoActions ?? []).length ? (
         <p style={{ fontSize: 11.5, color: colors.muted, margin: '8px 0 0' }}>
@@ -716,6 +729,120 @@ function CampaignRow({
         </p>
       ) : null}
     </div>
+  );
+}
+
+const LEVEL: Record<AdCostRead['level'], { word: string; colour: string }> = {
+  high: { word: 'high', colour: colors.danger },
+  normal: { word: 'normal', colour: colors.success },
+  low: { word: 'low', colour: colors.secondary },
+  unknown: { word: 'not judged yet', colour: colors.muted },
+};
+
+const RANK: Record<AdRanking, { word: string; colour: string }> = {
+  ABOVE_AVERAGE: { word: 'above average', colour: colors.success },
+  AVERAGE: { word: 'average', colour: colors.muted },
+  BELOW_AVERAGE_35: { word: 'bottom 35%', colour: colors.warn },
+  BELOW_AVERAGE_20: { word: 'bottom 20%', colour: colors.danger },
+  BELOW_AVERAGE_10: { word: 'bottom 10%', colour: colors.danger },
+};
+
+/**
+ * Why the views cost what they do: the verdict against the yardstick, the
+ * reasons, Meta's own rankings of the ad, where the money went, and the
+ * platform where it buys least — stopped on its own in direct mode, a button
+ * in ask mode.
+ */
+function CostPanel({
+  cost,
+  currency,
+  canTrim,
+  auto,
+  busy,
+  onTrim,
+}: {
+  cost: AdCostRead;
+  currency: string;
+  canTrim: boolean;
+  auto: boolean;
+  busy: boolean;
+  onTrim: () => void;
+}) {
+  const [more, setMore] = useState(false);
+  const level = LEVEL[cost.level];
+  const ranks: [string, AdRanking][] = [];
+  if (cost.quality) ranks.push(['Quality', cost.quality]);
+  if (cost.engagement) ranks.push(['Engagement', cost.engagement]);
+  if (cost.conversion) ranks.push(['Conversion', cost.conversion]);
+  const w = cost.waste;
+  return (
+    <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 10, background: '#f6f8f7', fontSize: 12.5, lineHeight: 1.55 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <strong>
+          Why the CPM is {adMoney(cost.cpm, currency)}: <span style={{ color: level.colour }}>{level.word}</span>
+        </strong>
+        {ranks.map(([name, r]) => (
+          <Pill key={name} text={`${name}: ${RANK[r].word}`} colour={RANK[r].colour} />
+        ))}
+        <span style={{ flex: 1 }} />
+        <button type="button" onClick={() => setMore(!more)} style={linkButton}>
+          {more ? 'Hide where the money went' : 'Where the money went'}
+        </button>
+      </div>
+      <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+        {cost.reasons.map((r, i) => (
+          <li key={i}>{r}</li>
+        ))}
+      </ul>
+      {w ? (
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 8, color: colors.warn, fontWeight: 700 }}>
+          <span style={{ flex: 1, minWidth: 220 }}>
+            {adMoney(w.weekSpend, currency)} on {w.label} last week bought{' '}
+            {w.timesDearer === null ? 'nothing' : `results at ${w.timesDearer}× the price`} — about {adMoney(w.saveWeek, currency)} a
+            week better spent elsewhere.{canTrim && auto ? ' The expert stops it at the next reading.' : ''}
+          </span>
+          {canTrim && !auto ? (
+            <Button onClick={onTrim} disabled={busy}>
+              {busy ? 'Stopping…' : `Stop showing on ${w.label}`}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      {more ? (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginTop: 10 }}>
+          <Slices title="Placements" rows={cost.placements} currency={currency} />
+          <Slices title="People" rows={cost.people} currency={currency} />
+          <Slices title="Regions" rows={cost.regions} currency={currency} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function Slices({ title, rows, currency }: { title: string; rows: AdSlice[]; currency: string }) {
+  if (!rows.length) return null;
+  return (
+    <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12 }}>
+      <caption style={{ textAlign: 'left', fontWeight: 800, paddingBottom: 4 }}>{title}</caption>
+      <thead>
+        <tr style={{ color: colors.muted, textAlign: 'left' }}>
+          <th style={{ fontWeight: 700 }}>Where</th>
+          <th style={{ fontWeight: 700 }}>Money</th>
+          <th style={{ fontWeight: 700 }}>CPM</th>
+          <th style={{ fontWeight: 700 }}>Per result</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.slice(0, 6).map((r) => (
+          <tr key={r.key}>
+            <td>{r.label}</td>
+            <td>{Math.round(r.share * 100)}%</td>
+            <td>{adMoney(r.cpm, currency)}</td>
+            <td>{r.costPerResult ? adMoney(r.costPerResult, currency) : '—'}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
