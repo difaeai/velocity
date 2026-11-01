@@ -602,6 +602,29 @@ per campaign (`trimmedAtMs`), because a targeting change restarts learning. In
 `ask` mode it is a "Stop showing on …" button (`adminAdAction` `trim`). The
 daily note reads the reasons and the waste too.
 
+### Real sales from the owner's store (WooCommerce, 2026-11-01)
+
+Meta counts a sale only through a pixel, and most shops here have none, so
+ROAS was conversions × `valuePerConversion`. `store.ts` gives it real orders:
+
+- **Ads are tagged.** Every desk-made ad's link carries `url_tags`:
+  `utm_source={{site_source_name}}&utm_medium=paid_social&utm_campaign={{campaign.id}}&utm_content={{ad.id}}`.
+  Meta fills these in.
+- **WooCommerce records the source.** Since WooCommerce 8.5 every order stores its UTM attribution in
+  `_wc_order_attribution_*` meta.
+- **Connecting** (Connected accounts → *Connect WooCommerce*) is WooCommerce's own
+  `/wc-auth/v1/authorize` flow:
+  - `storeStartConnect` makes a one-use `storeConnectStates/{state}` (30 minutes) and sends the owner to approve a **read-only** key on their own store.
+  - WooCommerce POSTs the key to `storeWooCallback` (`acceptWooKey`).
+  - The key is accepted only against that state, once. It is proved with one orders call, then sealed at `system/store/secret/credentials`.
+  - The store must be https and public (`assertPublicUrl`).
+- **Hourly read** (`storeSalesSync`, and *Read orders now*): the month's orders, paid ones only (processing, completed, on-hold).
+  - Summed by `attribute()` into week/month totals, per Meta campaign id, and by source.
+  - **Only totals are stored, never a customer's details.**
+- **In the Ad Expert:** the sync folds a campaign's store orders into its week (`withStoreSales`) only when Meta saw no conversions of its own, so a sale is never counted twice. ROAS and the pause/scale decisions then run on real money.
+
+Shopify and Daraz are not built: Shopify needs a public app review, Daraz developer access.
+
 ### It does not wait to be asked
 
 When none of the desk's own campaigns is running or waiting for an Approve, the

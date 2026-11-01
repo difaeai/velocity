@@ -595,6 +595,11 @@ export {
   adminReadOwnPage,
   adminAuditProfile,
   researchDummyCampaign,
+  storeStartConnect,
+  storeWooCallback,
+  storeSyncNow,
+  storeDisconnect,
+  storeSalesSync,
 } from './social';
 
 // Velocity Studio — the desk sold to other businesses: sign-up, manual payments, approvals

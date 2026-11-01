@@ -683,6 +683,13 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ----- storeConnectStates/{state} ---------------------------------------
+    // One-use hand-offs between "Connect your store" and WooCommerce posting the
+    // read-only key to storeWooCallback. Backend only.
+    match /storeConnectStates/{state} {
+      allow read, write: if false;
+    }
+
     // ----- socialEmployees/{id} --------------------------------------------
     // The people hired onto the social desk: name, job, personal direction and
     // what they have worked on. Admin-readable so the console can render the

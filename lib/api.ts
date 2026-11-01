@@ -2624,6 +2624,8 @@ export interface AdCampaignDoc {
   cost?: AdCostRead | null;
   /** When the expert last stopped a platform for it. */
   trimmedAtMs?: number | null;
+  /** 'store' when the week's conversions are the owner's own store orders (Meta saw none). */
+  salesFrom?: 'store' | null;
   engine?: string;
   plannedBy?: string;
   /** Fresh creatives the expert has made for it, and when it last did. */
@@ -2709,6 +2711,30 @@ export interface DummyCampaignDoc {
   engine: string;
   campaignId: string | null;
 }
+
+/** `system/store` — the owner's WooCommerce store: totals only, never a customer's details. Mirrors backend `StoreDoc`. */
+export interface StoreDoc {
+  platform: 'woocommerce';
+  url: string;
+  connectedAtMs: number;
+  lastSyncAtMs: number | null;
+  lastStatus: string | null;
+  sales: {
+    atMs: number;
+    currency: string;
+    week: { orders: number; revenue: number };
+    month: { orders: number; revenue: number };
+    byCampaign: Record<string, { weekOrders: number; weekRevenue: number; monthOrders: number; monthRevenue: number }>;
+    sources: { source: string; orders: number }[];
+  } | null;
+}
+
+export const storeApi = {
+  /** Where to send the owner to approve a read-only key on their own WooCommerce. */
+  startConnect: callable<{ url: string }, { authorizeUrl: string }>('storeStartConnect'),
+  syncNow: callable<Record<string, never>, { ok: boolean; status: string }>('storeSyncNow', 2 * 60_000),
+  disconnect: callable<Record<string, never>, { ok: boolean }>('storeDisconnect'),
+};
 
 export const researchApi = {
   /** Plans the campaign, shows it to the simulated audience and prices it — about a minute, nothing spent. */
