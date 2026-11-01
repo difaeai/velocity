@@ -39,13 +39,25 @@ vi.mock('../engine', async (importOriginal) => {
     activeEngine: () => 'gemini',
     generateJson: async (req: { what: string; prompt: string }) => {
       model.prompts.push({ what: req.what, prompt: req.prompt });
+      if (req.what === 'A competitor ad') {
+        return { data: { hook: 'Rs 3,999 lawn', offer: 'Free delivery', angle: 'price', lesson: 'Lead with the price.' }, sources: [] };
+      }
       return { data: req.what === 'The ad test audience' ? { panel: PANEL, rewrite: {} } : PLAN, sources: [] };
     },
   };
 });
 
-import { clearFirestore, db } from '../../travelMate/__tests__/helpers';
+import type { CallableRequest } from 'firebase-functions/v2/https';
+
+import { clearFirestore, db, makeReq } from '../../travelMate/__tests__/helpers';
 import { dummyCampaign } from '../ads';
+import { researchAddCompetitorAd } from '../competitorAds';
+
+const admin = <T>(data: T): CallableRequest<T> => {
+  const req = makeReq(data, 'research-admin');
+  (req.auth as { token: Record<string, unknown> }).token = { uid: 'research-admin', role: 'admin' };
+  return req;
+};
 
 beforeEach(async () => {
   await clearFirestore();
@@ -77,5 +89,29 @@ describe('a dummy campaign', () => {
     expect(plan.prompt).toContain("WHAT THE RESEARCH ASSISTANT'S DUMMY CAMPAIGNS FOUND");
     expect(plan.prompt).toContain('"Eid lawn — Lahore women"');
     expect(plan.prompt).toContain('panel 80%, go');
+  });
+});
+
+describe('a competitor ad', () => {
+  it('is kept once per Library ad, ranked by how long it has run, and read by the next plan', async () => {
+    const pasted = [
+      'Library ID: 99887766',
+      'Started running on 1 Sep 2026',
+      '4 ads use this creative and text',
+      'Eid lawn from Rs 3,999. Free delivery.',
+    ].join(String.fromCharCode(10));
+    const { id } = (await researchAddCompetitorAd.run(admin({ competitor: 'Big Lawn Co', text: pasted }))) as { id: string };
+    await researchAddCompetitorAd.run(admin({ competitor: 'Big Lawn Co', text: pasted }));
+    expect(id).toBe('lib-99887766');
+    expect((await db().collection('competitorAds').get()).size).toBe(1);
+    const ad = (await db().doc(`competitorAds/${id}`).get()).data()!;
+    expect(ad).toMatchObject({ competitor: 'Big Lawn Co', startedOn: '2026-09-01', versions: 4, hook: 'Rs 3,999 lawn', angle: 'price', source: 'paste' });
+    expect(ad.daysRunning).toBeGreaterThan(55);
+
+    await dummyCampaign({ brief: 'Eid lawn for women in Lahore' });
+    const plan = model.prompts.find((p) => p.what === 'The ad plan')!;
+    expect(plan.prompt).toContain("THE COMPETITION'S LONGEST-RUNNING ADS");
+    expect(plan.prompt).toContain('Big Lawn Co: running');
+    expect(plan.prompt).toContain('4 versions');
   });
 });

@@ -2736,12 +2736,36 @@ export const storeApi = {
   disconnect: callable<Record<string, never>, { ok: boolean }>('storeDisconnect'),
 };
 
+/** `competitorAds/{id}` — a competitor ad the owner brought from Meta's Ad Library. Mirrors backend `CompetitorAd`. */
+export interface CompetitorAdDoc {
+  id: string;
+  atMs: number;
+  competitor: string;
+  text: string;
+  startedOn: string | null;
+  daysRunning: number | null;
+  versions: number | null;
+  libraryId: string | null;
+  hook: string;
+  offer: string;
+  angle: string;
+  lesson: string;
+  source: 'paste' | 'screenshot';
+  engine: string;
+}
+
 export const researchApi = {
   /** Plans the campaign, shows it to the simulated audience and prices it — about a minute, nothing spent. */
   dummyCampaign: callable<{ brief: string; dailyBudget?: number; days?: number }, { ok: boolean; id: string }>(
     'researchDummyCampaign',
     6 * 60_000,
   ),
+  /** A competitor ad from the Library: its pasted text, or a screenshot already uploaded to `socialUploads/`. */
+  addCompetitorAd: callable<{ competitor: string; text?: string; storagePath?: string }, { ok: boolean; id: string }>(
+    'researchAddCompetitorAd',
+    2 * 60_000,
+  ),
+  removeCompetitorAd: callable<{ id: string }, { ok: boolean }>('researchRemoveCompetitorAd'),
 };
 
 /**

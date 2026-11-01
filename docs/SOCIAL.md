@@ -691,6 +691,23 @@ manager plans, and every real campaign's own pretest is kept there too
 "Hand to the Social Media Manager" opens the Ad Expert's designer with the tested
 campaign as its brief.
 
+**Competitor ads** (`competitorAds.ts`, Research page). Two limits shape the design:
+
+- Meta's Ad Library API returns commercial ads only for ads shown in the EU. For Pakistan it returns political ads alone.
+- Scraping the Library website breaks Meta's terms.
+
+So the owner brings the ads:
+
+1. "Open their ads in the Ad Library" links to the competitor's live ads (country PK).
+2. The owner pastes an ad's card or adds a screenshot of it.
+3. A screenshot is read by our own Tesseract OCR (`readImageText`, no AI bill) and then deleted.
+4. `readLibraryCard` reads the card's own lines: when the ad started running, how many versions run, and the Library ID (one doc per Library ad).
+5. One model call says the hook, offer, angle and the lesson. It gives the pattern, never the words.
+
+Ads are ranked by days running, because an ad that runs for weeks is paying for itself. Spend is never shown, because Meta does not publish it.
+
+`competitorAdsBlock` puts the five longest-running ads in front of every campaign the manager plans.
+
 **Velocity's own desk is day by day since 2026-10-28** (`makeAheadDays` default 0):
 the owner found the 30-day batch meant a month written before a single morning's
 research, and wanted the cost a day at a time. The 10am run reads the market and

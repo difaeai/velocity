@@ -86,6 +86,7 @@ import {
   type RankingRow,
 } from './adsCost';
 import { downloadAsset, refreshAssetUrls, storeFile } from './assets';
+import { competitorAdsBlock } from './competitorAds';
 import { brandBlock, brandName, briefBlock, hardRules, marketName, researchBlock, standingInstructions, wordmark } from './crew';
 import { activeTeam, employeeIntro } from './employees';
 import { activeEngine, generateJson, modelReady } from './engine';
@@ -754,8 +755,9 @@ async function planContext(cfg: AdsConfig, bench: Benchmarks | null): Promise<st
       `At most ${cfg.maxDays} days. Ads send people to ${cfg.link}.`,
     yard,
     past.length ? `HOW OUR OWN CAMPAIGNS DID — evidence, weigh it above the yardstick:\n${past.join('\n')}` : '',
-    // The Research Assistant hands its free tests to the manager here.
+    // The Research Assistant hands its free tests, and the competition's longest-running ads, to the manager here.
     await dummiesBlock(),
+    await competitorAdsBlock(),
     // The market and the competition, so the angle is one nobody else is already running.
     researchBlock(await planningResearch()),
   ]
