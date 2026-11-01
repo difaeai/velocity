@@ -110,7 +110,7 @@ describe('a competitor ad', () => {
 
     await dummyCampaign({ brief: 'Eid lawn for women in Lahore' });
     const plan = model.prompts.find((p) => p.what === 'The ad plan')!;
-    expect(plan.prompt).toContain("THE COMPETITION'S LONGEST-RUNNING ADS");
+    expect(plan.prompt).toContain("THE COMPETITION'S STRONGEST ADS");
     expect(plan.prompt).toContain('Big Lawn Co: running');
     expect(plan.prompt).toContain('4 versions');
   });

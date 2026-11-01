@@ -313,14 +313,22 @@ const libraryUrl = (q: string) =>
  * advertiser can see.
  */
 function CompetitorAds() {
-  const { path } = useWorkspace();
+  const { path, house } = useWorkspace();
   const [ads, setAds] = useState<CompetitorAdDoc[]>([]);
   const [known, setKnown] = useState<string[]>([]);
   const [competitor, setCompetitor] = useState('');
   const [text, setText] = useState('');
   const [file, setFile] = useState<File | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  // Whether the Ad Library service is switched on, and this month's searches.
+  const [library, setLibrary] = useState<{ available: boolean; used: number; cap: number } | null>(null);
+  const [libraryKey, setLibraryKey] = useState('');
+
+  useEffect(() => {
+    researchApi.adLibraryState({}).then(setLibrary, () => setLibrary(null));
+  }, []);
 
   useEffect(
     () =>
@@ -330,12 +338,45 @@ function CompetitorAds() {
           setAds(
             snap.docs
               .map((d) => ({ ...(d.data() as CompetitorAdDoc), id: d.id }))
-              .sort((a, b) => (b.daysRunning ?? -1) - (a.daysRunning ?? -1)),
+              // Most impressions right now first, then the longest-running: the backend's `byStrength`.
+              .sort(
+                (a, b) =>
+                  (a.impressionsRank ?? 999) - (b.impressionsRank ?? 999) || (b.daysRunning ?? -1) - (a.daysRunning ?? -1),
+              ),
           ),
         (e) => setError(e.message),
       ),
     [path],
   );
+
+  async function fetchAds() {
+    setBusy('fetch');
+    setError(null);
+    setNotice(null);
+    try {
+      const { kept } = await researchApi.fetchCompetitorAds({ competitor: competitor.trim() });
+      setNotice(kept ? `Found ${kept} live ad${kept === 1 ? '' : 's'} of ${competitor.trim()}, most impressions first.` : `${competitor.trim()} has no live ads in Pakistan right now.`);
+      setLibrary((l) => (l ? { ...l, used: l.used + 1 } : l));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'The Ad Library could not be read.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function saveKey() {
+    setBusy('key');
+    setError(null);
+    try {
+      await researchApi.setAdLibraryKey({ key: libraryKey.trim() });
+      setLibraryKey('');
+      setLibrary(await researchApi.adLibraryState({}));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'The key was not saved.');
+    } finally {
+      setBusy(null);
+    }
+  }
   // The competitors the market read found, offered as names to pick.
   useEffect(
     () =>
@@ -348,8 +389,9 @@ function CompetitorAds() {
   );
 
   async function add() {
-    setBusy(true);
+    setBusy('add');
     setError(null);
+    setNotice(null);
     try {
       let storagePath: string | undefined;
       if (file) {
@@ -366,7 +408,7 @@ function CompetitorAds() {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'That ad could not be read.');
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
@@ -374,11 +416,29 @@ function CompetitorAds() {
     <Card>
       <h2 style={{ fontSize: 17, fontWeight: 900, margin: '0 0 4px' }}>Competitor ads</h2>
       <p style={{ fontSize: 13, color: colors.muted, margin: '0 0 12px', lineHeight: 1.55 }}>
-        Meta does not hand out other businesses’ ads in Pakistan through its API, and never says what anyone spends. So open a
-        competitor’s live ads in the Ad Library, then paste an ad here — or add a screenshot of it. The assistant reads how long
-        it has run (an ad that runs for weeks is paying for itself) and what it does, and your Social Media Manager plans
-        against the longest-running ones.
+        {library?.available
+          ? 'Name a competitor and the assistant fetches their live ads in Pakistan from Meta’s Ad Library, the ones with the most impressions first, and refreshes them every Monday.'
+          : 'Open a competitor’s live ads in Meta’s Ad Library, then paste an ad here or add a screenshot of it.'}{' '}
+        It reads how long each has run (an ad that runs for weeks is paying for itself) and what it does, and your Social Media
+        Manager plans against the strongest. Meta never publishes what anyone spends on these ads, so spend is not shown.
       </p>
+      {house && library && !library.available ? (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
+          <label htmlFor="lib-key" style={{ fontSize: 13, color: colors.muted }}>
+            Switch on automatic fetching for every workspace — SearchApi key (searchapi.io):
+          </label>
+          <input
+            id="lib-key"
+            type="password"
+            value={libraryKey}
+            onChange={(e) => setLibraryKey(e.target.value)}
+            style={{ ...field, width: 260 }}
+          />
+          <Button variant="secondary" onClick={saveKey} disabled={busy !== null || libraryKey.trim().length < 16}>
+            {busy === 'key' ? 'Checking the key…' : 'Save key'}
+          </Button>
+        </div>
+      ) : null}
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <div style={{ flex: 1, minWidth: 220 }}>
           <label htmlFor="comp-name" style={label}>
@@ -398,6 +458,11 @@ function CompetitorAds() {
             ))}
           </datalist>
         </div>
+        {library?.available ? (
+          <Button onClick={fetchAds} disabled={busy !== null || competitor.trim().length < 2}>
+            {busy === 'fetch' ? 'Fetching their ads…' : 'Fetch their live ads'}
+          </Button>
+        ) : null}
         {competitor.trim() ? (
           <a
             href={libraryUrl(competitor.trim())}
@@ -409,6 +474,12 @@ function CompetitorAds() {
           </a>
         ) : null}
       </div>
+      {library?.available ? (
+        <p style={{ fontSize: 12, color: colors.muted, margin: '6px 0 0' }}>
+          {library.used} of {library.cap} searches used this month. Or bring one yourself:
+        </p>
+      ) : null}
+      {notice ? <p style={{ color: colors.success, fontSize: 13, fontWeight: 700, margin: '8px 0 0' }}>{notice}</p> : null}
       <label htmlFor="comp-text" style={{ ...label, marginTop: 10 }}>
         The ad — paste its card from the Library
       </label>
@@ -426,8 +497,8 @@ function CompetitorAds() {
           or a screenshot:{' '}
           <input id="comp-shot" type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
         </label>
-        <Button onClick={add} disabled={busy || !competitor.trim() || (!text.trim() && !file)}>
-          {busy ? 'Reading the ad…' : 'Read this ad'}
+        <Button onClick={add} disabled={busy !== null || !competitor.trim() || (!text.trim() && !file)}>
+          {busy === 'add' ? 'Reading the ad…' : 'Read this ad'}
         </Button>
       </div>
       {error ? (
@@ -442,10 +513,18 @@ function CompetitorAds() {
             <div key={a.id} style={{ border: `1px solid ${colors.border}`, borderRadius: 12, padding: 12 }}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
                 <strong style={{ fontSize: 14 }}>{a.competitor}</strong>
+                {a.impressionsRank ? (
+                  <span style={{ fontSize: 12, fontWeight: 900, color: a.impressionsRank === 1 ? colors.success : colors.text }}>
+                    #{a.impressionsRank} by impressions
+                  </span>
+                ) : null}
                 <span style={{ fontSize: 12, fontWeight: 800, color: (a.daysRunning ?? 0) >= 30 ? colors.success : colors.muted }}>
                   {a.daysRunning !== null ? `running ${a.daysRunning} days` : 'start date unknown'}
                   {a.versions ? ` · ${a.versions} versions` : ''}
                 </span>
+                {a.pageName && a.pageName.toLowerCase() !== a.competitor.toLowerCase() ? (
+                  <span style={{ fontSize: 12, color: colors.muted }}>page: {a.pageName}</span>
+                ) : null}
                 <span style={{ flex: 1 }} />
                 {a.libraryId ? (
                   <a

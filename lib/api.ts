@@ -2750,8 +2750,13 @@ export interface CompetitorAdDoc {
   offer: string;
   angle: string;
   lesson: string;
-  source: 'paste' | 'screenshot';
+  source: 'paste' | 'screenshot' | 'library';
   engine: string;
+  /** Fetched ads: 1 = the competitor's ad with the most impressions right now. */
+  impressionsRank?: number;
+  pageName?: string;
+  link?: string;
+  cta?: string;
 }
 
 export const researchApi = {
@@ -2766,6 +2771,11 @@ export const researchApi = {
     2 * 60_000,
   ),
   removeCompetitorAd: callable<{ id: string }, { ok: boolean }>('researchRemoveCompetitorAd'),
+  /** A competitor's live ads from the Ad Library service, most impressions first. One of the month's searches. */
+  fetchCompetitorAds: callable<{ competitor: string }, { ok: boolean; kept: number }>('researchFetchCompetitorAds', 2 * 60_000),
+  adLibraryState: callable<Record<string, never>, { available: boolean; used: number; cap: number }>('researchAdLibraryState'),
+  /** Admin: the SearchApi key every workspace's automatic fetch uses, proved with one search first. */
+  setAdLibraryKey: callable<{ key: string }, { ok: boolean; last4: string }>('adminSetAdLibraryKey', 60_000),
 };
 
 /**

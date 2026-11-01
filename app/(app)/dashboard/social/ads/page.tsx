@@ -25,6 +25,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { collection, doc, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 
+import { useDraft } from '@/lib/draft';
 import { db } from '@/lib/firebase';
 import { useWorkspace } from '@/lib/workspace';
 import { colors } from '@/lib/config';
@@ -92,6 +93,21 @@ export default function AdsPage() {
       ),
     [path],
   );
+
+  // A brief handed over as ?brief= (the overview's brain, the Research Assistant) is kept until the ad account is
+  // connected, so one handed over before connecting survives the trip to Connected accounts and back.
+  const [handed, setHanded, clearHanded] = useDraft('ads.handedBrief');
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const params = new URLSearchParams(window.location.search);
+      const brief = params.get('brief');
+      if (!brief) return;
+      setHanded(brief.slice(0, 2000));
+      params.delete('brief');
+      history.replaceState(null, '', `${location.pathname}${params.size ? `?${params}` : ''}${location.hash}`);
+    }, 0);
+    return () => clearTimeout(t);
+  }, [setHanded]);
 
   // The ad account is connected on Connected accounts; with none, that is where this page sends you.
   const router = useRouter();
@@ -224,6 +240,8 @@ export default function AdsPage() {
         posts={posts}
         manager={manager}
         house={house}
+        handed={connected ? handed : ''}
+        onHanded={clearHanded}
         onDone={setNotice}
         onError={setError}
       />
