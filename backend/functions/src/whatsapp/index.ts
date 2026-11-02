@@ -23,6 +23,7 @@ import {
   tripCircuitBreaker,
 } from './alerts';
 import { classifySendError, toWhatsAppNumber, whatsAppConfig } from './client';
+import { handleLeadMessage, type InboundMessage } from './leads';
 import { readInboundIntent } from './policy';
 
 const prefSchema = z.object({
@@ -218,7 +219,9 @@ export function verifySignature(
 }
 
 interface WebhookValue {
-  messages?: { from?: string; type?: string; text?: { body?: string }; button?: { text?: string } }[];
+  messages?: InboundMessage[];
+  /** The sender's WhatsApp profile name, one entry per `wa_id`. */
+  contacts?: { wa_id?: string; profile?: { name?: string } }[];
   statuses?: {
     /** The `wamid` of the message this status is about. */
     id?: string;
@@ -235,13 +238,16 @@ export async function handleWebhookBody(body: unknown): Promise<void> {
     for (const change of entry.changes ?? []) {
       const value = change.value;
       if (!value) continue;
-      for (const msg of value.messages ?? []) await handleInbound(msg);
+      for (const msg of value.messages ?? []) {
+        const name = value.contacts?.find((c) => c.wa_id === msg.from)?.profile?.name ?? null;
+        await handleInbound(msg, name);
+      }
       for (const st of value.statuses ?? []) await handleStatus(st);
     }
   }
 }
 
-async function handleInbound(msg: NonNullable<WebhookValue['messages']>[number]): Promise<void> {
+async function handleInbound(msg: InboundMessage, profileName: string | null): Promise<void> {
   const from = msg.from;
   if (!from) return;
   // A quick-reply button carries its label rather than a text body — the
@@ -257,9 +263,16 @@ async function handleInbound(msg: NonNullable<WebhookValue['messages']>[number])
   if (intent === 'start') {
     await optInDriverByPhone(from);
   }
-  // Anything else is a driver talking to us. Nothing to do here — but the reply
-  // has opened a 24-hour service window with them, which is exactly when a
-  // human on the support desk can answer without a template.
+  // Everything else goes to the commute QR bot, which decides for itself who is
+  // a lead: anyone who sent the QR's words, or a number we have never seen. A
+  // driver chatting back to an alert is neither, and is left alone as before.
+  // Caught here: one payload can also carry OTP delivery failures and other
+  // people's STOPs, and a bot bug must never cost us those.
+  try {
+    await handleLeadMessage(msg, profileName);
+  } catch (err) {
+    logger.error('WhatsApp lead: handler failed', { error: String(err) });
+  }
 }
 
 async function handleStatus(st: NonNullable<WebhookValue['statuses']>[number]): Promise<void> {

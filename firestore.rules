@@ -579,6 +579,13 @@ service cloud.firestore {
     }
 
     // ----- safetyEvents/{id} ----------------------------------------------
+    // Commute demand from the WhatsApp QR bot (whatsapp/leads.ts): phone
+    // numbers and home pins, so admins only. Written by the webhook alone.
+    match /whatsappLeads/{number} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // SOS / route-deviation records. Created server-side. The reporter and any
     // admin may read; nobody writes directly.
     match /safetyEvents/{eventId} {
