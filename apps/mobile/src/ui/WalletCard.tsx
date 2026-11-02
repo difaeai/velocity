@@ -43,7 +43,7 @@ export function WalletCard({
     owed > 0
       ? `PKR ${owed.toLocaleString()} fee due · ${credits > 0 ? 'off your credits when a ride ends' : 'pay it to keep driving'}`
       : credits > 0
-        ? 'Mobile-holder credits · pay your commission'
+        ? 'Credits · pay your commission'
         : 'Credits used up · commission paid as usual';
   return (
     <Pressable
@@ -51,7 +51,7 @@ export function WalletCard({
       onPress={onPress}
       disabled={!onPress}
       accessibilityRole={onPress ? 'button' : undefined}
-      accessibilityLabel={`Wallet: ${credits.toLocaleString()} rupees in credits, given for a mobile holder. Commission and cancellation fees come off them first. ${used > 0 ? `${used.toLocaleString()} rupees used so far. ` : ''}${owed > 0 ? `${owed.toLocaleString()} rupees in cancellation fees still due. ` : ''}They cannot be withdrawn as cash.`}
+      accessibilityLabel={`Wallet: ${credits.toLocaleString()} rupees in credits. Commission and cancellation fees come off them first. ${used > 0 ? `${used.toLocaleString()} rupees used so far. ` : ''}${owed > 0 ? `${owed.toLocaleString()} rupees in cancellation fees still due. ` : ''}They cannot be withdrawn as cash.`}
     >
       <View style={styles.icon}>
         <Svg width={18} height={18} viewBox="0 0 24 24">
