@@ -623,10 +623,11 @@ export default function DriverHome() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-      {/* ── Wallet ── The very first thing, above Offline/Online: the credits
-          given for a mobile holder, and what they do. Hidden mid-trip, like the
+      {/* ── Wallet ── The very first thing, above Offline/Online: the driver's
+          credits and what they do — only while there are some, or a fee is due
+          (the mobile-holder bonus ended 2026-11-02). Hidden mid-trip, like the
           banners below — the trip owns the screen until drop-off. */}
-      {!activeTrip && (commission.bonus > 0 || (profile?.commissionCreditEarned ?? 0) > 0 || outstanding.amount > 0) ? (
+      {!activeTrip && (commission.bonus > 0 || outstanding.amount > 0) ? (
         <WalletCard
           credits={commission.bonus}
           used={Math.max(0, Math.round(profile?.commissionCreditUsed ?? 0))}
