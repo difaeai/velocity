@@ -3,7 +3,7 @@
     "name": "Velocity Rides",
     "slug": "velocity",
     "scheme": "velocity",
-    "version": "1.23.1",
+    "version": "1.24.0",
     "runtimeVersion": {
       "policy": "appVersion"
     },
