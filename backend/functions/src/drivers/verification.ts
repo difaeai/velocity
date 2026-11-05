@@ -41,6 +41,7 @@ import { z } from 'zod';
 import { auth, db, FieldValue, SCHEDULE_REGION, Timestamp } from '../lib/firebase';
 import { docId, invalid, requireAdmin } from '../lib/guards';
 import { sendToUser } from '../lib/fcm';
+import { wake } from '../lib/jobSleep';
 import { applyRole } from '../users';
 import { readDriverDocuments, verificationEngineReady } from '../lib/driverVerificationLocal';
 import {
@@ -106,6 +107,8 @@ export async function enqueueDriverVerification(
     status: 'queued',
     createdAt: FieldValue.serverTimestamp(),
   });
+  // The applicant was promised a minute, not the sleeper's ten.
+  await wake('ride');
   return ref.id;
 }
 

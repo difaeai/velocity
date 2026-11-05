@@ -47,6 +47,7 @@
  * exist in this state", it probably belongs in a unit test instead.
  */
 import { auth, db } from '../lib/firebase';
+import { isAsleep } from '../lib/jobSleep';
 import { showingNow } from '../traffic/functions';
 import { TRAFFIC_COLLECTION, type TrafficAlert } from '../traffic/types';
 import type { QaFailureKind, QaSeverity } from './features';
@@ -425,9 +426,10 @@ export const QA_CHECKS: readonly QaCheck[] = [
         };
       }
 
-      // It runs every 20 minutes. Two hours is six missed runs, not a blip.
+      // It runs every 20 minutes. Two hours is six missed runs, not a blip —
+      // unless nobody is using the app and the sleeper put it to bed.
       const ageMin = Math.round((now.getTime() - ranAt) / MIN);
-      if (ageMin > 120) {
+      if (ageMin > 120 && !(await isAsleep('refreshTrafficAlerts'))) {
         return {
           kind: 'no_effect',
           whatHappened: `The road-alert refresh last ran ${ageMin} minutes ago, so it has missed at least six runs. Alerts are ageing out and nothing is replacing them.`,
