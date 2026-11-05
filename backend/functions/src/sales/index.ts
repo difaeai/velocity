@@ -722,6 +722,15 @@ export const salesCallScript = deskCall('sales', { timeoutSeconds: 120 }, async 
   return { ok: true, script };
 });
 
+/** Whether salesSweep would do anything here now: the day's search, or leads to send to or hear back from. The sleeper asks. */
+export async function salesHasWork(): Promise<boolean> {
+  const s = await getSales();
+  if (!s.product || !s.senderCompany) return false;
+  if (s.autoDaily && s.kinds.length && s.city && s.lastAutoDay !== pktDay()) return true;
+  if (s.mode !== 'mailbox' || !s.smtp) return false;
+  return !(await sdb.collection(LEADS).where('status', 'in', ['approved', 'sent']).limit(1).get()).empty;
+}
+
 /**
  * Every 15 minutes, per workspace with the sales agent: read the replies, send
  * what is approved and the follow-ups that are due, within the day's cap — and

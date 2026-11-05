@@ -22,6 +22,7 @@ import { logger } from 'firebase-functions';
 import { overBudget, warmAi } from '../ai/config';
 import { db } from '../lib/firebase';
 import { isDocId, requireAuth } from '../lib/guards';
+import { wake } from '../lib/jobSleep';
 import { canUse, refusal, type Needs, type Workspace } from '../studio/plans';
 import { creditDue, spendCreditDay } from '../studio/credits';
 import { modelReady } from './engine';
@@ -98,7 +99,12 @@ export function deskCall<T>(need: Needs, handler: Handler<T>): ReturnType<typeof
 export function deskCall<T>(need: Needs, opts: CallableOptions, handler: Handler<T>): ReturnType<typeof onCall>;
 export function deskCall<T>(need: Needs, a: CallableOptions | Handler<T>, b?: Handler<T>): ReturnType<typeof onCall> {
   const [opts, handler] = typeof a === 'function' ? [{}, a] : [a, b as Handler<T>];
-  return onCall(opts, async (req) => inWorkspace(await deskWorkspace(req, need), () => handler(req)));
+  return onCall(opts, async (req) => {
+    const wid = await deskWorkspace(req, need);
+    // Somebody is working in the desk: its sleeping jobs must be running.
+    await wake('desk');
+    return inWorkspace(wid, () => handler(req));
+  });
 }
 
 /** The customer workspaces a scheduler should visit for `need` right now. */

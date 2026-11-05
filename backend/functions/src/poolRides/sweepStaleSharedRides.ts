@@ -44,7 +44,7 @@ import {
 } from './lifecycle';
 
 /** Driver-posted statuses that mean nobody has set off yet. */
-const SWEEPABLE_RIDE_STATUSES = ['open', 'collecting', 'full'] as const;
+export const SWEEPABLE_RIDE_STATUSES = ['open', 'collecting', 'full'] as const;
 
 /**
  * Request statuses that are still waiting on somebody who is not coming.
@@ -54,7 +54,7 @@ const SWEEPABLE_RIDE_STATUSES = ['open', 'collecting', 'full'] as const;
  * time the grace has passed the driver who made it has long since moved on.
  * `active` is NOT — a driver accepted that pool, and it is a real ride.
  */
-const SWEEPABLE_REQUEST_STATUSES = ['open', 'negotiating'] as const;
+export const SWEEPABLE_REQUEST_STATUSES = ['open', 'negotiating'] as const;
 
 /** Firestore caps a batch at 500 writes; each document here costs several. */
 const SCAN_LIMIT = 200;

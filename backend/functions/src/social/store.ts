@@ -335,12 +335,15 @@ export const storeDisconnect = deskCall('ads', async () => {
   return { ok: true };
 });
 
+/** Whether this workspace has a store connected. The sleeper asks too. */
+export const storeConnected = async (): Promise<boolean> => (await sdb.doc(STORE_PATH).get()).exists;
+
 /** Every hour, every workspace with a store: the month's orders read again, totals only. */
 export const storeSalesSync = onSchedule(
   { schedule: 'every 60 minutes', region: SCHEDULE_REGION, timeoutSeconds: 300 },
   () =>
     forEachWorkspace('ads', async () => {
-      if (!(await sdb.doc(STORE_PATH).get()).exists) return;
+      if (!(await storeConnected())) return;
       const status = await syncStore();
       logger.info('store: read the orders', { status });
     }),

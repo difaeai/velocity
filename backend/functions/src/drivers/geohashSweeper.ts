@@ -42,6 +42,7 @@ import { z } from 'zod';
 
 import { db, SCHEDULE_REGION } from '../lib/firebase';
 import { invalid, requireRole } from '../lib/guards';
+import { wake } from '../lib/jobSleep';
 import { DRIVER_GEOHASH_FIELD } from '../lib/nearbyDrivers';
 
 const REGION = 'asia-south1';
@@ -163,6 +164,8 @@ export const stampDriverCell = onCall({ region: REGION }, async (req) => {
     { [DRIVER_GEOHASH_FIELD]: geohash },
     { merge: true },
   );
+  // A shift is starting: the sweep above and the ride jobs must be running.
+  await wake('ride');
 
   logger.info('stampDriverCell', { uid: ctx.uid });
   return { ok: true, geohash };
