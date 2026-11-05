@@ -112,41 +112,51 @@ which the `/link` page sends to Shared rides. No template change is needed.
 
 ### 2b. The demand template (optional, stays dark until set)
 
-When somebody finishes the WhatsApp QR questions (`whatsapp/leads.ts`),
-opted-in drivers near their pickup are told about it with a second template.
-It is a separate template because demand has no fare and is not a ride waiting.
+An hour before riders leave, opted-in drivers near where they start are told
+how many, from where, when, and what the car pays
+(`whatsapp/scheduledDemand.ts`, every quarter hour). The riders are the WhatsApp
+QR leads, home to office at their start time and back at their end time, in
+cars of up to four starting within 1.5 km. A shared ride booked for a set time
+uses it too, at its second seat. It is a separate template because the ride
+alert says a ride is waiting now.
 
-- **Name:** `driver_demand_alert`
+- **Name:** `driver_ride_schedule`
 - **Category:** **Utility**
 - **Language:** English (`en`)
 
-**Body** (four variables, in this order):
+**Body** (five variables, in this order):
 
 ```
-Hi {{1}}, new ride demand near you: {{2}} going to {{3}} at {{4}} every day.
-Open Velocity Rides to see where riders are.
+Hi {{1}}, {{2}} will travel from {{3}} at {{4}} today. Total fare: PKR {{5}}.
+Open Velocity Rides to see the ride.
 ```
 
-Samples for Meta's review: `Ali`, `1 person`, `PIMS`, `8:00 AM`.
+Samples for Meta's review: `Ali`, `3 passengers`, `Blue Area`, `5:00 PM`, `450`.
 
-**Buttons:**
+**Buttons**, in this order:
 
 | Type | Label | Value |
 |------|-------|-------|
-| Visit website (**static**) | `See demand` | `https://velocityrides.app/link/driver/demand` |
+| Visit website (dynamic) | `See ride` | `https://velocityrides.app/link/driver/{{1}}` (sample `demand`) |
 | Quick reply | `Stop alerts` | — |
 
-The URL has no `{{1}}`: the code sends no button parameter for this template.
-Once Meta shows it **Approved**, add to the `WHATSAPP_ENV` secret:
+The code fills the URL with `demand` (the Demand tab) or `shared-pools`. Once
+Meta shows it **Approved**, add to the `WHATSAPP_ENV` secret:
 
 ```
-WHATSAPP_DEMAND_TEMPLATE_NAME=driver_demand_alert
+WHATSAPP_DEMAND_TEMPLATE_NAME=driver_ride_schedule
 WHATSAPP_DEMAND_TEMPLATE_LANG=en
+WHATSAPP_DEMAND_TEMPLATE_BUTTON_INDEX=0
 ```
+
+The index is `1` if the approved template shows **Stop alerts** before **See ride**.
 
 Use the name and language exactly as Meta shows them. A name Meta does not know
 comes back as `132001`, which trips the circuit breaker and stops ride alerts
-too. With the line absent, demand alerts simply do not send.
+too. With the line absent, nothing is sent and shared rides keep the ride alert.
+
+Quiet hours still apply, so a ride leaving before 8 AM is never announced (its
+alert would go out before 7).
 
 ### 3. Backend secrets
 

@@ -56,7 +56,8 @@ import { assertFaceCheckedIn } from '../domain/faceCheckIn';
 import { sharedRideFare } from '../fare/sharedRideFare';
 import { ACTIVE_STATUSES, assertRiderCanBook, broadcastTripToNearbyDrivers, haversineKm, lockInBid } from '../trips';
 import { generateShareCode, writeTripDocuments } from '../trips/poolTripFactory';
-import { alertOfflineDriversOnWhatsApp } from '../whatsapp/alerts';
+import { alertOfflineDriversOnWhatsApp, demandTemplateReady, pktClock } from '../whatsapp/alerts';
+import { areaLabel } from '../dailyRoutes/travelAreas';
 import { joinPoolTripAsRider, POOL_JOIN_WINDOW_MS } from '../trips/poolShare';
 import { firstNameOf, hostRosterEntry, rosterForTrip } from '../trips/poolRoster';
 import { poolJoinGenderGate } from '../trips/enRoute';
@@ -861,7 +862,9 @@ async function alertDriversOfDemand(poolRef: FirebaseFirestore.DocumentReference
     .map((d) => d.id);
   const gross = priceInOrder(riders).gross;
   // Drivers with the app closed hear on WhatsApp, under the same caps as ride
-  // alerts. No trip yet, so the alert's link is the pool (link page → Shared rides).
+  // alerts: "2 passengers will travel from F-10 at 5:00 PM", once the demand
+  // template is set up and the ride has a time. No trip yet, so the link is the
+  // pool (link page → Shared rides).
   alertOfflineDriversOnWhatsApp({
     tripId: `pool-${poolRef.id}`,
     pickup,
@@ -869,6 +872,9 @@ async function alertDriversOfDemand(poolRef: FirebaseFirestore.DocumentReference
     fare: gross,
     onlineNearby: near.length,
     shared: { riders: riders.length, to: (pool.dropoff as Place).address },
+    ...(dep !== null && demandTemplateReady()
+      ? { demand: { people: riders.length, from: areaLabel(pickup.address), time: pktClock(dep), link: 'shared-pools' as const } }
+      : {}),
   }).catch((err) => logger.warn('sharedPools: WhatsApp demand alert failed', { poolId: poolRef.id, err: String(err) }));
   if (near.length === 0) return;
   const when = dep ? `at ${new Date(dep + PKT_OFFSET_MS).toISOString().slice(11, 16)}` : 'now';

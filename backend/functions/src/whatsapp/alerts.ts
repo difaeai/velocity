@@ -165,27 +165,42 @@ export interface OfflineAlertInput {
   /** A shared car: how many riders are booked and where it goes, so the alert says so. */
   shared?: { riders: number; to?: string };
   /**
-   * Not a ride but new commute demand (a finished WhatsApp QR lead): sent with
-   * the demand template, no fare, and regardless of who is online — it is for
-   * planning tomorrow, not for taking a ride now.
+   * Riders leaving at a set time, told ahead of it with the demand template:
+   * "{people} will travel from {from} at {time} today. Total fare: PKR {fare}".
+   * Sent whoever is online — it is for planning, not for a ride waiting now.
+   * `link` is the end of the "See ride" URL: velocityrides.app/link/driver/{link}.
    */
-  demand?: { people: number; to: string; time: string };
+  demand?: { people: number; from: string; time: string; link: 'demand' | 'shared-pools' };
 }
+
+export const PKT_OFFSET_MS = 5 * 60 * 60 * 1000;
+
+/** "5:00 PM", Pakistan time — how the demand template says when riders leave. */
+export function pktClock(ms: number): string {
+  const d = new Date(ms + PKT_OFFSET_MS);
+  const h = d.getUTCHours();
+  return `${h % 12 || 12}:${String(d.getUTCMinutes()).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+}
+
+/** True once the demand template is configured — callers with a fallback check first. */
+export const demandTemplateReady = (): boolean => !!(process.env.WHATSAPP_DEMAND_TEMPLATE_NAME ?? '').trim();
 
 /**
  * The demand template's config, or null while it is not set up. Stays dark until
  * `WHATSAPP_DEMAND_TEMPLATE_NAME` names a template Meta has APPROVED: a name Meta
- * does not know is a `halt`, which would stop ride alerts too. Its "See demand"
- * button is a static URL, so no button parameter is ever sent.
+ * does not know is a `halt`, which would stop ride alerts too. Its "See ride"
+ * URL button is first unless WHATSAPP_DEMAND_TEMPLATE_BUTTON_INDEX says otherwise.
  */
 function demandConfig(cfg: WhatsAppConfig | null): WhatsAppConfig | null {
   const name = (process.env.WHATSAPP_DEMAND_TEMPLATE_NAME ?? '').trim();
   if (!cfg || !name) return null;
+  const index = (process.env.WHATSAPP_DEMAND_TEMPLATE_BUTTON_INDEX ?? '').trim();
   return {
     ...cfg,
     templateName: name,
     templateLang: (process.env.WHATSAPP_DEMAND_TEMPLATE_LANG ?? '').trim() || 'en',
-    urlButtonIndex: null,
+    // Meta's editor can put the quick reply first; then this is 1.
+    urlButtonIndex: /^\d$/.test(index) ? index : '0',
   };
 }
 
@@ -214,7 +229,7 @@ export async function alertOfflineDriversOnWhatsApp(input: OfflineAlertInput): P
     settings,
     {
       onlineNearby: input.demand ? 0 : input.onlineNearby,
-      fare: input.demand ? null : input.fare,
+      fare: input.fare,
       sentToday,
       circuitOpen: health.circuitOpen,
       configured: cfg !== null,
@@ -266,10 +281,11 @@ export async function alertOfflineDriversOnWhatsApp(input: OfflineAlertInput): P
     const res = input.demand
       ? await sendTemplate(cfg, driver.phone as string, [
         firstName,
-        `${input.demand.people} ${input.demand.people === 1 ? 'person' : 'people'}`,
-        input.demand.to,
+        `${input.demand.people} passenger${input.demand.people === 1 ? '' : 's'}`,
+        input.demand.from,
         input.demand.time,
-      ])
+        String(Math.round(input.fare)),
+      ], input.demand.link)
       : await sendTemplate(
         cfg,
         driver.phone as string,

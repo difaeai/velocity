@@ -494,6 +494,8 @@ export { adminSendPushNotification } from './users';
 // whose app is closed. Opt-in only, capped, and with a circuit breaker that
 // stops every send the moment Meta pushes back (see whatsapp/policy.ts).
 export { setWhatsAppAlerts, whatsappWebhook } from './whatsapp';
+// WhatsApp QR demand, an hour before it leaves: "3 passengers from Blue Area at 5:00 PM".
+export { sendScheduledDemandAlerts } from './whatsapp/scheduledDemand';
 export {
   adminGetWhatsAppStatus,
   adminSetWhatsAppAlertSettings,
