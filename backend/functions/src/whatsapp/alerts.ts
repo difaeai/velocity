@@ -32,7 +32,7 @@
 import { logger } from 'firebase-functions';
 
 import { db, FieldValue, Timestamp } from '../lib/firebase';
-import { sendTemplate, toWhatsAppNumber, whatsAppConfig } from './client';
+import { sendTemplate, toWhatsAppNumber, whatsAppConfig, type WhatsAppConfig } from './client';
 import {
   afterSend,
   blockFanout,
@@ -164,6 +164,29 @@ export interface OfflineAlertInput {
   onlineNearby: number;
   /** A shared car: how many riders are booked and where it goes, so the alert says so. */
   shared?: { riders: number; to?: string };
+  /**
+   * Not a ride but new commute demand (a finished WhatsApp QR lead): sent with
+   * the demand template, no fare, and regardless of who is online — it is for
+   * planning tomorrow, not for taking a ride now.
+   */
+  demand?: { people: number; to: string; time: string };
+}
+
+/**
+ * The demand template's config, or null while it is not set up. Stays dark until
+ * `WHATSAPP_DEMAND_TEMPLATE_NAME` names a template Meta has APPROVED: a name Meta
+ * does not know is a `halt`, which would stop ride alerts too. Its "See demand"
+ * button is a static URL, so no button parameter is ever sent.
+ */
+function demandConfig(cfg: WhatsAppConfig | null): WhatsAppConfig | null {
+  const name = (process.env.WHATSAPP_DEMAND_TEMPLATE_NAME ?? '').trim();
+  if (!cfg || !name) return null;
+  return {
+    ...cfg,
+    templateName: name,
+    templateLang: (process.env.WHATSAPP_DEMAND_TEMPLATE_LANG ?? '').trim() || 'en',
+    urlButtonIndex: null,
+  };
 }
 
 /** "Mini", or for a shared car "shared Mini, 3 riders to PIMS" — the template's ride slot. */
@@ -181,7 +204,7 @@ export function rideLabelFor(rideType: string, shared?: OfflineAlertInput['share
  */
 export async function alertOfflineDriversOnWhatsApp(input: OfflineAlertInput): Promise<void> {
   const now = Date.now();
-  const cfg = whatsAppConfig();
+  const cfg = input.demand ? demandConfig(whatsAppConfig()) : whatsAppConfig();
   const [settings, health] = await Promise.all([readSettings(), readHealth()]);
 
   const usageSnap = await db.doc(`${USAGE_COLLECTION}/${pktDayKey(now)}`).get().catch(() => null);
@@ -190,8 +213,8 @@ export async function alertOfflineDriversOnWhatsApp(input: OfflineAlertInput): P
   const blocked = blockFanout(
     settings,
     {
-      onlineNearby: input.onlineNearby,
-      fare: input.fare,
+      onlineNearby: input.demand ? 0 : input.onlineNearby,
+      fare: input.demand ? null : input.fare,
       sentToday,
       circuitOpen: health.circuitOpen,
       configured: cfg !== null,
@@ -240,12 +263,19 @@ export async function alertOfflineDriversOnWhatsApp(input: OfflineAlertInput): P
   // arriving after eleven others are already in flight.
   for (const driver of plan.picked) {
     const firstName = (driver.name ?? 'there').trim().split(/\s+/)[0] || 'there';
-    const res = await sendTemplate(
-      cfg,
-      driver.phone as string,
-      [firstName, rideLabel, String(Math.round(input.fare)), area],
-      input.tripId,
-    );
+    const res = input.demand
+      ? await sendTemplate(cfg, driver.phone as string, [
+        firstName,
+        `${input.demand.people} ${input.demand.people === 1 ? 'person' : 'people'}`,
+        input.demand.to,
+        input.demand.time,
+      ])
+      : await sendTemplate(
+        cfg,
+        driver.phone as string,
+        [firstName, rideLabel, String(Math.round(input.fare)), area],
+        input.tripId,
+      );
 
     if (res.ok) {
       sent += 1;

@@ -154,8 +154,8 @@ export type FanoutBlock =
 export interface FanoutContext {
   /** Approved drivers already online inside the radius. */
   onlineNearby: number;
-  /** The fare on offer, in PKR. */
-  fare: number;
+  /** The fare on offer, in PKR; null for commute demand, which has none. */
+  fare: number | null;
   /** Alerts already sent platform-wide today. */
   sentToday: number;
   /** True when the breaker has been tripped by a `halt` from Meta. */
@@ -182,7 +182,7 @@ export function blockFanout(
   if (ctx.circuitOpen) return 'circuit-open';
   if (isQuietHour(nowMs, s)) return 'quiet-hours';
   if (ctx.onlineNearby >= s.onlineDriverThreshold) return 'enough-drivers-online';
-  if (ctx.fare < s.minFare) return 'fare-too-small';
+  if (ctx.fare !== null && ctx.fare < s.minFare) return 'fare-too-small';
   if (ctx.sentToday >= s.dailyGlobalCap) return 'global-cap';
   return null;
 }

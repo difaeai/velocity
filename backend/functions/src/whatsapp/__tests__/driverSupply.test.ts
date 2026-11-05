@@ -5,7 +5,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { rideLabelFor } from '../alerts';
-import { leadTimes } from '../leads';
+import { leadDemand, leadTimes } from '../leads';
+import { blockFanout, DEFAULT_ALERT_SETTINGS } from '../policy';
 
 describe('leadTimes', () => {
   it.each([
@@ -40,5 +41,41 @@ describe('rideLabelFor', () => {
   it('says shared, how many and where for a shared car', () => {
     expect(rideLabelFor('mini', { riders: 3, to: 'PIMS, G-8/3, Islamabad' })).toBe('shared Mini, 3 riders to PIMS');
     expect(rideLabelFor('mini', { riders: 1 })).toBe('shared Mini, 1 rider');
+  });
+});
+
+describe('leadDemand', () => {
+  const pin = (name: string | null, address: string | null) => ({ lat: 33.7, lng: 73.0, name, address });
+
+  it('is the office and the start time, never the home', () => {
+    const d = leadDemand({ pickup: pin('Street 39', null), dropoff: pin('PIMS, G-8/3', null), timings: '8am to 6pm' });
+    expect(d).toEqual({ pickup: pin('Street 39', null), to: 'PIMS', time: '8:00 AM' });
+  });
+
+  it('reads an afternoon start and an office with no name', () => {
+    expect(leadDemand({ pickup: pin(null, null), dropoff: pin(null, null), timings: '2 to 10' }))
+      .toMatchObject({ to: 'their office', time: '2:00 PM' });
+  });
+
+  it('is nothing without a time or both pins', () => {
+    expect(leadDemand({ pickup: pin(null, null), dropoff: pin(null, null), timings: 'morning' })).toBeNull();
+    expect(leadDemand({ pickup: null, dropoff: pin(null, null), timings: '9 to 5' })).toBeNull();
+  });
+});
+
+describe('blockFanout for demand', () => {
+  const noonPkt = Date.UTC(2026, 10, 5, 7, 0);
+  const ctx = { onlineNearby: 0, sentToday: 0, circuitOpen: false, configured: true };
+
+  it('does not judge demand by a fare it does not have', () => {
+    const s = { ...DEFAULT_ALERT_SETTINGS, enabled: true, minFare: 300 };
+    expect(blockFanout(s, { ...ctx, fare: null }, noonPkt)).toBeNull();
+    expect(blockFanout(s, { ...ctx, fare: 200 }, noonPkt)).toBe('fare-too-small');
+  });
+
+  it('still keeps quiet at night and stays off until switched on', () => {
+    const s = { ...DEFAULT_ALERT_SETTINGS, enabled: true };
+    expect(blockFanout(s, { ...ctx, fare: null }, Date.UTC(2026, 10, 5, 20, 0))).toBe('quiet-hours');
+    expect(blockFanout(DEFAULT_ALERT_SETTINGS, { ...ctx, fare: null }, noonPkt)).toBe('disabled');
   });
 });

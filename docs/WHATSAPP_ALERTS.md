@@ -105,6 +105,49 @@ Sample as it arrives:
 > Open Velocity to see it and place your fare.
 > **[ View ride ]  [ Stop alerts ]**
 
+A shared ride uses the same template; only `{{2}}` changes, to
+`shared Mini, 3 riders to PIMS`, and `{{3}}` is what the whole car pays. When
+the ride is booked ahead and has no trip yet, the URL suffix is `pool-<id>`,
+which the `/link` page sends to Shared rides. No template change is needed.
+
+### 2b. The demand template (optional, stays dark until set)
+
+When somebody finishes the WhatsApp QR questions (`whatsapp/leads.ts`),
+opted-in drivers near their pickup are told about it with a second template.
+It is a separate template because demand has no fare and is not a ride waiting.
+
+- **Name:** `driver_demand_alert`
+- **Category:** **Utility**
+- **Language:** English (`en`)
+
+**Body** (four variables, in this order):
+
+```
+Hi {{1}}, new ride demand near you: {{2}} going to {{3}} at {{4}} every day.
+Open Velocity Rides to see where riders are.
+```
+
+Samples for Meta's review: `Ali`, `1 person`, `PIMS`, `8:00 AM`.
+
+**Buttons:**
+
+| Type | Label | Value |
+|------|-------|-------|
+| Visit website (**static**) | `See demand` | `https://velocityrides.app/link/driver/demand` |
+| Quick reply | `Stop alerts` | — |
+
+The URL has no `{{1}}`: the code sends no button parameter for this template.
+Once Meta shows it **Approved**, add to the `WHATSAPP_ENV` secret:
+
+```
+WHATSAPP_DEMAND_TEMPLATE_NAME=driver_demand_alert
+WHATSAPP_DEMAND_TEMPLATE_LANG=en
+```
+
+Use the name and language exactly as Meta shows them. A name Meta does not know
+comes back as `132001`, which trips the circuit breaker and stops ride alerts
+too. With the line absent, demand alerts simply do not send.
+
 ### 3. Backend secrets
 
 Add **one** GitHub Actions secret named `WHATSAPP_ENV`, holding a block of

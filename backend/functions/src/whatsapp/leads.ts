@@ -10,10 +10,16 @@
  * Every reply is free-form, never a template: the person wrote first, so we are
  * inside Meta's 24-hour service window, where non-template replies are allowed
  * and not billed. The bot never messages anyone who has not just messaged it.
+ * A finished lead is then sent to opted-in drivers near the pickup as demand
+ * (the demand template, alerts.ts), once.
+ *
+ * The QR is printed on paper: wa.me/923165004012 with "Hi Velocity" must keep
+ * starting this bot for as long as those posters are up.
  */
 import { logger } from 'firebase-functions';
 
 import { db, FieldValue } from '../lib/firebase';
+import { alertOfflineDriversOnWhatsApp, shortArea } from './alerts';
 import { postMessage, toWhatsAppNumber, whatsAppConfig } from './client';
 
 // Same links as lib/site.ts (the web app), which the backend cannot import.
@@ -98,6 +104,24 @@ export function leadTimes(timings: string | null | undefined): { start: string; 
   if (!b[3] && end <= start && end < 12) end += 12;
   const endM = Number(b[2] ?? 0);
   return { start: hhmm(start, startM), end: end > 23 || endM > 59 ? null : hhmm(end, endM) };
+}
+
+/**
+ * A finished lead as the drivers' demand alert reads it: where to look (the
+ * pickup, used only to find drivers near it), the office and the start time.
+ * The office is a public place; the home pin itself never goes to a driver.
+ */
+export function leadDemand(l: { pickup?: LeadPin | null; dropoff?: LeadPin | null; timings?: string | null }):
+  { pickup: LeadPin; to: string; time: string } | null {
+  const start = leadTimes(l.timings)?.start;
+  if (!start || !l.pickup || !l.dropoff) return null;
+  const [h = 0, m = 0] = start.split(':').map(Number);
+  const office = l.dropoff.name ?? l.dropoff.address;
+  return {
+    pickup: l.pickup,
+    to: office ? shortArea(office) : 'their office',
+    time: `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`,
+  };
 }
 
 /** Replies that carry WhatsApp's own "Send location" button. */
@@ -194,10 +218,11 @@ export async function handleLeadMessage(msg: InboundMessage, profileName: string
   const inbound = readLeadInbound(msg);
   const ref = db.doc(`whatsappLeads/${from}`);
 
-  const replies = await db.runTransaction(async (tx) => {
+  const none = { replies: [] as LeadReply[], finished: null };
+  const { replies, finished } = await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     const seen = (snap.get('seenIds') as string[] | undefined) ?? [];
-    if (msg.id && seen.includes(msg.id)) return [];
+    if (msg.id && seen.includes(msg.id)) return none;
 
     // A first message without the QR's words, from somebody we already know —
     // a driver answering an alert, a rider thanking us for a login code — is
@@ -207,11 +232,11 @@ export async function handleLeadMessage(msg: InboundMessage, profileName: string
         tx.get(db.collection('drivers').where('whatsappAlerts.number', '==', toWhatsAppNumber(from) ?? from).limit(1)),
         tx.get(db.collection('users').where('phoneNumber', '==', `+${from}`).limit(1)),
       ]);
-      if (!driver.empty || !user.empty) return [];
+      if (!driver.empty || !user.empty) return none;
     }
 
     const turn = leadTurn(snap.exists ? (snap.get('step') as LeadStep) : null, inbound);
-    if (!turn) return [];
+    if (!turn) return none;
 
     const now = FieldValue.serverTimestamp();
     const doc: Record<string, unknown> = {
@@ -232,12 +257,31 @@ export async function handleLeadMessage(msg: InboundMessage, profileName: string
       doc.extraMessages = [...extras, { text: turn.extra, at: new Date().toISOString() }].slice(-20);
     }
     tx.set(ref, doc, { merge: true });
-    return turn.replies;
+    const firstFinish = turn.step === 'done' && snap.get('step') !== 'done';
+    return {
+      replies: turn.replies,
+      finished: firstFinish
+        ? leadDemand({ pickup: snap.get('pickup'), dropoff: snap.get('dropoff'), timings: turn.answers.timings })
+        : null,
+    };
   });
 
   // In order: the welcome must land before the "send your pickup" button under it.
   for (const reply of replies) {
     const res = await postMessage(cfg, replyPayload(from, reply));
     if (!res.ok) logger.warn('WhatsApp lead: reply failed', { reply, error: res.detail });
+  }
+
+  // Drivers near the pickup hear of it. Awaited: the webhook answers Meta only
+  // after this, and an instance can be stopped once it has answered.
+  if (finished) {
+    await alertOfflineDriversOnWhatsApp({
+      tripId: 'whatsapp-lead',
+      pickup: { lat: finished.pickup.lat, lng: finished.pickup.lng },
+      rideType: 'mini',
+      fare: 0,
+      onlineNearby: 0,
+      demand: { people: 1, to: finished.to, time: finished.time },
+    }).catch((err) => logger.warn('WhatsApp lead: driver demand alert failed', { error: String(err) }));
   }
 }
