@@ -56,6 +56,7 @@ import { assertFaceCheckedIn } from '../domain/faceCheckIn';
 import { sharedRideFare } from '../fare/sharedRideFare';
 import { ACTIVE_STATUSES, assertRiderCanBook, broadcastTripToNearbyDrivers, haversineKm, lockInBid } from '../trips';
 import { generateShareCode, writeTripDocuments } from '../trips/poolTripFactory';
+import { alertOfflineDriversOnWhatsApp } from '../whatsapp/alerts';
 import { joinPoolTripAsRider, POOL_JOIN_WINDOW_MS } from '../trips/poolShare';
 import { firstNameOf, hostRosterEntry, rosterForTrip } from '../trips/poolRoster';
 import { poolJoinGenderGate } from '../trips/enRoute';
@@ -815,8 +816,14 @@ export async function dispatchPool(poolId: string, quiet?: string): Promise<Disp
       await poolRef.update({ driver: FieldValue.delete(), driverUid: FieldValue.delete() });
     }
     if (!out.driverAssigned) {
-      await broadcastTripToNearbyDrivers(created, pool.pickup as Place, true, pool.rideType as string, { fare: pool.fare as number })
-        .catch((err) => logger.error('sharedPools: broadcast failed', { tripId: created, err }));
+      // The whole car, as getDriverPools prices it: riders aboard and what it pays.
+      const trip = (await db.doc(`trips/${created}`).get()).data();
+      const car = carOf(trip, Date.now());
+      const riders = trip && car ? sharedCarRiders(trip, car.members) : [];
+      await broadcastTripToNearbyDrivers(created, pool.pickup as Place, true, pool.rideType as string, {
+        fare: car?.gross ?? (riders.length ? priceCar(riders).gross : (pool.fare as number)),
+        shared: { riders: Math.max(1, riders.length), to: (pool.dropoff as Place).address },
+      }).catch((err) => logger.error('sharedPools: broadcast failed', { tripId: created, err }));
     }
   }
 
@@ -852,12 +859,23 @@ async function alertDriversOfDemand(poolRef: FirebaseFirestore.DocumentReference
       return loc && haversineKm(pickup.lat, pickup.lng, loc.lat, loc.lng) <= DRIVER_RADIUS_M / 3000;
     })
     .map((d) => d.id);
+  const gross = priceInOrder(riders).gross;
+  // Drivers with the app closed hear on WhatsApp, under the same caps as ride
+  // alerts. No trip yet, so the alert's link is the pool (link page → Shared rides).
+  alertOfflineDriversOnWhatsApp({
+    tripId: `pool-${poolRef.id}`,
+    pickup,
+    rideType: (pool.rideType as string) ?? 'mini',
+    fare: gross,
+    onlineNearby: near.length,
+    shared: { riders: riders.length, to: (pool.dropoff as Place).address },
+  }).catch((err) => logger.warn('sharedPools: WhatsApp demand alert failed', { poolId: poolRef.id, err: String(err) }));
   if (near.length === 0) return;
   const when = dep ? `at ${new Date(dep + PKT_OFFSET_MS).toISOString().slice(11, 16)}` : 'now';
   await sendToUsers(
     near,
     `🔀 ${riders.length} riders sharing ${when}`,
-    `${pickup.address} to ${(pool.dropoff as Place).address}: PKR ${priceInOrder(riders).gross} so far. Open Shared rides to take it.`,
+    `${pickup.address} to ${(pool.dropoff as Place).address}: PKR ${gross} so far. Open Shared rides to take it.`,
     { poolId: poolRef.id, screen: 'shared-pools' },
   ).catch(() => {});
 }

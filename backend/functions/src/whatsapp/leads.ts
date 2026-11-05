@@ -77,6 +77,29 @@ const REPLY_TEXT: Record<LeadReply, string> = {
   thanks: `Thank you! ✅\nPlease download the Velocity app:\n${APP_LINKS}`,
 };
 
+/**
+ * The office timings someone typed, as 24-hour "HH:MM": "8am to 6pm",
+ * "9 - 5", "09:00-17:00". A start with no am/pm under 6 is read as afternoon
+ * ("2 to 10" is a 14:00 shift), and an end at or before the start as pm.
+ * `null` when there is no readable time at all.
+ */
+export function leadTimes(timings: string | null | undefined): { start: string; end: string | null } | null {
+  const found = [...(timings ?? '').toLowerCase().matchAll(/(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?/g)].slice(0, 2);
+  const hhmm = (h: number, m: number) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  const hour = (h: number, mer: string | undefined) => (mer === 'pm' ? (h % 12) + 12 : mer === 'am' ? h % 12 : h);
+  const [a, b] = found;
+  if (!a) return null;
+  let start = hour(Number(a[1]), a[3]);
+  if (!a[3] && start >= 1 && start <= 5) start += 12;
+  const startM = Number(a[2] ?? 0);
+  if (start > 23 || startM > 59) return null;
+  if (!b) return { start: hhmm(start, startM), end: null };
+  let end = hour(Number(b[1]), b[3]);
+  if (!b[3] && end <= start && end < 12) end += 12;
+  const endM = Number(b[2] ?? 0);
+  return { start: hhmm(start, startM), end: end > 23 || endM > 59 ? null : hhmm(end, endM) };
+}
+
 /** Replies that carry WhatsApp's own "Send location" button. */
 const PIN_REPLIES = new Set<LeadReply>(['askPickup', 'pickupPinOnly', 'askDropoff', 'dropoffPinOnly']);
 

@@ -162,6 +162,16 @@ export interface OfflineAlertInput {
   fare: number;
   /** Approved drivers already online within the search radius. */
   onlineNearby: number;
+  /** A shared car: how many riders are booked and where it goes, so the alert says so. */
+  shared?: { riders: number; to?: string };
+}
+
+/** "Mini", or for a shared car "shared Mini, 3 riders to PIMS" — the template's ride slot. */
+export function rideLabelFor(rideType: string, shared?: OfflineAlertInput['shared']): string {
+  const car = RIDE_LABELS[rideType] ?? rideType;
+  if (!shared) return car;
+  const to = shared.to ? ` to ${shortArea(shared.to)}` : '';
+  return `shared ${car}, ${shared.riders} rider${shared.riders === 1 ? '' : 's'}${to}`;
 }
 
 /**
@@ -221,7 +231,7 @@ export async function alertOfflineDriversOnWhatsApp(input: OfflineAlertInput): P
     return;
   }
 
-  const rideLabel = RIDE_LABELS[input.rideType] ?? input.rideType;
+  const rideLabel = rideLabelFor(input.rideType, input.shared);
   const area = shortArea(input.pickup.address);
   let sent = 0;
 

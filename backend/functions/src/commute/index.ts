@@ -5,6 +5,8 @@ import { geohashForLocation, geohashQueryBounds, distanceBetween } from 'geofire
 import { db, FieldValue } from '../lib/firebase';
 import { requireRole, invalid } from '../lib/guards';
 import { hasRealCoords } from '../lib/poolRadius';
+import { shortArea } from '../whatsapp/alerts';
+import { leadTimes, type LeadPin } from '../whatsapp/leads';
 
 // ── upsertCommuteSchedule ─────────────────────────────────────────────────────
 
@@ -203,6 +205,26 @@ export const getCommuteDemand = onCall(async (req) => {
 
       slots.set(key, existing);
     }
+  }
+
+  // People who told the WhatsApp QR bot their pickup, office and timings
+  // (whatsapp/leads.ts) are commuters too, just not in the app yet. Their
+  // morning leg counts here like a schedule: pickup near the driver, the office
+  // as the destination. No gender was asked, so "any"; the home pin never leaves.
+  // shortcut: reads finished leads and measures in memory; add a pickup geohash past a few thousand.
+  const leads = await db.collection('whatsappLeads').where('step', '==', 'done').limit(2000).get();
+  for (const doc of leads.docs) {
+    const l = doc.data() as { pickup?: LeadPin | null; dropoff?: LeadPin | null; timings?: string | null };
+    const start = leadTimes(l.timings)?.start;
+    if (!start || !l.pickup || !l.dropoff) continue;
+    if (distanceBetween([lat, lng], [l.pickup.lat, l.pickup.lng]) > radiusKm) continue;
+    const time = roundTo15(start);
+    const destName = l.dropoff.name || l.dropoff.address ? shortArea(l.dropoff.name ?? l.dropoff.address ?? '') : 'Office';
+    const key = `${time}::${destName}`;
+    const slot = slots.get(key) ?? { time, destinationAreaName: destName, count: 0, genderBreakdown: { male: 0, female: 0, any: 0 } };
+    slot.count += 1;
+    slot.genderBreakdown.any += 1;
+    slots.set(key, slot);
   }
 
   // Sort by time ascending.

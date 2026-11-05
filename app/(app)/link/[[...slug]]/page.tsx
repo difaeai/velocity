@@ -23,7 +23,9 @@ export default function AppLinkPage() {
 
   const path = useMemo(() => {
     const parts = Array.isArray(params?.slug) ? params.slug : [];
-    return parts.map(decodeURIComponent).join('/');
+    // A WhatsApp ride alert can only fill the end of its fixed request-detail
+    // URL; a shared ride booked ahead has no trip yet, so it sends "pool-<id>".
+    return parts.map(decodeURIComponent).join('/').replace(/^driver\/request-detail\/pool-.*$/, 'driver/shared-pools');
   }, [params]);
 
   const schemeUrl = `velocity:///${path}`;

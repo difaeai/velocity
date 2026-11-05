@@ -427,7 +427,7 @@ export async function broadcastTripToNearbyDrivers(
   pickup: { lat: number; lng: number; address?: string },
   isPool: boolean,
   rideType: string,
-  opts: { fare?: number; commute?: boolean } = {},
+  opts: { fare?: number; commute?: boolean; shared?: { riders: number; to?: string } } = {},
 ): Promise<void> {
   const settingsSnap = await db.doc('config/rideSettings').get();
   const radiusKm = (settingsSnap.get('searchRadiusKm') as number) ?? 2;
@@ -458,6 +458,7 @@ export async function broadcastTripToNearbyDrivers(
     rideType,
     fare: opts.fare ?? 0,
     onlineNearby: nearbyUids.length,
+    shared: opts.shared,
   }).catch((err) => logger.error('WhatsApp alerts failed', { tripId, err }));
 
   if (nearbyUids.length === 0) {
@@ -466,7 +467,9 @@ export async function broadcastTripToNearbyDrivers(
   }
 
   const title = isPool ? '🔀 Sharing ride request nearby' : '🚗 Ride request nearby';
-  const body  = `A passenger needs a ${rideType} — tap to view`;
+  const body  = opts.shared
+    ? `${opts.shared.riders} rider${opts.shared.riders === 1 ? '' : 's'} sharing a ${rideType} — tap to view`
+    : `A passenger needs a ${rideType} — tap to view`;
 
   await sendToUsers(nearbyUids, title, body, { tripId, screen: 'request-detail' });
   logger.info('Broadcast complete', { tripId, driverCount: nearbyUids.length, radiusKm });

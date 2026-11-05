@@ -34,7 +34,7 @@ export default function Checklist() {
   const router = useRouter();
   const { user } = useAuth();
   const profile = useDriverProfile(user?.uid);
-  const { complete, documentsComplete, submitting, error, submit } = useOnboarding();
+  const { complete, documentsComplete, submitting, error, submit, saveWhatsApp } = useOnboarding();
   const status = profile?.verificationStatus;
   const verifying = profile?.verification?.status === 'verifying';
   /**
@@ -50,6 +50,7 @@ export default function Checklist() {
   async function onSubmit() {
     // Already stored, only the scan outstanding: skip the upload entirely.
     if (awaitingFaceScan && !complete.faceScan) {
+      void saveWhatsApp();
       router.push('/passenger/become-driver/face-scan');
       return;
     }
