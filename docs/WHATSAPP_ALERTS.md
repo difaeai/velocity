@@ -110,7 +110,7 @@ A shared ride uses the same template; only `{{2}}` changes, to
 the ride is booked ahead and has no trip yet, the URL suffix is `pool-<id>`,
 which the `/link` page sends to Shared rides. No template change is needed.
 
-### 2b. The demand template (optional, stays dark until set)
+### 2b. The demand template (approved 6 Nov 2026)
 
 An hour before riders leave, opted-in drivers near where they start are told
 how many, from where, when, and what the car pays
@@ -141,8 +141,11 @@ Samples for Meta's review: `Ali`, `3 passengers`, `Blue Area`, `5:00 PM`, `450`.
 | Visit website (dynamic) | `See ride` | `https://velocityrides.app/link/driver/{{1}}` (sample `demand`) |
 | Quick reply | `Stop alerts` | — |
 
-The code fills the URL with `demand` (the Demand tab) or `shared-pools`. Once
-Meta shows it **Approved**, add to the `WHATSAPP_ENV` secret:
+The code fills the URL with `demand` (the Demand tab) or `shared-pools`. Meta
+approved it on 6 Nov 2026 as Utility, English (`en`). The name and language are
+not secrets, so they are the defaults in `whatsapp/alerts.ts` (`demandConfig`);
+no secret is needed. These env names, in the `WHATSAPP_ENV` block, override
+them only if Meta's copy changes:
 
 ```
 WHATSAPP_DEMAND_TEMPLATE_NAME=driver_ride_schedule
@@ -150,11 +153,10 @@ WHATSAPP_DEMAND_TEMPLATE_LANG=en
 WHATSAPP_DEMAND_TEMPLATE_BUTTON_INDEX=0
 ```
 
-The index is `1` if the approved template shows **Stop alerts** before **See ride**.
-
-Use the name and language exactly as Meta shows them. A name Meta does not know
-comes back as `132001`, which trips the circuit breaker and stops ride alerts
-too. With the line absent, nothing is sent and shared rides keep the ride alert.
+The button index is `1` if the approved template shows **Stop alerts** before
+**See ride**. A name, language or button Meta does not match comes back as a
+`halt` (`132001`, `132018`, `100`), which trips the circuit breaker and stops
+ride alerts too.
 
 Quiet hours still apply, so a ride leaving before 8 AM is never announced (its
 alert would go out before 7).
