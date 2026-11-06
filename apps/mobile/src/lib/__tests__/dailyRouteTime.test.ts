@@ -1,6 +1,27 @@
 import { describe, expect, it } from 'vitest';
 
-import { clockLabel, fromHHMM, toHHMM } from '../dailyRouteTime';
+import { clockLabel, fromHHMM, legByClock, toHHMM } from '../dailyRouteTime';
+
+describe('legByClock', () => {
+  const at = (h: number, m = 0) => new Date(2026, 10, 5, h, m);
+
+  it('shows the trip there in the morning and home after midday for 9 to 5', () => {
+    expect(legByClock('09:00', '17:00', at(7, 30))).toBe('go');
+    expect(legByClock('09:00', '17:00', at(12, 59))).toBe('go');
+    expect(legByClock('09:00', '17:00', at(13))).toBe('back');
+    expect(legByClock('09:00', '17:00', at(18))).toBe('back');
+    expect(legByClock('09:00', '17:00', at(1, 30))).toBe('go');
+  });
+
+  it('wraps a night shift past midnight', () => {
+    expect(legByClock('22:00', '06:00', at(20))).toBe('go');
+    expect(legByClock('22:00', '06:00', at(5))).toBe('back');
+  });
+
+  it('goes there when a time is missing', () => {
+    expect(legByClock(null, '17:00', at(18))).toBe('go');
+  });
+});
 
 describe('clockLabel', () => {
   it('reads a stored time on a 12-hour clock', () => {

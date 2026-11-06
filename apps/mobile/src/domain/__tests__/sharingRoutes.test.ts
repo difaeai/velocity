@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { nearestSpotName, pickupFit, routeGap, sameRoute, SHARING_ROUTES } from '../sharingRoutes';
+import { nearestSpotName, pickupFit, pickupOrder, routeGap, sameRoute, SHARING_ROUTES } from '../sharingRoutes';
 import { distanceMeters } from '../../lib/geo';
 
 const km = (r: (typeof SHARING_ROUTES)[number]) =>
@@ -42,6 +42,30 @@ describe('pickupFit', () => {
     expect(top.every((r) => distanceMeters(from.lat, from.lng, r.pickup.lat, r.pickup.lng) < 3000)).toBe(true);
     expect(top.some((r) => r.label === 'NUST')).toBe(false);
     expect(km(top[0]!)).toBeLessThan(10);
+  });
+});
+
+describe('pickupOrder', () => {
+  // The owner at I-8 Markaz (2026-11-05), with two rides of their own from PWD.
+  const i8 = { lat: 33.6679, lng: 73.0745 };
+  const pwd = { lat: 33.5713, lng: 73.1448 };
+  const ownFromPwd = { id: 'own', pickup: pwd, dropoff: { lat: 33.7158, lng: 73.0283 } };
+  const readyFromI8 = SHARING_ROUTES.filter((r) => r.id.startsWith('route:I-8>')).map((r) => ({ ...r, ready: true }));
+  const farReady = SHARING_ROUTES.filter((r) => r.id.startsWith('route:PWD>')).map((r) => ({ ...r, ready: true }));
+
+  it('lists what leaves near the rider before their own rides from far away', () => {
+    const order = pickupOrder(i8, [ownFromPwd, ...farReady, ...readyFromI8]);
+    expect(order[0]!.id.startsWith('route:I-8>')).toBe(true);
+    const own = order.findIndex((b) => b.id === 'own');
+    expect(own).toBe(readyFromI8.length);
+    expect(order.slice(own + 1).every((b) => b.id.startsWith('route:PWD>'))).toBe(true);
+  });
+
+  it('puts a real ride near the pickup before the ready routes, and favourites above all', () => {
+    const nearReal = { id: 'near', pickup: { lat: 33.669, lng: 73.073 }, dropoff: pwd };
+    expect(pickupOrder(i8, [...readyFromI8, nearReal])[0]!.id).toBe('near');
+    const order = pickupOrder(i8, [nearReal, ...readyFromI8, ownFromPwd], (b) => b.id === 'own');
+    expect(order[0]!.id).toBe('own');
   });
 });
 
