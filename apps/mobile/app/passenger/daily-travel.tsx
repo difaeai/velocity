@@ -20,6 +20,11 @@
  *      (2026-11-02, src/domain/sharingRoutes): an empty car until its first
  *      Join creates it. A search shows the rider's exact route first (its Join
  *      creates it), then every other ride, the closest to their route first.
+ *      Over the boxes (2026-11-05): My Routes (the rider's own commute: pickup,
+ *      drop-off and office timings; the trip there or home, by the clock or by
+ *      the rider's pick), Leaving from your pickup, All (favourites
+ *      on top) and Favourites — a heart, or a double tap, keeps a route there.
+ *      The picture is the route on a real map, a car driving it.
  *   4. + (top right) opens the box that starts one, in this order: institution
  *      and location name, drop-off, pickup, start time — then its fare and the
  *      seats still free.
@@ -34,6 +39,7 @@ import {
   Alert,
   Animated,
   Easing,
+  Image,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
@@ -46,15 +52,20 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { FirebaseError } from 'firebase/app';
+import { doc, serverTimestamp, writeBatch } from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import MapView from 'react-native-maps';
 import Svg, { Circle, Defs, Line, LinearGradient, Path, RadialGradient, Rect, Stop } from 'react-native-svg';
 
 import { api, type SharedFareQuote, type SharedPool, type SharedPoolSeat } from '../../src/api/client';
 import { useAuth } from '../../src/auth/AuthContext';
 import { colors } from '../../src/config';
+import { db } from '../../src/firebase';
 import { themed } from '../../src/theme';
 import { PAKISTAN_CITIES } from '../../src/domain/intercityTypes';
 import { useCurrentLocation } from '../../src/hooks/location';
+import { useDailyRoutes, type DailyRoute } from '../../src/hooks/passenger';
 import { useCancellationSettings } from '../../src/hooks/driver';
 import { useActiveTrip } from '../../src/hooks/useActiveTrip';
 import { useTrip } from '../../src/hooks/useTrip';
@@ -62,12 +73,11 @@ import { poolLeaveFee } from '../../src/lib/poolLeave';
 import { useForegroundInterval } from '../../src/hooks/useForegroundInterval';
 import { fetchPlaceDetail, usePlacesAutocomplete, type PlacePrediction } from '../../src/hooks/places';
 import { areaLabel } from '../../src/lib/areaLabel';
-import { clockLabel, fromHHMM, toHHMM } from '../../src/lib/dailyRouteTime';
+import { clockLabel, fromHHMM, legByClock, toHHMM } from '../../src/lib/dailyRouteTime';
 import { distanceMeters } from '../../src/lib/geo';
 import {
-  NEAR_PICKUP_M,
   nearestSpotName,
-  pickupFit,
+  pickupOrder,
   routeGap,
   sameRoute,
   SHARING_ROUTES,
@@ -76,6 +86,7 @@ import {
 import { Text, TextInput } from '../../src/ui/Text';
 import { DestinationPinIcon, PickupDotIcon } from '../../src/ui/RideIcons';
 import { ArrowIcon } from '../../src/ui/ServiceIcons';
+import { MAPS_AVAILABLE, mapBaseProps } from '../../src/ui/mapProvider';
 
 // Places API (New) requires session tokens to be UUID v4.
 function uuidv4() {
@@ -162,6 +173,28 @@ function placeName(pl: Place): string {
 /** A box's fare — "PKR …" while a ready route's is still on its way. */
 const fareText = (p: SharedPool) => (p.farePerSeat > 0 ? `PKR ${p.farePerSeat}` : 'PKR …');
 
+/** The row over the boxes, in the owner's order (2026-11-05). */
+type Mode = 'mine' | 'pickup' | 'all' | 'favs';
+const MODES: [Mode, string][] = [
+  ['mine', 'My Routes'],
+  ['pickup', 'Leaving from your pickup'],
+  ['all', 'All'],
+  ['favs', 'Favourites'],
+];
+
+/** My Routes as two of the rider's daily routes (users/{uid}/dailyRoutes): there, and home again. */
+const MY_ROUTE_GO = 'sharingGo';
+const MY_ROUTE_BACK = 'sharingBack';
+
+/** A favourite is a route: a box whose ends are each this close to it is the same one. */
+const FAV_M = 300;
+type Fav = { label: string; city: string; pickup: Place; dropoff: Place };
+/** Kept on the phone: a favourite is a shortcut, nothing else depends on it. */
+const favStoreKey = (uid: string | undefined) => `velocity.sharingFavs.${uid ?? 'guest'}`;
+/** A second tap this soon after the first is a double tap — a favourite, not an open. */
+const DOUBLE_TAP_MS = 260;
+const HEART = '#ff4d6d';
+
 export default function DailyTravelScreen() {
   const router = useRouter();
   const { user } = useAuth();
@@ -205,12 +238,25 @@ export default function DailyTravelScreen() {
   const cancellation = useCancellationSettings();
   // Only the newest search may paint: an older answer landing late is a different route.
   const searchSeq = useRef(0);
-  // The owner's All: every ride in the city instead of the relevant ones.
-  const [all, setAll] = useState(false);
-  const searching = !all && !!from && !!to;
+  // The row over the boxes. All and Favourites both need every ride in the city.
+  const [mode, setModeState] = useState<Mode>('pickup');
+  const all = mode === 'all' || mode === 'favs';
+  function setMode(m: Mode) {
+    if (m !== mode) setPools(null);
+    setModeState(m);
+  }
+  // My Routes: the rider's own route, searched instead of the box at the top.
+  const routes = useDailyRoutes(user?.uid);
+  const myRoute = routes?.find((r) => r.id === MY_ROUTE_GO) ?? null;
+  const myRouteBack = routes?.find((r) => r.id === MY_ROUTE_BACK) ?? null;
+  // To the office or back home: the rider's pick, else by the office timings' clock.
+  const [legPick, setLegPick] = useState<'go' | 'back' | null>(null);
+  const homeward = (legPick ?? legByClock(myRoute?.time, myRouteBack?.time, new Date())) === 'back';
+  const qFrom = mode === 'mine' ? (homeward ? myRoute?.dropoff : myRoute?.pickup) ?? null : from;
+  const qTo = mode === 'mine' ? (homeward ? myRoute?.pickup : myRoute?.dropoff) ?? null : to;
   // The owner: no pickup and no All, no boxes (2026-10-30) — but the pickup
   // alone, the phone's location included, lists what leaves from there (2026-11-02).
-  const listing = all || !!from;
+  const listing = all || !!qFrom;
 
   const loadPools = useCallback(() => {
     const n = ++searchSeq.current;
@@ -218,12 +264,55 @@ export default function DailyTravelScreen() {
     api
       .getSharedPools({
         city,
-        ...(from ? { from: { lat: from.lat, lng: from.lng } } : {}),
-        ...(all ? { all: true } : to ? { to: { lat: to.lat, lng: to.lng } } : {}),
+        ...(qFrom ? { from: { lat: qFrom.lat, lng: qFrom.lng } } : {}),
+        ...(all ? { all: true } : qTo ? { to: { lat: qTo.lat, lng: qTo.lng } } : {}),
       })
       .then((r) => n === searchSeq.current && setPools(r.pools))
       .catch(() => n === searchSeq.current && setPools((prev) => prev ?? []));
-  }, [city, from, to, all, listing]);
+  }, [city, qFrom, qTo, all, listing]);
+
+  /** My Routes, saved as two daily routes: there at the start time, home at the finish. */
+  function saveMyRoute(pickup: Place, dropoff: Place, start: string, end: string) {
+    if (!user) return;
+    const batch = writeBatch(db);
+    const leg = (id: string, had: boolean, label: string, a: Place, b: Place, time: string) =>
+      batch.set(
+        doc(db, 'users', user.uid, 'dailyRoutes', id),
+        {
+          label, pickup: a, dropoff: b, time, updatedAt: serverTimestamp(),
+          // A new one takes the My routes screen's defaults; a change made there is kept.
+          ...(had ? {} : { radiusKm: 3, notify: true, createdAt: serverTimestamp() }),
+        },
+        { merge: true },
+      );
+    leg(MY_ROUTE_GO, !!myRoute, 'My route', pickup, dropoff, start);
+    leg(MY_ROUTE_BACK, !!myRouteBack, 'My route home', dropoff, pickup, end);
+    batch.commit().catch((e) => Alert.alert('Could not save your route', errorText(e)));
+  }
+
+  // ── Favourites (owner, 2026-11-05): a heart or a double tap, no searching again ──
+  const [favs, setFavs] = useState<Fav[]>([]);
+  const favStore = favStoreKey(user?.uid);
+  useEffect(() => {
+    let live = true;
+    AsyncStorage.getItem(favStore)
+      .then((v) => {
+        const list: unknown = v ? JSON.parse(v) : [];
+        if (live && Array.isArray(list)) setFavs(list.filter((f: Fav) => f?.pickup && f?.dropoff));
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [favStore]);
+  const isFav = useCallback((b: { pickup: Place; dropoff: Place }) => favs.some((f) => sameRoute(f, b, FAV_M)), [favs]);
+  function toggleFav(b: Box) {
+    const next = isFav(b)
+      ? favs.filter((f) => !sameRoute(f, b, FAV_M))
+      : [{ label: b.label || placeName(b.dropoff), city: b.city, pickup: b.pickup, dropoff: b.dropoff }, ...favs];
+    setFavs(next);
+    AsyncStorage.setItem(favStore, JSON.stringify(next)).catch(() => {});
+  }
   // On focus and on every new search — and seats fill and cars leave while the rider watches.
   useFocusEffect(loadPools);
   useForegroundInterval(loadPools, 20_000);
@@ -239,43 +328,43 @@ export default function DailyTravelScreen() {
   }, [flow]);
 
   // ── The ready routes (Islamabad and Rawalpindi) ───────────────────────────
-  // With All: the real rides, then every route no real ride runs yet, nearest
-  // pickup first. With a search (owner, 2026-11-02: "the exact location at
-  // once, then the next, then the next"): the real rides on the rider's own
+  // With All or the pickup alone: the real rides and every route no real ride
+  // runs yet, those leaving near the pickup first. With a search (owner,
+  // 2026-11-02: "the exact location at once, then the next, then the next"):
+  // the real rides on the rider's own
   // route, else their exact route as an empty car — then every other ride,
   // real or ready, closest to their route first.
   const listed = useMemo<Box[] | null>(() => {
     if (pools === null) return null;
     const twin = TWIN_CITIES.has(city);
     const open = SHARING_ROUTES.filter((r) => twin && !pools.some((p) => sameRoute(r, p)));
-    // All, or a pickup with no drop-off yet: the real rides, then the ready
-    // routes leaving from around the pickup — the nearby places first, the far
-    // ones after — then the routes from further away.
-    if (all || !to) {
-      const fit = (r: (typeof SHARING_ROUTES)[number]) =>
-        from ? pickupFit(from, r) + (distanceMeters(from.lat, from.lng, r.pickup.lat, r.pickup.lng) > NEAR_PICKUP_M ? 1e9 : 0) : 0;
-      const ready = open.map((r) => ({ r, m: fit(r) })).sort((a, b) => a.m - b.m);
-      return [...pools, ...ready.map(({ r }) => readyBox(r.id, r.label, city, r.pickup, r.dropoff))];
+    const boxes: Box[] = [...pools, ...open.map((r) => readyBox(r.id, r.label, city, r.pickup, r.dropoff))];
+    // Favourites: each one's ride as it is now — a real one first — else its route as an empty car.
+    if (mode === 'favs') {
+      const seen = new Set<string>();
+      return favs
+        .map((f) => boxes.find((b) => sameRoute(f, b, FAV_M)) ?? readyBox(`fav:${fareKey(f)}`, f.label, f.city, f.pickup, f.dropoff))
+        .filter((b) => !seen.has(b.id) && !!seen.add(b.id));
     }
-    if (!from) return pools;
+    // All, or a pickup with no drop-off yet: what leaves from around the pickup
+    // first, then from further away. All: the rider's favourites on top.
+    if (all || !qTo) return pickupOrder(qFrom, boxes, all ? isFav : undefined);
+    if (!qFrom) return pools;
     const onIt = pools.filter((p) => !p.nearby);
-    const km = distanceMeters(from.lat, from.lng, to.lat, to.lng) / 1000;
+    const km = distanceMeters(qFrom.lat, qFrom.lng, qTo.lat, qTo.lng) / 1000;
     // Their own route, as createSharedPool would take it (0.5–80 km).
-    const exact = { pickup: from, dropoff: to };
+    const exact = { pickup: qFrom, dropoff: qTo };
     const mine =
       onIt.length === 0 && km >= 0.5 && km <= 80 && !pools.some((p) => sameRoute(exact, p))
-        ? [readyBox('route:exact', placeName(to).slice(0, 60), city, from, to)]
+        ? [readyBox('route:exact', placeName(qTo).slice(0, 60), city, qFrom, qTo)]
         : [];
-    const rest: Box[] = [
-      ...pools.filter((p) => p.nearby),
-      ...open.map((r) => readyBox(r.id, r.label, city, r.pickup, r.dropoff)),
-    ];
-    const gap = new Map(rest.map((b) => [b.id, routeGap(from, to, b)]));
+    const rest = boxes.filter((b) => b.ready || b.nearby);
+    const gap = new Map(rest.map((b) => [b.id, routeGap(qFrom, qTo, b)]));
     rest.sort((a, b) => gap.get(a.id)! - gap.get(b.id)!);
     return [...onIt, ...mine, ...rest];
-  }, [pools, city, all, searching, from, to]);
+  }, [pools, city, all, mode, favs, isFav, qFrom, qTo]);
   const [limit, setLimit] = useState(PAGE);
-  useEffect(() => setLimit(PAGE), [all, from, to, city]);
+  useEffect(() => setLimit(PAGE), [mode, qFrom, qTo, city]);
   // A ready box's fare as of now: they land one by one after the boxes do.
   const [, setFareTick] = useState(0);
   const priced = (b: Box): Box => (b.ready ? readyBox(b.id, b.label ?? '', b.city, b.pickup, b.dropoff) : b);
@@ -339,7 +428,7 @@ export default function DailyTravelScreen() {
         // A ready route: its first rider creates the real shared ride, leaving now.
         ? await api.createSharedPool({ city, label: p.label, departTime: null, rideType: 'mini', pickup: p.pickup, dropoff: p.dropoff })
         // On the route, at the rider's own stops; a short walk away, at the car's own.
-        : await api.joinSharedPool(!p.nearby && from && to ? { poolId: p.id, pickup: from, dropoff: to } : { poolId: p.id });
+        : await api.joinSharedPool(!p.nearby && qFrom && qTo ? { poolId: p.id, pickup: qFrom, dropoff: qTo } : { poolId: p.id });
       setOpened(null);
       announce(res);
       loadPools();
@@ -493,53 +582,80 @@ export default function DailyTravelScreen() {
           </Pressable>
         ) : null}
 
-        {/* The search box: drop-off, then pickup (the phone's location until typed). */}
-        <RouteFields
-          key={routeKey}
-          cityName={cityName}
-          to={to}
-          from={from}
-          onTo={(p) => {
-            // A new search shows its own boxes, never the last one's under its heading.
-            if (p !== to) setPools(null);
-            // Choosing a drop-off is asking for the relevant ones, not All.
-            if (p) setAll(false);
-            setTo(p);
-          }}
-          onFrom={(p) => {
-            if (p !== from) setPools(null);
-            setFromEdited(true);
-            setFrom(p);
-          }}
-        />
-        {to && !from ? <Text style={styles.hint}>Type your pickup, or turn on location.</Text> : null}
-
-        {/* 3. The boxes: leaving from the pickup; with a drop-off, the rider's exact
-            route first, then the nearest; with All, every ride in the city. */}
-        <View style={styles.listHead}>
-          <Text style={[styles.blockLabel, styles.listHeading]} numberOfLines={1}>
-            {all ? `ALL IN ${cityName.toUpperCase()}` : searching ? 'YOUR ROUTE FIRST, THEN THE NEAREST' : 'LEAVING FROM YOUR PICKUP'}
-          </Text>
-          <Pressable
-            style={({ pressed }) => [styles.allChip, all && styles.allChipOn, pressed && { opacity: 0.85 }]}
-            onPress={() => {
-              setPools(null);
-              setAll((a) => !a);
+        {/* The search box: drop-off, then pickup (the phone's location until typed).
+            My Routes has its own, below the row. */}
+        {mode === 'mine' ? null : (
+          <RouteFields
+            key={routeKey}
+            cityName={cityName}
+            to={to}
+            from={from}
+            onTo={(p) => {
+              // A new search shows its own boxes, never the last one's under its heading.
+              if (p !== to) setPools(null);
+              // Choosing a drop-off is asking for the relevant ones, not All.
+              if (p && all) setModeState('pickup');
+              setTo(p);
             }}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityState={{ selected: all }}
-            accessibilityLabel={all ? 'Show the rides near you' : `Show every ride in ${cityName}`}
-          >
-            <Text style={[styles.allChipTxt, all && styles.allChipTxtOn]}>All</Text>
-          </Pressable>
-        </View>
+            onFrom={(p) => {
+              if (p !== from) setPools(null);
+              setFromEdited(true);
+              setFrom(p);
+            }}
+          />
+        )}
+        {mode !== 'mine' && to && !from ? <Text style={styles.hint}>Type your pickup, or turn on location.</Text> : null}
+
+        {/* 3. The owner's row (2026-11-05), My Routes on the left; then the boxes:
+            leaving from the pickup, with a drop-off the rider's exact route first,
+            then the nearest; All, every ride in the city; Favourites, theirs. */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.modeRow}
+          keyboardShouldPersistTaps="handled"
+        >
+          {MODES.map(([m, label]) => (
+            <Pressable
+              key={m}
+              style={({ pressed }) => [styles.allChip, mode === m && styles.allChipOn, pressed && { opacity: 0.85 }]}
+              onPress={() => setMode(m)}
+              hitSlop={6}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: mode === m }}
+            >
+              <Text style={[styles.allChipTxt, mode === m && styles.allChipTxtOn]}>{label}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+        {mode === 'mine' ? (
+          // Mounted once the saved route has landed, so its selectors start from it.
+          routes === null ? (
+            <ActivityIndicator color={colors.primary} />
+          ) : (
+            <MyRoutePanel
+              cityName={cityName}
+              go={myRoute}
+              back={myRouteBack}
+              homeward={homeward}
+              onSave={saveMyRoute}
+              onLeg={(home) => {
+                if (home !== homeward) setPools(null);
+                setLegPick(home ? 'back' : 'go');
+              }}
+            />
+          )
+        ) : null}
         {!listing ? (
           <Text style={styles.hint}>
-            Enter your pickup location to see the shared rides leaving from there — or tap All for every ride in {cityName}.
+            {mode === 'mine'
+              ? 'Choose your pickup and drop-off — the shared rides on your route show here.'
+              : `Enter your pickup location to see the shared rides leaving from there — or tap All for every ride in ${cityName}.`}
           </Text>
         ) : shown === null || listed === null ? (
           <ActivityIndicator color={colors.primary} style={{ marginTop: 16 }} />
+        ) : mode === 'favs' && listed.length === 0 ? (
+          <Text style={styles.hint}>Tap the heart on a ride — or double-tap the ride — and it waits for you here.</Text>
         ) : (
           <>
             {/* Nothing at all — a search always has the rider's own route as its first box. */}
@@ -553,7 +669,16 @@ export default function DailyTravelScreen() {
             {shown.length > 0 ? (
               <View style={styles.grid}>
                 {shown.map((p, i) => (
-                  <PoolBox key={p.id} pool={p} index={i} beat={carBeat} flow={flow} onPress={() => setOpened(p)} />
+                  <PoolBox
+                    key={p.id}
+                    pool={p}
+                    index={i}
+                    beat={carBeat}
+                    flow={flow}
+                    fav={isFav(p)}
+                    onPress={() => setOpened(p)}
+                    onFav={() => toggleFav(p)}
+                  />
                 ))}
               </View>
             ) : null}
@@ -599,8 +724,8 @@ export default function DailyTravelScreen() {
         open={sheet !== null}
         edit={sheet?.edit ?? null}
         cityName={cityName}
-        from={from}
-        to={to}
+        from={qFrom}
+        to={qTo}
         busy={busy === 'sheet'}
         onClose={() => setSheet(null)}
         onSubmit={(form) => void submit(form)}
@@ -675,12 +800,31 @@ function seedOf(id: string): number {
   return h >>> 0;
 }
 
+type XY = { x: number; y: number };
+
 /** The route as a curve in a 160×100 box: pickup low left, drop-off high right, bent its own way. */
 function artCurve(n: number) {
   const p0 = { x: 20 + (n % 3) * 4, y: 64 - ((n >> 2) % 3) * 5 };
   const p3 = { x: 138 - ((n >> 4) % 3) * 4, y: 30 + ((n >> 6) % 3) * 5 };
   const c1 = { x: 60, y: p0.y - 26 - ((n >> 8) % 4) * 6 };
   const c2 = { x: 100, y: p3.y + 26 + ((n >> 10) % 4) * 6 };
+  return bezier(p0, c1, c2, p3);
+}
+
+/** A route on its map: from where the map put its pickup to its drop-off, bowed a little its own way. */
+function mapCurve(n: number, p0: XY, p3: XY) {
+  const dx = p3.x - p0.x;
+  const dy = p3.y - p0.y;
+  const bow = n & 1 ? 0.2 : -0.2;
+  return bezier(
+    p0,
+    { x: p0.x + dx / 3 - dy * bow, y: p0.y + dy / 3 + dx * bow },
+    { x: p0.x + (2 * dx) / 3 - dy * bow, y: p0.y + (2 * dy) / 3 + dx * bow },
+    p3,
+  );
+}
+
+function bezier(p0: XY, c1: XY, c2: XY, p3: XY) {
   const at = (t: number) => {
     const u = 1 - t;
     const k = [u * u * u, 3 * u * u * t, 3 * u * t * t, t * t * t] as const;
@@ -717,29 +861,199 @@ function TopCar() {
   );
 }
 
+/** A route's two ends — what its map is drawn around. */
+type RouteEnds = { pickup: Place; dropoff: Place };
+/** A route's map, drawn once: the photo, and where its ends fall on it in the 160×100 box. */
+type MapShot = { uri: string; a: XY; b: XY };
+
+/** This session's route maps, by route and width; null: that one could not be drawn. */
+const mapShots = new Map<string, MapShot | null>();
+/** Live maps drawing at once: each is a whole map view, and a grid holds twenty boxes. */
+const MAP_SLOTS = 2;
+let mapSlotsUsed = 0;
+const mapWaiting: (() => void)[] = [];
+/** How long a map may take to draw before its box keeps the drawn route instead. */
+const MAP_DRAW_MS = 12_000;
+
+/** Hands a held slot to the next box waiting, or frees it. */
+function letGoMapSlot(held: { current: boolean }) {
+  if (!held.current) return;
+  held.current = false;
+  const next = mapWaiting.shift();
+  if (next) next();
+  else mapSlotsUsed--;
+}
+
+/**
+ * A box's real map (owner, 2026-11-05: actual maps, "so the picture shows a
+ * person going from I-8 Markaz to F-7/3"): a live map is drawn — two at a
+ * time, however many boxes there are — photographed and kept, so a screenful
+ * of boxes is a screenful of pictures rather than of map views. `turn`: this
+ * box's map is drawing now.
+ */
+function useMapShot(key: string | null) {
+  const [turn, setTurn] = useState(false);
+  const [, repaint] = useState(0);
+  const held = useRef(false);
+  useEffect(() => {
+    if (!key || mapShots.has(key)) return;
+    const go = () => {
+      held.current = true;
+      setTurn(true);
+    };
+    if (mapSlotsUsed < MAP_SLOTS) {
+      mapSlotsUsed++;
+      go();
+    } else mapWaiting.push(go);
+    return () => {
+      const i = mapWaiting.indexOf(go);
+      if (i >= 0) mapWaiting.splice(i, 1);
+      letGoMapSlot(held);
+      setTurn(false);
+    };
+  }, [key]);
+  const done = (shot: MapShot | null) => {
+    if (key) mapShots.set(key, shot);
+    letGoMapSlot(held);
+    setTurn(false);
+    repaint((r) => r + 1);
+  };
+  return { shot: key ? mapShots.get(key) : undefined, turn, done };
+}
+
+/** A map region holding both ends with room round them — set a little low, clear of the fare. */
+function regionOf({ pickup: a, dropoff: b }: RouteEnds) {
+  const dLat = Math.max(Math.abs(a.lat - b.lat), 0.004);
+  const dLng = Math.max(Math.abs(a.lng - b.lng), 0.004);
+  return {
+    latitude: (a.lat + b.lat) / 2 - dLat * 0.1,
+    longitude: (a.lng + b.lng) / 2,
+    latitudeDelta: dLat * 2.2,
+    longitudeDelta: dLng * 2.2,
+  };
+}
+
+/**
+ * The live map behind a box while its photo is taken: drawn under the box's
+ * picture, never touched. Where the two ends landed, then the photo.
+ */
+function MapSnapper({ route, onDone }: { route: RouteEnds; onDone: (shot: MapShot | null) => void }) {
+  const map = useRef<MapView>(null);
+  const size = useRef({ w: 0, h: 0 });
+  const settled = useRef(false);
+  const settle = (shot: MapShot | null) => {
+    if (settled.current) return;
+    settled.current = true;
+    onDone(shot);
+  };
+  useEffect(() => {
+    const t = setTimeout(() => settle(null), MAP_DRAW_MS);
+    return () => clearTimeout(t);
+    // Once per map: `settle` only reads refs and the onDone it mounted with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function drawn() {
+    // A beat for the camera to finish settling, so the ends and the photo agree.
+    await new Promise((r) => setTimeout(r, 300));
+    const m = map.current;
+    const { w, h } = size.current;
+    if (!m || !w || !h) return settle(null);
+    try {
+      const at = (p: Place) => m.pointForCoordinate({ latitude: p.lat, longitude: p.lng });
+      const [a, b] = await Promise.all([at(route.pickup), at(route.dropoff)]);
+      // An end off the picture means the camera never got there: keep the drawing.
+      if ([a, b].some((p) => p.x < 0 || p.y < 0 || p.x > w || p.y > h)) return settle(null);
+      const uri = await m.takeSnapshot({ format: 'jpg', quality: 0.85, result: 'file' });
+      settle({ uri, a: { x: (a.x / w) * 160, y: (a.y / h) * 100 }, b: { x: (b.x / w) * 160, y: (b.y / h) * 100 } });
+    } catch {
+      settle(null);
+    }
+  }
+
+  return (
+    <View
+      style={StyleSheet.absoluteFill}
+      pointerEvents="none"
+      onLayout={(e) => {
+        size.current = { w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height };
+      }}
+    >
+      <MapView
+        ref={map}
+        style={StyleSheet.absoluteFill}
+        {...mapBaseProps}
+        initialRegion={regionOf(route)}
+        // Google photographs what it has drawn, so it waits for the tiles; Apple
+        // Maps' snapshot fetches its own (and never sends onMapLoaded).
+        {...(mapBaseProps.provider ? { onMapLoaded: () => void drawn() } : { onMapReady: () => void drawn() })}
+        scrollEnabled={false}
+        zoomEnabled={false}
+        rotateEnabled={false}
+        pitchEnabled={false}
+        toolbarEnabled={false}
+        showsCompass={false}
+      />
+    </View>
+  );
+}
+
+/** A place's name over its end of a mapped route, kept inside the picture. */
+function PlaceTag({ at, k, width, name }: { at: XY; k: number; width: number; name: string }) {
+  const w = 76;
+  return (
+    <View
+      pointerEvents="none"
+      style={[styles.placeTag, { width: w, left: Math.min(Math.max(at.x * k - w / 2, 2), width - w - 2), top: Math.max(at.y * k - 21, 2) }]}
+    >
+      <Text style={styles.placeTagTxt} numberOfLines={1}>{name}</Text>
+    </View>
+  );
+}
+
 /**
  * A ride with no car photo yet (owner, 2026-11-02: the same BMW on every box
- * "looks strange"): its route drawn as a little map instead — streets, the
- * road from pickup to drop-off, and a little car driving it on `phase`.
- * Every route bends and colours its own way, so a screenful never repeats.
+ * "looks strange"): its route on a real map (2026-11-05) — both ends named, the
+ * road from pickup to drop-off, and a little car driving it on `phase`. Until
+ * the map is drawn (or with no map on this phone), the route drawn as a little
+ * map instead; every route bends and colours its own way.
  */
-function RouteArt({ seed, phase }: { seed: string; phase?: Animated.Value | Animated.AnimatedInterpolation<number> }) {
+function RouteArt({
+  seed,
+  phase,
+  route,
+}: {
+  seed: string;
+  phase?: Animated.Value | Animated.AnimatedInterpolation<number>;
+  route?: RouteEnds;
+}) {
   const n = seedOf(seed);
   const [dark, light] = ART_TONES[n % ART_TONES.length]!;
-  const curve = useMemo(() => artCurve(n), [n]);
   const [width, setWidth] = useState(0);
+  const { shot, turn, done } = useMapShot(
+    route && MAPS_AVAILABLE && width > 0 ? `${fareKey(route)}@${Math.round(width)}` : null,
+  );
+  const curve = useMemo(() => (shot ? mapCurve(n, shot.a, shot.b) : artCurve(n)), [n, shot]);
   const k = width / 160;
   const pts = RUNNER_STEPS.map(curve.at);
-  // Which way the road points at each step, so the car turns with it (x only
-  // grows along the curve, so the angle never wraps).
-  const turns = RUNNER_STEPS.map((t) => {
+  // Which way the road points at each step, so the car turns with it — never
+  // the long way round where a westward route crosses ±180°.
+  let last = 0;
+  const turns = RUNNER_STEPS.map((t, i) => {
     const a = curve.at(Math.max(0, t - 0.02));
     const b = curve.at(Math.min(1, t + 0.02));
-    return `${(Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI}deg`;
+    let deg = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+    if (i > 0) deg += Math.round((last - deg) / 360) * 360;
+    last = deg;
+    return `${deg}deg`;
   });
   const id = `a${n}`;
   return (
     <View style={StyleSheet.absoluteFill} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
+      {turn && route ? <MapSnapper route={route} onDone={done} /> : null}
+      {shot ? (
+        <Image source={{ uri: shot.uri }} resizeMode="cover" accessible={false} style={StyleSheet.absoluteFill} />
+      ) : null}
       <Svg width="100%" height="100%" viewBox="0 0 160 100">
         <Defs>
           <LinearGradient id={`${id}bg`} x1="0" y1="1" x2="1" y2="0">
@@ -751,13 +1065,17 @@ function RouteArt({ seed, phase }: { seed: string; phase?: Animated.Value | Anim
             <Stop offset="1" stopColor={colors.primary} stopOpacity="0" />
           </RadialGradient>
         </Defs>
-        <Rect x="0" y="0" width="160" height="100" fill={`url(#${id}bg)`} />
-        {/* The streets: two main roads and a few lanes. */}
-        <Line x1="0" y1={18 + (n % 17)} x2="160" y2={34 + ((n >> 3) % 17)} stroke="#ffffff" strokeOpacity={0.07} strokeWidth={7} />
-        <Line x1={38 + (n % 41)} y1="0" x2={64 + ((n >> 5) % 41)} y2="100" stroke="#ffffff" strokeOpacity={0.07} strokeWidth={6} />
-        <Line x1="0" y1={74 + (n % 13)} x2="160" y2={66 + ((n >> 7) % 13)} stroke="#ffffff" strokeOpacity={0.05} strokeWidth={1.2} />
-        <Line x1={112 + (n % 29)} y1="0" x2={98 + ((n >> 9) % 29)} y2="100" stroke="#ffffff" strokeOpacity={0.05} strokeWidth={1.2} />
-        <Line x1="0" y1={50 + (n % 9)} x2="160" y2={48 + ((n >> 11) % 9)} stroke="#ffffff" strokeOpacity={0.04} strokeWidth={1} />
+        {shot ? null : (
+          <>
+            <Rect x="0" y="0" width="160" height="100" fill={`url(#${id}bg)`} />
+            {/* The streets: two main roads and a few lanes. */}
+            <Line x1="0" y1={18 + (n % 17)} x2="160" y2={34 + ((n >> 3) % 17)} stroke="#ffffff" strokeOpacity={0.07} strokeWidth={7} />
+            <Line x1={38 + (n % 41)} y1="0" x2={64 + ((n >> 5) % 41)} y2="100" stroke="#ffffff" strokeOpacity={0.07} strokeWidth={6} />
+            <Line x1="0" y1={74 + (n % 13)} x2="160" y2={66 + ((n >> 7) % 13)} stroke="#ffffff" strokeOpacity={0.05} strokeWidth={1.2} />
+            <Line x1={112 + (n % 29)} y1="0" x2={98 + ((n >> 9) % 29)} y2="100" stroke="#ffffff" strokeOpacity={0.05} strokeWidth={1.2} />
+            <Line x1="0" y1={50 + (n % 9)} x2="160" y2={48 + ((n >> 11) % 9)} stroke="#ffffff" strokeOpacity={0.04} strokeWidth={1} />
+          </>
+        )}
         <Rect x="0" y="0" width="160" height="100" fill={`url(#${id}glow)`} />
         {/* The road: a soft glow under a dashed lime line. */}
         <Path d={curve.d} stroke={colors.primary} strokeOpacity={0.22} strokeWidth={7} strokeLinecap="round" fill="none" />
@@ -768,6 +1086,12 @@ function RouteArt({ seed, phase }: { seed: string; phase?: Animated.Value | Anim
         <Circle cx={curve.p3.x} cy={curve.p3.y} r={5.5} fill={colors.primary} />
         <Circle cx={curve.p3.x} cy={curve.p3.y} r={2} fill="#0b1a00" />
       </Svg>
+      {shot && route ? (
+        <>
+          <PlaceTag at={shot.a} k={k} width={width} name={placeName(route.pickup)} />
+          <PlaceTag at={shot.b} k={k} width={width} name={placeName(route.dropoff)} />
+        </>
+      ) : null}
       {phase && width > 0 ? (
         // The owner (2026-11-02): "some car related animation" — a car drives the route.
         <Animated.View
@@ -793,14 +1117,15 @@ function RouteArt({ seed, phase }: { seed: string; phase?: Animated.Value | Anim
 
 /**
  * A ride's cars (owner, 2026-10-30): the accepted driver's own, else the nearby
- * cars that could come, turning over on each `beat` — or, with none, the
- * route drawn as a map (`seed`, `phase`). It drives in with `arrive`.
+ * cars that could come, turning over on each `beat` — or, with none, its
+ * `route` on a map (`seed`, `phase`). It drives in with `arrive`.
  */
 function RideCars({
   photos,
   beat,
   arrive,
   seed,
+  route,
   phase,
   children,
 }: {
@@ -809,6 +1134,7 @@ function RideCars({
   arrive?: Animated.Value;
   /** The ride's id: what its route drawing is built from. */
   seed: string;
+  route?: RouteEnds;
   phase?: Animated.Value | Animated.AnimatedInterpolation<number>;
   /** Drawn over the photo, inside its rounded frame. */
   children?: React.ReactNode;
@@ -848,7 +1174,7 @@ function RideCars({
             style={[StyleSheet.absoluteFill, { width: '100%', height: '100%', opacity: fade }]}
           />
         ) : (
-          <RouteArt seed={seed} phase={phase} />
+          <RouteArt seed={seed} phase={phase} route={route} />
         )}
         {children}
       </View>
@@ -881,20 +1207,43 @@ function SeatIcons({ taken, total }: { taken: number; total: number }) {
  * sweeps the picture, the border glows, and a little car drives the route —
  * all off the screen's one `flow` clock, each box a beat after the last, so
  * the grid moves in a wave. The fare rides on the photo.
+ *
+ * A heart on the picture — or a double tap anywhere on it — makes it a
+ * favourite (owner, 2026-11-05), so a single tap waits a moment before it opens.
  */
 function PoolBox({
   pool: p,
   index,
   beat,
   flow,
+  fav,
   onPress,
+  onFav,
 }: {
   pool: SharedPool;
   index: number;
   beat: number;
   flow: Animated.Value;
+  fav: boolean;
   onPress: () => void;
+  onFav: () => void;
 }) {
+  const opening = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (opening.current) clearTimeout(opening.current);
+  }, []);
+  function tap() {
+    if (opening.current) {
+      clearTimeout(opening.current);
+      opening.current = null;
+      onFav();
+      return;
+    }
+    opening.current = setTimeout(() => {
+      opening.current = null;
+      onPress();
+    }, DOUBLE_TAP_MS);
+  }
   const yours = p.mine || p.booked || p.aboardTripId !== null;
   const open = isAvailable(p);
   const from = placeName(p.pickup);
@@ -919,11 +1268,11 @@ function PoolBox({
     >
       <Pressable
         style={[styles.box, yours && styles.boxYours]}
-        onPress={onPress}
+        onPress={tap}
         onPressIn={() => pressTo(0.95)}
         onPressOut={() => pressTo(1)}
         accessibilityRole="button"
-        accessibilityLabel={`${open ? 'Available. ' : ''}From ${from} to ${to}. ${fareText(p)}. ${seatsText(p)}`}
+        accessibilityLabel={`${open ? 'Available. ' : ''}${fav ? 'Favourite. ' : ''}From ${from} to ${to}. ${fareText(p)}. ${seatsText(p)}`}
       >
         {open && !yours ? (
           <Animated.View
@@ -934,7 +1283,7 @@ function PoolBox({
         <StatusTag open={open} />
         {p.riderGender ? <GenderBadge gender={p.riderGender} /> : null}
         <View style={styles.boxCar}>
-          <RideCars photos={p.carPhotos ?? []} beat={beat} arrive={arrive} seed={p.id} phase={open ? phase : undefined}>
+          <RideCars photos={p.carPhotos ?? []} beat={beat} arrive={arrive} seed={p.id} route={p} phase={open ? phase : undefined}>
             {open ? (
               <Animated.View
                 pointerEvents="none"
@@ -949,6 +1298,16 @@ function PoolBox({
               <Text style={styles.farePillTxt}>{fareText(p)}</Text>
               <Text style={styles.farePillPer}>/seat</Text>
             </View>
+            <Pressable
+              style={({ pressed }) => [styles.favBtn, pressed && { opacity: 0.7 }]}
+              onPress={onFav}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityState={{ selected: fav }}
+              accessibilityLabel={fav ? 'Remove from favourites' : 'Add to favourites'}
+            >
+              <HeartIcon filled={fav} />
+            </Pressable>
           </RideCars>
         </View>
         <View>
@@ -976,6 +1335,20 @@ function PoolBox({
         </View>
       </Pressable>
     </Animated.View>
+  );
+}
+
+/** The favourite heart — drawn, so every phone's font agrees on it. */
+function HeartIcon({ filled }: { filled: boolean }) {
+  return (
+    <Svg width={14} height={14} viewBox="0 0 24 24">
+      <Path
+        d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
+        fill={filled ? HEART : 'none'}
+        stroke={filled ? HEART : '#ffffff'}
+        strokeWidth={2.2}
+      />
+    </Svg>
   );
 }
 
@@ -1088,12 +1461,15 @@ function RouteFields({
   from,
   onTo,
   onFrom,
+  pickupFirst,
 }: {
   cityName: string;
   to: Place | null;
   from: Place | null;
   onTo: (p: Place | null) => void;
   onFrom: (p: Place | null) => void;
+  /** My Routes' order: pickup, then drop-off. */
+  pickupFirst?: boolean;
 }) {
   const [toText, setToText] = useState(to?.address ?? '');
   const [fromText, setFromText] = useState(from?.address ?? '');
@@ -1149,49 +1525,56 @@ function RouteFields({
     else onFrom(place);
   }
 
+  const toRow = (
+    <View style={styles.fieldRow}>
+      <DestinationPinIcon size={16} color={colors.text} accent={colors.primary} />
+      <TextInput
+        style={styles.fieldInput}
+        value={toText}
+        onChangeText={(t) => type('to', t)}
+        placeholder="Enter your drop-off location"
+        placeholderTextColor={colors.muted}
+        maxLength={200}
+      />
+      {to ? <View style={styles.pinned} /> : null}
+      {toText ? (
+        <Pressable
+          onPress={() => {
+            setToText('');
+            onTo(null);
+          }}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel="Clear drop-off"
+        >
+          <View style={{ transform: [{ rotate: '45deg' }] }}>
+            <PlusIcon size={14} color={colors.muted} />
+          </View>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+  const fromRow = (
+    <View style={styles.fieldRow}>
+      <PickupDotIcon size={16} color={colors.text} accent={colors.primary} />
+      <TextInput
+        style={styles.fieldInput}
+        value={fromText}
+        onChangeText={(t) => type('from', t)}
+        placeholder="Enter your pickup location"
+        placeholderTextColor={colors.muted}
+        maxLength={200}
+      />
+      {from ? <View style={styles.pinned} /> : null}
+    </View>
+  );
+
   return (
     <>
       <View style={styles.routeBox}>
-        <View style={styles.fieldRow}>
-          <DestinationPinIcon size={16} color={colors.text} accent={colors.primary} />
-          <TextInput
-            style={styles.fieldInput}
-            value={toText}
-            onChangeText={(t) => type('to', t)}
-            placeholder="Enter your drop-off location"
-            placeholderTextColor={colors.muted}
-            maxLength={200}
-          />
-          {to ? <View style={styles.pinned} /> : null}
-          {toText ? (
-            <Pressable
-              onPress={() => {
-                setToText('');
-                onTo(null);
-              }}
-              hitSlop={10}
-              accessibilityRole="button"
-              accessibilityLabel="Clear drop-off"
-            >
-              <View style={{ transform: [{ rotate: '45deg' }] }}>
-                <PlusIcon size={14} color={colors.muted} />
-              </View>
-            </Pressable>
-          ) : null}
-        </View>
+        {pickupFirst ? fromRow : toRow}
         <View style={styles.fieldDivider} />
-        <View style={styles.fieldRow}>
-          <PickupDotIcon size={16} color={colors.text} accent={colors.primary} />
-          <TextInput
-            style={styles.fieldInput}
-            value={fromText}
-            onChangeText={(t) => type('from', t)}
-            placeholder="Enter your pickup location"
-            placeholderTextColor={colors.muted}
-            maxLength={200}
-          />
-          {from ? <View style={styles.pinned} /> : null}
-        </View>
+        {pickupFirst ? toRow : fromRow}
       </View>
 
       {field && (searching || suggestions.length > 0) ? (
@@ -1215,6 +1598,103 @@ function RouteFields({
         </View>
       ) : null}
     </>
+  );
+}
+
+/**
+ * My Routes (owner, 2026-11-05): the rider's own commute as real selectors —
+ * pickup and drop-off searched like the box at the top, then office timings.
+ * Saved the moment both ends are set (and again on every change), so the boxes
+ * below follow it and the daily-route alerts know it, there and back. Once
+ * saved, To office / Back home picks which trip the boxes are for.
+ */
+function MyRoutePanel({
+  cityName,
+  go,
+  back,
+  homeward,
+  onSave,
+  onLeg,
+}: {
+  cityName: string;
+  go: DailyRoute | null;
+  back: DailyRoute | null;
+  /** The boxes are for the trip home. */
+  homeward: boolean;
+  onSave: (pickup: Place, dropoff: Place, start: string, end: string) => void;
+  onLeg: (homeward: boolean) => void;
+}) {
+  const [v, setV] = useState({
+    from: go?.pickup ?? null,
+    to: go?.dropoff ?? null,
+    start: go?.time ?? '09:00',
+    end: back?.time ?? '17:00',
+  });
+  function set(next: Partial<typeof v>) {
+    const n = { ...v, ...next };
+    setV(n);
+    if (n.from && n.to) onSave(n.from, n.to, n.start, n.end);
+  }
+  return (
+    <View style={styles.mineBox}>
+      <RouteFields
+        cityName={cityName}
+        from={v.from}
+        to={v.to}
+        pickupFirst
+        onFrom={(p) => set({ from: p })}
+        onTo={(p) => set({ to: p })}
+      />
+      <Text style={styles.sheetLabel}>OFFICE TIMINGS</Text>
+      <View style={styles.choiceRow}>
+        <TimeSelect label="Start" value={v.start} onChange={(start) => set({ start })} />
+        <TimeSelect label="Finish" value={v.end} onChange={(end) => set({ end })} />
+      </View>
+      {go ? (
+        <View style={styles.modeRow}>
+          {[false, true].map((home) => (
+            <Pressable
+              key={String(home)}
+              style={({ pressed }) => [styles.allChip, homeward === home && styles.allChipOn, pressed && { opacity: 0.85 }]}
+              onPress={() => onLeg(home)}
+              hitSlop={6}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: homeward === home }}
+            >
+              <Text style={[styles.allChipTxt, homeward === home && styles.allChipTxtOn]}>
+                {home ? `Back home · ${clockLabel(v.end) ?? ''}` : `To office · ${clockLabel(v.start) ?? ''}`}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+/** One office time, on the phone's own picker: compact on iOS, the clock dialog on Android. */
+function TimeSelect({ label, value, onChange }: { label: string; value: string; onChange: (hhmm: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const date = fromHHMM(value, new Date());
+  function picked(event: DateTimePickerEvent, d?: Date) {
+    if (Platform.OS === 'android') setOpen(false);
+    if (event.type === 'set' && d) onChange(toHHMM(d));
+  }
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.choice, styles.choiceOn, pressed && { opacity: 0.85 }]}
+      onPress={() => setOpen(true)}
+      accessibilityRole="button"
+      accessibilityLabel={`${label}: ${clockLabel(value) ?? 'not set'}. Change`}
+    >
+      <Text style={styles.choiceNote}>{label}</Text>
+      {Platform.OS === 'ios' ? (
+        <DateTimePicker value={date} mode="time" display="compact" onChange={picked} />
+      ) : (
+        <Text style={[styles.choiceTxt, styles.choiceTxtOn]}>{clockLabel(value)}</Text>
+      )}
+      {open && Platform.OS === 'android' ? <DateTimePicker value={date} mode="time" display="default" onChange={picked} /> : null}
+    </Pressable>
   );
 }
 
@@ -1308,7 +1788,7 @@ function RideDialog({
           <StatusTag open={isAvailable(p)} />
           {p.riderGender ? <GenderBadge gender={p.riderGender} /> : null}
           <View style={styles.boxCar}>
-            <RideCars photos={p.carPhotos ?? []} beat={beat} arrive={pop} seed={p.id} phase={flow} />
+            <RideCars photos={p.carPhotos ?? []} beat={beat} arrive={pop} seed={p.id} route={p} phase={flow} />
             {p.carPhotos?.length ? (
               <Text style={styles.carCaption}>{p.carIsDrivers ? 'The driver’s car' : 'Cars nearby that could come'}</Text>
             ) : null}
@@ -1570,7 +2050,12 @@ function RideBox({ edit, cityName, from: startFrom, to: startTo, busy, onClose, 
           )}
 
           <Text style={styles.sheetLabel}>AVAILABLE SEATS</Text>
-          <RideCars photos={[]} beat={0} seed={`${from?.address ?? ''}>${to?.address ?? ''}`} />
+          <RideCars
+            photos={[]}
+            beat={0}
+            seed={`${from?.address ?? ''}>${to?.address ?? ''}`}
+            route={from && to ? { pickup: from, dropoff: to } : undefined}
+          />
           <Text style={styles.seatsTxt}>3 seats available — one is yours</Text>
         </>
       )}
@@ -1675,12 +2160,12 @@ const styles = themed(() => StyleSheet.create({
   predictionSub: { color: colors.muted, fontSize: 12, fontWeight: '600', marginTop: 2 },
 
   hint: { fontSize: 13, color: colors.muted, fontWeight: '600', lineHeight: 19, textAlign: 'center', marginTop: 8 },
-  blockLabel: { fontSize: 11, fontWeight: '900', color: colors.muted, letterSpacing: 0.8, marginTop: 4 },
   emptyBtn: { flexDirection: 'row', gap: 8 },
 
-  /** The boxes' heading, with the owner's All on the right. */
-  listHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  listHeading: { flex: 1, marginTop: 0 },
+  /** The row over the boxes: My Routes, Leaving from your pickup, All, Favourites. */
+  modeRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  /** My Routes' selectors. */
+  mineBox: { gap: 10 },
   allChip: {
     paddingHorizontal: 16, paddingVertical: 6, borderRadius: 14,
     borderWidth: 1, borderColor: colors.glassLimeBorder, backgroundColor: colors.glassLime,
@@ -1730,6 +2215,17 @@ const styles = themed(() => StyleSheet.create({
   routeDot: { width: 2, height: 2, borderRadius: 1, backgroundColor: colors.muted },
   /** The car driving a drawn route. */
   artCar: { position: 'absolute', left: 0, top: 0, width: CAR_W, height: CAR_H },
+  /** A mapped route's place name, over its end. */
+  placeTag: { position: 'absolute', alignItems: 'center' },
+  placeTagTxt: {
+    maxWidth: '100%', fontSize: 9.5, fontWeight: '900', color: '#ffffff',
+    paddingHorizontal: 5, paddingVertical: 1, borderRadius: 6, overflow: 'hidden', backgroundColor: 'rgba(0,0,0,0.66)',
+  },
+  /** The favourite heart, on the picture's top-right corner — under the ♀/♂ badge. */
+  favBtn: {
+    position: 'absolute', top: 6, right: 6, width: 26, height: 26, borderRadius: 13,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)',
+  },
   boxFoot: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   boxSeats: { flexShrink: 1, fontSize: 12, fontWeight: '800', color: colors.text },
   boxTimeRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
