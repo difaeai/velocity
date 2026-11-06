@@ -68,6 +68,7 @@ import { DriverPoolManifest } from '../../src/ui/DriverPoolManifest';
 import { SharingRidesFeed } from '../../src/ui/SharingRidesFeed';
 import { SharedRidesStrip } from '../../src/ui/SharedRidesStrip';
 import { CorporateBoard } from '../../src/ui/CorporateBoard';
+import { GlassSheen } from '../../src/ui/Glass';
 import { distanceMeters, formatDistance } from '../../src/lib/geo';
 import { RIDE_TYPE_LABELS, type Trip, type TripStatus } from '../../src/domain/types';
 import { documentsExpiringSoon } from '../../src/domain/documentExpiry';
@@ -647,6 +648,7 @@ export default function DriverHome() {
         </Pressable>
 
         <View style={styles.toggle}>
+          <GlassSheen radius={22} />
           <Pressable
             style={[styles.toggleHalf, !online && styles.toggleOffActive]}
             disabled={busy}
@@ -677,6 +679,7 @@ export default function DriverHome() {
           and Coming up next in red) or All (every ride). Hidden mid-trip. ── */}
       {!activeTrip ? (
         <View style={[styles.toggle, styles.modeToggle]}>
+          <GlassSheen radius={22} />
           <Pressable
             style={[styles.toggleHalf, corporateOnly && styles.modeCorporateActive]}
             onPress={() => uid && setDoc(doc(db, 'drivers', uid), { rideMode: 'corporate' }, { merge: true }).catch(() => {})}

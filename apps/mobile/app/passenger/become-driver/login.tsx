@@ -278,7 +278,7 @@ export default function DriverLogin() {
       >
         <View style={styles.container}>
           <View style={styles.brandRow}>
-            <View style={styles.logo}><LogoMark size={28} color="#000" spin /></View>
+            <View style={styles.logo}><LogoMark size={40} spin /></View>
             <Text style={styles.brand}>Driver login</Text>
           </View>
 
@@ -406,7 +406,7 @@ const styles = themed(() => StyleSheet.create({
   container: { flex: 1, padding: 28, justifyContent: 'center', gap: 14 },
 
   brandRow:   { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 },
-  logo:       { width: 48, height: 48, borderRadius: 14, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  logo:       { width: 48, height: 48, borderRadius: 14, backgroundColor: '#101211', alignItems: 'center', justifyContent: 'center' },
   brand:      { fontSize: 24, fontWeight: '900', color: colors.text },
   title:      { fontSize: 28, fontWeight: '900', color: colors.text },
   subtitle:   { fontSize: 15, color: colors.muted, marginBottom: 4 },

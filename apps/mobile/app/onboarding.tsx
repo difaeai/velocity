@@ -223,7 +223,7 @@ export default function Onboarding() {
 
         {/* Header */}
         <View style={styles.logoRow}>
-          <LogoMark size={52} color="#ccff00" spin />
+          <LogoMark size={64} spin />
         </View>
         <Text style={styles.title}>
           {needUsername && needProfile ? 'Set up your account' : needUsername ? 'Pick your username' : 'One last step'}

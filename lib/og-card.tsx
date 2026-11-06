@@ -24,7 +24,7 @@ const INK = '#04120C';
 const LIME = '#ccff00';
 
 /**
- * The traced mark, as a data URI.
+ * The logo, as a data URI.
  *
  * Read from the generated file rather than re-declared here, so re-running
  * scripts/generate-brand-assets.mjs updates the share card too. A missing file
@@ -33,9 +33,8 @@ const LIME = '#ccff00';
  */
 async function markDataUri(): Promise<string | null> {
   try {
-    const svg = await readFile(path.join(process.cwd(), 'public/brand/velocity-mark.svg'), 'utf8');
-    // The file inherits `currentColor`, which means nothing to a bare <img>.
-    return `data:image/svg+xml;base64,${Buffer.from(svg.replaceAll('currentColor', LIME)).toString('base64')}`;
+    const png = await readFile(path.join(process.cwd(), 'public/brand/velocity-logo.png'));
+    return `data:image/png;base64,${png.toString('base64')}`;
   } catch {
     return null;
   }

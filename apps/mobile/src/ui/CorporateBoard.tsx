@@ -13,6 +13,7 @@ import { useForegroundInterval } from '../hooks/useForegroundInterval';
 import { corporateBoard, type BoardBox } from '../lib/corporateBoard';
 import { clockLabel, toHHMM } from '../lib/dailyRouteTime';
 import { themed } from '../theme';
+import { GlassSheen, glassEdge } from './Glass';
 import { Text } from './Text';
 
 const GREEN = '#16a34a';
@@ -76,11 +77,12 @@ export function CorporateBoard({
 function Box({ box: b, color, onPress }: { box: BoardBox; color: string; onPress: () => void }) {
   return (
     <Pressable
-      style={({ pressed }) => [styles.box, { backgroundColor: color }, pressed && { opacity: 0.85 }]}
+      style={({ pressed }) => [styles.box, glassEdge, { backgroundColor: color }, pressed && { opacity: 0.85 }]}
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={`${whenLabel(b.atMs)}, ${b.people} people, ${b.from} to ${b.to}`}
     >
+      <GlassSheen radius={14} />
       <View style={styles.boxHead}>
         <Text style={styles.when}>{whenLabel(b.atMs)}</Text>
         {b.mine ? <Text style={styles.mine}>YOURS</Text> : null}

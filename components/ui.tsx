@@ -2,6 +2,25 @@
 
 import { colors } from '@/lib/config';
 
+/**
+ * Apple-style liquid glass (owner, 2026-11-06): see-through, blurred behind,
+ * lit along the top edge. For panels; buttons get `glassShine` over their fill.
+ */
+export const glass: React.CSSProperties = {
+  background: 'linear-gradient(180deg, rgba(255,255,255,0.82), rgba(255,255,255,0.56))',
+  backdropFilter: 'blur(20px) saturate(180%)',
+  WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+  border: '1px solid rgba(255,255,255,0.85)',
+  boxShadow: 'inset 0 1px 0 rgba(255,255,255,1), inset 0 -1px 0 rgba(255,255,255,0.4), 0 10px 30px rgba(16,48,32,0.08)',
+};
+
+/** The light on a solid glass button: a sheen down its face and a bright top rim. */
+const glassShine: React.CSSProperties = {
+  backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.3), rgba(255,255,255,0.04) 55%, rgba(255,255,255,0))',
+  border: '1px solid rgba(255,255,255,0.22)',
+  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.45), 0 6px 18px rgba(0,0,0,0.12)',
+};
+
 export function Button({
   children,
   onClick,
@@ -27,9 +46,8 @@ export function Button({
       onClick={onClick}
       disabled={disabled}
       style={{
-        backgroundColor: bg,
+        ...(variant === 'ghost' ? glass : { ...glassShine, backgroundColor: bg }),
         color: fg,
-        border: variant === 'ghost' ? `1px solid ${colors.border}` : 'none',
         borderRadius: 10,
         padding: '8px 14px',
         fontWeight: 700,
@@ -47,8 +65,7 @@ export function Card({ children, style }: { children: React.ReactNode; style?: R
   return (
     <div
       style={{
-        background: colors.surface,
-        border: `1px solid ${colors.border}`,
+        ...glass,
         borderRadius: 16,
         padding: 20,
         ...style,
