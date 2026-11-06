@@ -52,6 +52,7 @@ import { db, Timestamp } from '../lib/firebase';
 import { neighborGeohashes } from '../lib/geohash';
 import { queryNearbyDriverDocs } from '../lib/nearbyDrivers';
 import { requireAuth, invalid } from '../lib/guards';
+import { wake } from '../lib/jobSleep';
 import { rateLimit } from '../lib/ratelimit';
 
 const schema = z.object({
@@ -171,6 +172,8 @@ export const getNearbyActivity = onCall(async (req) => {
 
   const parsed = schema.safeParse(req.data);
   if (!parsed.success) invalid('A valid location is required.');
+  // Somebody is on the home screen: the ride jobs must be running.
+  await wake('ride');
   const { lat, lng, radiusKm } = parsed.data;
   const radiusM = radiusKm * 1000;
   const nowMs = Date.now();

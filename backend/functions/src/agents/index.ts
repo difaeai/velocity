@@ -91,6 +91,18 @@ async function sweepOne(): Promise<void> {
   }
 }
 
+/** Whether sweepOne would find anything: a follow-up, a live call, or an agent free to dial. The sleeper asks. */
+export async function agentsHaveWork(): Promise<boolean> {
+  const [pending, live] = await Promise.all([
+    sdb.collection(CALLS).where('followUp', '==', 'pending').limit(1).get(),
+    sdb.collection(CALLS).where('state', 'in', ['dialing', 'live']).limit(1).get(),
+  ]);
+  if (!pending.empty || !live.empty) return true;
+  if (!bridgeUrl()) return false;
+  const s = await getSales();
+  return (s.callAgents as CallAgent[]).some((a) => a.active && a.mode === 'ai' && a.autoCall && inHours(a, pktHour(Date.now())));
+}
+
 export const agentSweep = onSchedule({ schedule: 'every 5 minutes', region: REGION, timeoutSeconds: 300, memory: '512MiB' }, () =>
   forEachWorkspace('sales', sweepOne),
 );

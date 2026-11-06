@@ -638,6 +638,8 @@ export {
 
 // What Velocity pays its vendors — pulled from Google Cloud, Anthropic and Meta
 export { refreshPlatformCosts, adminRefreshPlatformCosts } from './costs';
+// Scheduled jobs sleep while nobody needs them and wake when people arrive.
+export { sleepIdleJobs } from './costs/sleeper';
 
 // ── Pricing Engine ──────────────────────────────────────────────────────────
 // Fuel-linked per-km rates, a capped demand/supply peak factor, detection of

@@ -569,6 +569,12 @@ export async function advanceLaunch(): Promise<void> {
   }
 }
 
+/** Whether advanceLaunch has a step to move. done, needs_you and skipped wait on a person, who wakes the desk. */
+export async function launchHasWork(): Promise<boolean> {
+  const state = (await stateRef().get()).data() as LaunchState | undefined;
+  return Boolean(state && STEPS.some((id) => !['done', 'needs_you', 'skipped'].includes(state.steps[id]?.status)));
+}
+
 /** Every ten minutes, every live workspace: carry on where its sequence stopped. */
 export const socialLaunchSweep = onSchedule(
   // 2GiB because the funnel step may draw the first campaign's creative.
