@@ -114,7 +114,8 @@ which the `/link` page sends to Shared rides. No template change is needed.
 
 An hour before riders leave, opted-in drivers near where they start are told
 how many, from where, when, and what the car pays
-(`whatsapp/scheduledDemand.ts`, every quarter hour). The riders are the WhatsApp
+(`whatsapp/scheduledDemand.ts`, every quarter hour from 7:00 to 21:45, Monday
+to Saturday). The riders are the WhatsApp
 QR leads, home to office at their start time and back at their end time, in
 cars of up to four starting within 1.5 km. A shared ride booked for a set time
 uses it too, at its second seat. It is a separate template because the ride

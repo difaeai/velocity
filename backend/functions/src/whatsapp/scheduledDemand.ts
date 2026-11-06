@@ -107,7 +107,9 @@ export async function runScheduledDemand(nowMs: number): Promise<number> {
 
 export const sendScheduledDemandAlerts = onSchedule(
   // Unix cron, not "every 15 minutes": it lands on :00/:15/:30/:45, the quarter hours departures sit on.
-  { schedule: '*/15 * * * *', timeZone: 'Asia/Karachi', region: SCHEDULE_REGION },
+  // Only 7:00–21:45, Monday to Saturday: quiet hours send nothing and leads have no Sunday trips,
+  // so a run then would be billed for nothing (the job is not in lib/jobSleep's list).
+  { schedule: '*/15 7-21 * * 1-6', timeZone: 'Asia/Karachi', region: SCHEDULE_REGION },
   async () => {
     const cars = await runScheduledDemand(Date.now());
     if (cars > 0) logger.info('WhatsApp: scheduled demand sent', { cars });
