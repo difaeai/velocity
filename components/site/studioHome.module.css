@@ -19,7 +19,11 @@
   gap: 10px;
   padding: clamp(22px, 3vw, 34px);
   border-radius: var(--r-lg);
-  background: var(--card);
+  /* Liquid glass — the tokens are site.module.css's. */
+  background: var(--glass-sheen);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-rim);
   border: 1px solid var(--line);
 }
 

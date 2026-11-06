@@ -25,7 +25,7 @@ import { SUPPORT_EMAIL } from '@/lib/site';
 import { STUDIO_PLAN_IDS, STUDIO_PLANS, planIncludes, type StudioNeed, type StudioNeeds } from '@/lib/studio';
 import { WorkspaceProvider, useWorkspace } from '@/lib/workspace';
 import { colors } from '@/lib/config';
-import { Button } from '@/components/ui';
+import { Button, glass } from '@/components/ui';
 import { VelocityIcon } from '@/components/BrandMark';
 
 interface NavItem {
@@ -260,7 +260,7 @@ function AdminShell({ email, signOut, children }: ShellProps) {
   const section = pathname.startsWith('/dashboard/social') ? SECTIONS[1] : SECTIONS[0];
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
+    <div style={pageStyle}>
       <aside style={asideStyle}>
         <Link href="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
           <VelocityIcon size={32} />
@@ -403,7 +403,7 @@ function StudioShell({ email, name, signOut, children }: ShellProps) {
   const soldIn = sold.length > 1 ? `${sold.slice(0, -1).join(', ')} and ${sold[sold.length - 1]} plans` : `${sold[0] ?? 'a paid'} plan`;
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
+    <div style={pageStyle}>
       <aside style={asideStyle}>
         <Link href={home} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
           <VelocityIcon size={32} />
@@ -651,11 +651,25 @@ function Center({ children }: { children: React.ReactNode }) {
   return <div style={{ display: 'grid', placeItems: 'center', minHeight: '100vh' }}>{children}</div>;
 }
 
+/** Soft colour behind the console, so its glass panels have something to show through. */
+const pageStyle: React.CSSProperties = {
+  display: 'flex',
+  minHeight: '100vh',
+  background:
+    'radial-gradient(circle at 8% 0%, rgba(204,255,0,0.22), transparent 36%),'
+    + ' radial-gradient(circle at 100% 25%, rgba(0,88,187,0.10), transparent 40%),'
+    + ` radial-gradient(circle at 45% 100%, rgba(4,107,65,0.14), transparent 45%), ${colors.bg}`,
+  backgroundAttachment: 'fixed',
+};
+
 const asideStyle: React.CSSProperties = {
+  ...glass,
+  borderRadius: 0,
+  borderTop: 'none',
+  borderLeft: 'none',
+  borderBottom: 'none',
   width: 246,
   flex: 'none',
-  borderRight: `1px solid ${colors.border}`,
-  background: colors.surface,
   padding: 20,
   display: 'flex',
   flexDirection: 'column',

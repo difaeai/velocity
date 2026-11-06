@@ -105,6 +105,60 @@ Sample as it arrives:
 > Open Velocity to see it and place your fare.
 > **[ View ride ]  [ Stop alerts ]**
 
+A shared ride uses the same template; only `{{2}}` changes, to
+`shared Mini, 3 riders to PIMS`, and `{{3}}` is what the whole car pays. When
+the ride is booked ahead and has no trip yet, the URL suffix is `pool-<id>`,
+which the `/link` page sends to Shared rides. No template change is needed.
+
+### 2b. The demand template (optional, stays dark until set)
+
+An hour before riders leave, opted-in drivers near where they start are told
+how many, from where, when, and what the car pays
+(`whatsapp/scheduledDemand.ts`, every quarter hour from 7:00 to 21:45, Monday
+to Saturday). The riders are the WhatsApp
+QR leads, home to office at their start time and back at their end time, in
+cars of up to four starting within 1.5 km. A shared ride booked for a set time
+uses it too, at its second seat. It is a separate template because the ride
+alert says a ride is waiting now.
+
+- **Name:** `driver_ride_schedule`
+- **Category:** **Utility**
+- **Language:** English (`en`)
+
+**Body** (five variables, in this order):
+
+```
+Hi {{1}}, {{2}} will travel from {{3}} at {{4}} today. Total fare: PKR {{5}}.
+Open Velocity Rides to see the ride.
+```
+
+Samples for Meta's review: `Ali`, `3 passengers`, `Blue Area`, `5:00 PM`, `450`.
+
+**Buttons**, in this order:
+
+| Type | Label | Value |
+|------|-------|-------|
+| Visit website (dynamic) | `See ride` | `https://velocityrides.app/link/driver/{{1}}` (sample `demand`) |
+| Quick reply | `Stop alerts` | — |
+
+The code fills the URL with `demand` (the Demand tab) or `shared-pools`. Once
+Meta shows it **Approved**, add to the `WHATSAPP_ENV` secret:
+
+```
+WHATSAPP_DEMAND_TEMPLATE_NAME=driver_ride_schedule
+WHATSAPP_DEMAND_TEMPLATE_LANG=en
+WHATSAPP_DEMAND_TEMPLATE_BUTTON_INDEX=0
+```
+
+The index is `1` if the approved template shows **Stop alerts** before **See ride**.
+
+Use the name and language exactly as Meta shows them. A name Meta does not know
+comes back as `132001`, which trips the circuit breaker and stops ride alerts
+too. With the line absent, nothing is sent and shared rides keep the ride alert.
+
+Quiet hours still apply, so a ride leaving before 8 AM is never announced (its
+alert would go out before 7).
+
 ### 3. Backend secrets
 
 Add **one** GitHub Actions secret named `WHATSAPP_ENV`, holding a block of

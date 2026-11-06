@@ -65,7 +65,7 @@ export default function ApplicationSubmitted() {
           {rejected ? (
             <Text style={styles.badgeMark}>!</Text>
           ) : (
-            <LogoMark size={44} color="#1a1a1a" spin />
+            <LogoMark size={66} spin />
           )}
         </View>
 
@@ -146,7 +146,7 @@ const styles = themed(() => StyleSheet.create({
   container: { flex: 1, padding: 28, alignItems: 'center', justifyContent: 'center', gap: 14 },
 
   badge: {
-    width: 88, height: 88, borderRadius: 26, backgroundColor: '#ccff00',
+    width: 88, height: 88, borderRadius: 26, backgroundColor: '#101211',
     alignItems: 'center', justifyContent: 'center', marginBottom: 6,
   },
   badgeRejected: { backgroundColor: '#fdecea' },

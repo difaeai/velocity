@@ -33,7 +33,7 @@ Then connect the app to that business: App settings → Basic → **Verification
 | Terms of Service URL | `https://velocityrides.app/terms` |
 | User data deletion | Instructions URL: `https://velocityrides.app/privacy` (section 14, "Your control") |
 | Category | Business and Pages |
-| App icon | 1024×1024 PNG — export it from `public/brand/velocity-icon.svg` |
+| App icon | 1024×1024 PNG — `apps/mobile/assets/icon.png` |
 
 Facebook Login → Settings → **Valid OAuth Redirect URIs** must contain exactly
 `https://velocityrides.app/connect/instagram` (it already does for the house

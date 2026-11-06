@@ -25,6 +25,25 @@ export function toHHMM(d: Date): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+const minutesOf = (time: string | null | undefined): number | null => {
+  const m = typeof time === 'string' ? HHMM_RE.exec(time) : null;
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+};
+
+/**
+ * Which way a commute is going now, from its office timings: the trip there
+ * until halfway through the office day, the trip home for twelve hours after
+ * that. A night shift (finish before start) wraps past midnight; no times, there.
+ */
+export function legByClock(start: string | null | undefined, end: string | null | undefined, now: Date): 'go' | 'back' {
+  const s = minutesOf(start);
+  const e = minutesOf(end);
+  if (s === null || e === null) return 'go';
+  const mid = (s + ((e - s + 1440) % 1440) / 2) % 1440;
+  const n = now.getHours() * 60 + now.getMinutes();
+  return (n - mid + 1440) % 1440 < 720 ? 'back' : 'go';
+}
+
 /** The Date a time picker should open on: the saved time today, or `fallback`. */
 export function fromHHMM(time: string | null | undefined, fallback: Date): Date {
   const m = typeof time === 'string' ? HHMM_RE.exec(time) : null;

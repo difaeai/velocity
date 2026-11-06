@@ -28,11 +28,12 @@ export interface DriverProfile {
   verificationStatus?: string;
   online?: boolean;
   /**
-   * Home's Corporate & Students | Regular selector. 'regular' hides corporate
-   * rides (and their pushes); 'corporate', absent or the old Solo | Sharing
-   * values show everything. Legacy 'solo' keeps a driver out of the offer ladder.
+   * Home's Corporate & Students | All selector. 'corporate' shows only those
+   * rides, by time; 'all', absent or any older value shows everything. Home
+   * rewrites legacy 'regular' (skips corporate pushes) and 'solo' (skips the
+   * offer ladder) to 'all'.
    */
-  rideMode?: 'corporate' | 'regular' | 'solo' | 'sharing';
+  rideMode?: 'corporate' | 'all' | 'regular' | 'solo' | 'sharing';
   rating?: number;
   tripsCount?: number;
   reviewReason?: string;

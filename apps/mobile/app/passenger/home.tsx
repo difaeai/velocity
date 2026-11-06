@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Text } from '../../src/ui/Text';
+import { GlassSheen } from '../../src/ui/Glass';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { useRouter } from 'expo-router';
@@ -380,6 +381,7 @@ export default function PassengerHome() {
             accessibilityRole="button"
             accessibilityLabel="Where to? Set your destination"
           >
+            <GlassSheen radius={22} />
             <View style={styles.searchHeroIcon}>
               <SearchIcon size={22} color="#0b0d0c" />
             </View>
@@ -400,6 +402,7 @@ export default function PassengerHome() {
               accessibilityRole="button"
               accessibilityLabel="Book a ride by speaking"
             >
+              <GlassSheen radius={18} />
               <View style={styles.voiceHeroIcon}>
                 <MicIcon size={20} color={colors.primary} />
               </View>
@@ -438,6 +441,7 @@ export default function PassengerHome() {
               accessibilityLabel="Corporate, Students or daily go-to — share your regular ride"
             >
               <TileGlow id="tileCorporate" />
+              <GlassSheen radius={18} />
               <View style={styles.tileHead}>
                 <View style={styles.tileIcon}>
                   <PoolIcon size={20} color="#0b0d0c" accent="#0b0d0c" />
@@ -463,6 +467,7 @@ export default function PassengerHome() {
               accessibilityLabel="Bike — book a bike ride or send a parcel"
             >
               <TileGlow id="tileBike" />
+              <GlassSheen radius={18} />
               <View style={styles.tileHead}>
                 <View style={styles.tileIcon}>
                   <MotoIcon size={22} color="#0b0d0c" accent="#0b0d0c" />

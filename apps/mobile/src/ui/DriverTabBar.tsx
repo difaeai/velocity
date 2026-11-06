@@ -20,6 +20,7 @@ import Svg, { Path } from 'react-native-svg';
 
 import { colors } from '../config';
 import { themed } from '../theme';
+import { Glass } from './Glass';
 import { useWalletComingSoon } from '../hooks/driver';
 
 export type DriverTab = 'requests' | 'demand' | 'performance' | 'wallet';
@@ -68,7 +69,7 @@ export function DriverTabBar({ active }: { active: DriverTab }) {
   const tabs = walletHidden ? TABS.filter((t) => t.key !== 'wallet') : TABS;
 
   return (
-    <View style={[styles.bar, { paddingBottom: insets.bottom, height: DRIVER_TAB_BAR_HEIGHT + insets.bottom }]}>
+    <Glass style={[styles.bar, { paddingBottom: insets.bottom, height: DRIVER_TAB_BAR_HEIGHT + insets.bottom }]}>
       {tabs.map((t) => {
         const focused = t.key === active;
         const tint = focused ? colors.text : colors.muted;
@@ -90,7 +91,7 @@ export function DriverTabBar({ active }: { active: DriverTab }) {
           </Pressable>
         );
       })}
-    </View>
+    </Glass>
   );
 }
 

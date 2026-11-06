@@ -34,32 +34,9 @@ import { api } from '../../src/api/client';
 import { useAuth } from '../../src/auth/AuthContext';
 import { colors } from '../../src/config';
 import { useDriverProfile } from '../../src/hooks/driver';
+import { isValidPkMobile, prettyPhone, stripPhone, subscriberDigits } from '../../src/lib/pkMobile';
 import { themed } from '../../src/theme';
 import { PrimaryButton } from '../../src/ui/components';
-
-/** "+92 300 1234567" / "0300-1234567" → "3001234567" (the subscriber digits). */
-function stripPhone(raw: string): string {
-  let d = raw.replace(/\D/g, '');
-  if (d.startsWith('92') && d.length > 10) d = d.slice(2);
-  d = d.replace(/^0+/, '');
-  return d;
-}
-
-/** "3001234567" → "300 1234567" (display only). */
-function prettyPhone(digits: string): string {
-  return digits.length > 3 ? `${digits.slice(0, 3)} ${digits.slice(3)}` : digits;
-}
-
-/** Every Pakistani mobile is ten digits starting with 3, once 0/+92 is gone. */
-function isValidPkMobile(digits: string): boolean {
-  return /^3\d{9}$/.test(digits);
-}
-
-/** `923001234567` (as stored) → the subscriber digits the input shows. */
-function subscriberDigits(stored: string | undefined): string {
-  if (!stored) return '';
-  return stored.startsWith('92') ? stored.slice(2) : stored;
-}
 
 export default function WhatsAppAlerts() {
   const router = useRouter();
@@ -166,8 +143,9 @@ export default function WhatsAppAlerts() {
             </View>
           </View>
           <Text style={styles.hint}>
-            This can be different from the number you signed up with — use whichever phone actually
-            has WhatsApp on it. Make sure the number is on WhatsApp, or the message will not arrive.
+            Rides come to this WhatsApp. Keep WhatsApp and the Velocity app on the same phone, so
+            the ride opens straight from the message. It can be a different number from the one you
+            signed up with.
           </Text>
 
           <Text style={styles.sectionLabel}>ALERTS</Text>

@@ -25,6 +25,7 @@ import {
 import { colors } from '../../src/config';
 import { PRIVACY_URL, SUPPORT_EMAIL, TERMS_URL } from '../../src/share/links';
 import { themed } from '../../src/theme';
+import { LogoMark } from '../../src/ui/LogoMark';
 import { describePhoneAuthError, SMS_THROTTLE_COOLDOWN_MS } from '../../src/lib/phoneAuthErrors';
 import { checkOtpSendAllowed, noteOtpSendAttempt, noteOtpThrottled } from '../../src/auth/otpGuard';
 import { takeSessionEnded } from '../../src/auth/AuthContext';
@@ -48,14 +49,6 @@ function prettyPhone(digits: string): string {
 }
 
 /* ─────────────────────────── Small inline icons ─────────────────────────── */
-
-function BoltIcon({ size = 56 }: { size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path d="M13.5 2 L6 13.5 L11 13.5 L9.5 22 L18 10 L12.5 10 Z" fill={LIME} />
-    </Svg>
-  );
-}
 
 function ClockIcon({ size = 20 }: { size?: number }) {
   return (
@@ -425,7 +418,7 @@ export default function SignIn() {
       showsVerticalScrollIndicator={false}
     >
       <View style={[styles.brandBlock, kbVisible && styles.brandBlockCompact]}>
-        <BoltIcon size={kbVisible ? 34 : 56} />
+        <LogoMark size={kbVisible ? 48 : 88} />
         <Text
           style={[styles.brandTitle, kbVisible && styles.brandTitleCompact]}
           numberOfLines={1}

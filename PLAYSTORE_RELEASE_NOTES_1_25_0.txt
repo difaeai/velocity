@@ -1,0 +1,54 @@
+VELOCITY RIDES 1.25.0  ·  Android versionCode = next EAS number  ·  iOS build = next EAS number
+=================================================================
+(Build numbers are EAS's remote auto-increment; the build list is the truth.)
+
+WHY 1.25.0. iOS 1.24.0 (build 30) is READY_FOR_SALE, read from the App Store
+Connect API on 6 Nov before choosing, so its train is closed. It also has to be
+a store build, not an OTA update: the launcher icon, splash and Android adaptive
+icon changed, and those live in the native binary.
+
+WHAT IT CARRIES (PR #166).
+  - New logo everywhere: the glowing V on wheels, from one master
+    (apps/mobile/assets/brand-render.png); sign-in's lightning bolt is gone.
+  - Liquid glass: Apple's own glass on iOS 26, a drawn sheen elsewhere.
+  - Drivers: Corporate & Students | All. Corporate shows Right now (green) and
+    Coming up next (red). Sign-up asks for a WhatsApp number; drivers without
+    one are asked on home.
+  - Shared-ride WhatsApp alerts name the riders and the whole car's fare.
+  - Ride sharing: My Routes, Favourites (heart or double tap), what leaves near
+    you first, and each route on a real map.
+No native module was added (expo-glass-effect was already in the build).
+
+VERSION STATE — check the stores, not this file.
+  iOS      Live: 1.24.0 build 30. This release needs a NEW 1.25.0 version
+           record with the What's New below and the new build attached.
+  Android  Play's state cannot be read from this machine (no Play API key).
+           The new AAB supersedes vc53; roll it into EVERY track holding an
+           older bundle. The Play listing icon (512px) is uploaded by hand:
+           apps/mobile/assets/icon.png resized.
+
+AFTER THE ROLLOUT: publish admin → App version INCLUDING the build number,
+or the in-app update prompt tells nobody. iOS only once Apple has RELEASED it.
+
+
+PLAY CONSOLE "WHAT'S NEW" (copy the block below, max 500 chars)
+---------------------------------------------------------------
+A fresh new look and easier ride sharing.
+
+• New Velocity Rides logo and a glassy new design
+• Ride sharing: save My Routes, keep Favourites, see each route on a map
+• Rides leaving near you come first
+• Drivers: Corporate & Students shows rides by time, Right now and Coming up next
+• Drivers: add your WhatsApp number to hear about rides even with the app closed
+• Shared ride alerts show how many riders and the full fare
+
+
+APP STORE "WHAT'S NEW" (set on a NEW 1.25.0 version record)
+-----------------------------------------------------------
+A fresh new look and easier ride sharing.
+
+Velocity Rides has a new logo and a glassy new design across the app.
+
+Ride sharing is quicker to use: save your daily route under My Routes, keep the routes you use most in Favourites with a heart or a double tap, and see every route drawn on a real map. Rides leaving near you now come first.
+
+For drivers: Corporate & Students now shows rides by time, what is leaving right now and what is coming up next. Add your WhatsApp number to hear about rides even when the app is closed, and shared ride alerts now tell you how many riders are going and the full fare.

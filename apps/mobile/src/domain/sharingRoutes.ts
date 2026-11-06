@@ -160,6 +160,31 @@ export const pickupFit = (
   r: { pickup: { lat: number; lng: number }; dropoff: { lat: number; lng: number } },
 ) => 2 * metres(from, r.pickup) + metres(r.pickup, r.dropoff);
 
+type Ends = { pickup: { lat: number; lng: number }; dropoff: { lat: number; lng: number } };
+
+/**
+ * The boxes in order for a rider who has only said where they are: what leaves
+ * from around them first — real rides, then `ready` routes, each by pickupFit —
+ * then what leaves from further away, the rider's own rides included (owner,
+ * 2026-11-05: at I-8, their own rides from PWD, 15 km off, came first). `top`
+ * boxes lead the lot (All's favourites).
+ */
+export function pickupOrder<T extends Ends & { ready?: boolean }>(
+  from: { lat: number; lng: number } | null,
+  boxes: T[],
+  top: (b: T) => boolean = () => false,
+): T[] {
+  const rank = (b: T) =>
+    (top(b) ? 0 : 4e9) +
+    (from && metres(from, b.pickup) > NEAR_PICKUP_M ? 2e9 : 0) +
+    (b.ready ? 1e9 : 0) +
+    (from ? pickupFit(from, b) : 0);
+  return boxes
+    .map((b) => ({ b, r: rank(b) }))
+    .sort((x, y) => x.r - y.r)
+    .map(({ b }) => b);
+}
+
 /** The nearest known place's name within `maxM`, for an address that names no area. */
 export function nearestSpotName(p: { lat: number; lng: number }, maxM = NEAR_PICKUP_M): string | null {
   let best: string | null = null;

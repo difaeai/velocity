@@ -3,6 +3,7 @@ import React, { createContext, useContext, useEffect, useMemo, useRef, useState 
 import { useAuth } from '../auth/AuthContext';
 import { useDriverProfile } from '../hooks/driver';
 import { uploadDriverDoc, type UploadResult } from '../lib/uploadDoc';
+import { isValidPkMobile, subscriberDigits } from '../lib/pkMobile';
 import { api } from '../api/client';
 import type { RideType } from '../domain/types';
 
@@ -27,6 +28,8 @@ export interface OnboardingData {
   lastName: string;
   dob: string;
   email: string;
+  /** WhatsApp number, subscriber digits ("3001234567"). Required: ride alerts go there. */
+  whatsapp: string;
   licensePhoto: string | null;
   licenseExpiry: string;
   cnicFront: string | null;
@@ -51,6 +54,7 @@ const EMPTY: OnboardingData = {
   lastName: '',
   dob: '',
   email: '',
+  whatsapp: '',
   licensePhoto: null,
   licenseExpiry: '',
   cnicFront: null,
@@ -87,6 +91,8 @@ interface OnboardingState {
    * when it went straight to the engine, and `null` when nothing was sent.
    */
   submit: () => Promise<'face_scan' | 'submitted' | null>;
+  /** Records the WhatsApp number for ride alerts; needs the driver record to exist. */
+  saveWhatsApp: () => Promise<void>;
 }
 
 const OnboardingContext = createContext<OnboardingState | undefined>(undefined);
@@ -116,6 +122,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       lastName: d.lastName || restName.join(' '),
       dob: d.dob || (p.dob ?? ''),
       email: d.email || (p.email ?? ''),
+      whatsapp: d.whatsapp || subscriberDigits(p.whatsappAlerts?.number),
       licensePhoto: d.licensePhoto ?? p.licenseDocUrl ?? null,
       licenseExpiry: d.licenseExpiry || (p.licenseExpiry ?? ''),
       cnicFront: d.cnicFront ?? p.cnicDocUrl ?? null,
@@ -134,7 +141,8 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
   }, [profile]);
 
   const complete: Record<SectionKey, boolean> = {
-    basic: !!data.photo && data.firstName.trim().length > 0 && data.lastName.trim().length > 0,
+    basic: !!data.photo && data.firstName.trim().length > 0 && data.lastName.trim().length > 0
+      && isValidPkMobile(data.whatsapp),
     license: !!data.licensePhoto,
     cnic: !!data.cnicFront && !!data.cnicBack && CNIC_RE.test(data.cnicNumber),
     vehicle:
@@ -151,6 +159,18 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
   };
   const documentsComplete = complete.basic && complete.license && complete.cnic && complete.vehicle;
   const allComplete = documentsComplete && complete.faceScan;
+
+  /**
+   * The number they typed under "rides come to this WhatsApp" is their own
+   * opt-in, through the one callable allowed to set it. The same number as
+   * already stored is left alone, so a driver who replied STOP stays stopped.
+   * Best-effort: a driver it misses is asked again on the home screen.
+   */
+  async function saveWhatsApp(): Promise<void> {
+    const wa = `92${data.whatsapp}`;
+    if (!isValidPkMobile(data.whatsapp) || profile?.whatsappAlerts?.number === wa) return;
+    await api.setWhatsAppAlerts({ enabled: true, phone: wa }).catch(() => {});
+  }
 
   async function submit(): Promise<'face_scan' | 'submitted' | null> {
     if (!user || !documentsComplete) return null;
@@ -218,6 +238,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
         cnicExpiry:         data.cnicExpiry     || undefined,
         vehicleDocExpiry:   data.vehicleDocExpiry || undefined,
       });
+      await saveWhatsApp();
       await refreshRole();
       return res?.needsFaceScan === false ? 'submitted' : 'face_scan';
     } catch (e) {
@@ -238,6 +259,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       submitting,
       error,
       submit,
+      saveWhatsApp,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [data, submitting, error, profile],

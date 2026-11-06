@@ -4,6 +4,10 @@
  * Commute demand that came in over WhatsApp: everyone who scanned the QR and
  * told the bot (backend/functions/src/whatsapp/leads.ts) where they start,
  * where they work and when. One row per WhatsApp number.
+ *
+ * Below it, the supply on WhatsApp: approved drivers and the number their ride
+ * alerts go to (drivers.whatsappAlerts, set only by the driver's own toggle),
+ * and how much of the demand sits near each of them.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { collection, getDocs, limit, onSnapshot, orderBy, query, where, type Timestamp } from 'firebase/firestore';
@@ -30,6 +34,28 @@ interface Lead {
   extraMessages?: { text: string; at: string }[];
   updatedAt?: Timestamp;
 }
+
+interface Driver {
+  id: string;
+  fullName?: string;
+  vehicleLabel?: string;
+  online?: boolean;
+  lastLocation?: { lat: number; lng: number };
+  whatsappAlerts?: { number?: string; optIn?: boolean; blocked?: boolean; lastSentAt?: Timestamp };
+}
+
+/** "Near" for matching demand and supply: an easy drive to the pickup. */
+const NEAR_KM = 5;
+
+function km(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const rad = (d: number) => (d * Math.PI) / 180;
+  const h = Math.sin(rad(b.lat - a.lat) / 2) ** 2
+    + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(rad(b.lng - a.lng) / 2) ** 2;
+  return 12742 * Math.asin(Math.sqrt(h));
+}
+
+const alertsLabel = (d: Driver) =>
+  d.whatsappAlerts?.blocked ? 'Stopped' : d.whatsappAlerts?.optIn ? 'On' : 'Off';
 
 const STEP_LABEL: Record<Lead['step'], string> = {
   pickup: 'Waiting for pickup pin',
@@ -71,6 +97,7 @@ function PinCell({ pin }: { pin?: Pin | null }) {
 export default function WhatsAppLeads() {
   const [rows, setRows] = useState<Lead[]>([]);
   const [joined, setJoined] = useState<Set<string>>(new Set());
+  const [drivers, setDrivers] = useState<Driver[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(
@@ -79,6 +106,16 @@ export default function WhatsAppLeads() {
         // shortcut: newest 500 only, add paging when demand outgrows one screen.
         query(collection(db, 'whatsappLeads'), orderBy('updatedAt', 'desc'), limit(500)),
         (snap) => setRows(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Lead, 'id'>) }))),
+        (e) => setError(e.message),
+      ),
+    [],
+  );
+
+  useEffect(
+    () =>
+      onSnapshot(
+        query(collection(db, 'drivers'), where('verificationStatus', '==', 'approved')),
+        (snap) => setDrivers(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Driver, 'id'>) }))),
         (e) => setError(e.message),
       ),
     [],
@@ -95,10 +132,15 @@ export default function WhatsAppLeads() {
   }, [phonesKey]);
 
   const done = useMemo(() => rows.filter((r) => r.step === 'done').length, [rows]);
+  const onWhatsApp = useMemo(() => drivers.filter((d) => d.whatsappAlerts?.number), [drivers]);
+  const driversNear = (p?: Pin | null) =>
+    p ? onWhatsApp.filter((d) => d.lastLocation && km(p, d.lastLocation) <= NEAR_KM).length : 0;
+  const demandNear = (d: Driver) =>
+    d.lastLocation ? rows.filter((r) => r.pickup && km(r.pickup, d.lastLocation!) <= NEAR_KM).length : 0;
 
   return (
     <div>
-      <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>WhatsApp demand</h1>
+      <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>WhatsApp demand &amp; supply</h1>
       <p style={{ color: colors.muted, marginBottom: 20 }}>
         People who scanned the WhatsApp QR and shared their pickup, office and timings.
       </p>
@@ -135,7 +177,7 @@ export default function WhatsAppLeads() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 900 }}>
             <thead>
               <tr style={{ textAlign: 'left', color: colors.muted }}>
-                {['Person', 'Pickup', 'Office', 'Timings', 'Status', 'Updated'].map((h) => (
+                {['Person', 'Pickup', 'Office', 'Timings', 'Status', `Drivers within ${NEAR_KM} km`, 'Updated'].map((h) => (
                   <th key={h} style={{ padding: '8px 6px', borderBottom: `1px solid ${colors.border}` }}>{h}</th>
                 ))}
               </tr>
@@ -163,7 +205,61 @@ export default function WhatsAppLeads() {
                   <td style={{ padding: '8px 6px' }}>
                     <Badge label={STEP_LABEL[r.step]} color={r.step === 'done' ? colors.success : colors.warn} />
                   </td>
+                  <td style={{ padding: '8px 6px', fontWeight: 700 }}>{driversNear(r.pickup)}</td>
                   <td style={{ padding: '8px 6px', color: colors.muted, whiteSpace: 'nowrap' }}>{when(r.updatedAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
+
+      <h2 style={{ fontSize: 20, fontWeight: 900, margin: '28px 0 4px' }}>Supply on WhatsApp</h2>
+      <p style={{ color: colors.muted, marginBottom: 16 }}>
+        Approved drivers and the WhatsApp number their ride alerts go to. Alerts reach them only while the app is closed.
+      </p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 16 }}>
+        <StatCard label="Drivers on WhatsApp" value={String(onWhatsApp.length)} />
+        <StatCard label="Alerts on" value={String(onWhatsApp.filter((d) => alertsLabel(d) === 'On').length)} />
+        <StatCard label="Online now" value={String(onWhatsApp.filter((d) => d.online).length)} />
+        <StatCard label="No WhatsApp yet" value={String(drivers.length - onWhatsApp.length)} />
+      </div>
+
+      {onWhatsApp.length === 0 ? (
+        <Card>
+          <span style={{ color: colors.muted }}>No driver has added a WhatsApp number yet.</span>
+        </Card>
+      ) : (
+        <Card style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 900 }}>
+            <thead>
+              <tr style={{ textAlign: 'left', color: colors.muted }}>
+                {['Driver', 'Car', 'Now', 'Alerts', 'Last alert', `Demand within ${NEAR_KM} km`, 'Last seen at'].map((h) => (
+                  <th key={h} style={{ padding: '8px 6px', borderBottom: `1px solid ${colors.border}` }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {[...onWhatsApp].sort((a, b) => demandNear(b) - demandNear(a)).map((d) => (
+                <tr key={d.id} style={{ borderBottom: `1px solid ${colors.border}`, verticalAlign: 'top' }}>
+                  <td style={{ padding: '8px 6px' }}>
+                    <div style={{ fontWeight: 700 }}>{d.fullName || '—'}</div>
+                    <a href={`https://wa.me/${d.whatsappAlerts!.number}`} target="_blank" rel="noreferrer" style={{ color: colors.muted }}>
+                      +{d.whatsappAlerts!.number}
+                    </a>
+                  </td>
+                  <td style={{ padding: '8px 6px' }}>{d.vehicleLabel || '—'}</td>
+                  <td style={{ padding: '8px 6px' }}>
+                    <Badge label={d.online ? 'Online' : 'Offline'} color={d.online ? colors.success : colors.muted} />
+                  </td>
+                  <td style={{ padding: '8px 6px' }}>
+                    <Badge label={alertsLabel(d)} color={alertsLabel(d) === 'On' ? colors.success : alertsLabel(d) === 'Stopped' ? colors.danger : colors.warn} />
+                  </td>
+                  <td style={{ padding: '8px 6px', color: colors.muted, whiteSpace: 'nowrap' }}>{when(d.whatsappAlerts?.lastSentAt)}</td>
+                  <td style={{ padding: '8px 6px', fontWeight: 700 }}>{demandNear(d)}</td>
+                  <td style={{ padding: '8px 6px' }}>
+                    {d.lastLocation ? <PinCell pin={{ ...d.lastLocation, name: 'Map' }} /> : <span style={{ color: colors.muted }}>—</span>}
+                  </td>
                 </tr>
               ))}
             </tbody>

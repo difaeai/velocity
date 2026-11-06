@@ -1,189 +1,145 @@
 /**
- * Regenerates every web brand asset from the one master file:
- * `apps/mobile/assets/icon.png` — the exact artwork Play Store and the phone
- * home screen show.
- *
- * The web used to draw its own idea of the logo (a letter "V" in a green box,
- * a lightning bolt) which matched neither the app nor the store listing, and
- * the tab still carried the stock Next.js favicon. Everything visual now comes
- * from here so the site, the admin console and the browser tab can never drift
- * from the app icon again.
- *
- * The mark is traced out of the PNG with marching squares, so the SVG is the
- * real silhouette rather than a hand-approximation. Run it after any change to
- * the app icon:
+ * Every brand image, app and web, from ONE master: the owner's logo render,
+ * `apps/mobile/assets/brand-render.png` (2026-11-06: the glowing lime V on
+ * wheels). Replace that file and re-run:
  *
  *   node scripts/generate-brand-assets.mjs
+ *
+ * Two forms come out of it:
+ *   - ICON: the render itself, square, dark background and all — app icon,
+ *     favicons, the schema.org/OpenGraph logo.
+ *   - LOGO: the V alone, cut out of the dark background with its glow kept and
+ *     the floor reflection dropped — for putting the logo ON a screen.
+ *
+ * Never writes public/brand/whatsapp-qr.*: that QR is printed on posters.
  *
  * Requires `sharp`, which ships with Next.js — no extra install.
  *
  * Writes:
- *   components/BrandMark.tsx         the traced path as a React component
- *   public/brand/velocity-mark.svg   transparent lime mark (for <img>/OG use)
- *   public/brand/velocity-icon.svg   mark on the dark brand tile
- *   public/app/icon.png              512px tile, referenced by OpenGraph/schema.org
- *   app/icon.png                     Next.js file-convention favicon (512px)
- *   app/apple-icon.png               180px, un-rounded (iOS masks it itself)
- *   app/favicon.ico                  16/32/48 for browsers that still ask for it
+ *   apps/mobile/assets/icon.png                     1024 icon, no alpha (App Store refuses alpha)
+ *   apps/mobile/assets/logo.png                     512 logo, in-app (LogoMark)
+ *   apps/mobile/assets/splash-icon.png              1024 logo, native splash
+ *   apps/mobile/assets/android-icon-foreground.png  512 logo inside the adaptive safe zone
+ *   apps/mobile/assets/android-icon-background.png  512 the render's own dark
+ *   apps/mobile/assets/android-icon-monochrome.png  432 white silhouette (themed icons)
+ *   apps/mobile/assets/favicon.png                  48 icon (web build of the app)
+ *   public/brand/velocity-logo.png                  512 logo (site header, share card)
+ *   public/app/icon.png                             512 icon (schema.org / OpenGraph)
+ *   app/icon.png                                    512 rounded icon (Next.js favicon)
+ *   app/apple-icon.png                              180 icon (iOS masks it itself)
+ *   app/favicon.ico                                 16/32/48 rounded icon
  */
-import { mkdir, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import sharp from 'sharp';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const SOURCE = path.join(ROOT, 'apps/mobile/assets/icon.png');
+const MASTER = path.join(ROOT, 'apps/mobile/assets/brand-render.png');
+const out = (p) => path.join(ROOT, p);
 
-/** Brand colours, read back out of the source icon rather than hard-coded. */
-const LIME = '#ccff00';
-const INK = '#1a1c1c';
+/** The logo's own lime: bright, green-dominant, little blue. */
+const isLime = (r, g, b) => g > 180 && r > 120 && b < 120;
 
-/** Trace resolution. The source is 1024²; 512 keeps the path small and exact. */
-const GRID = 512;
-/** Douglas–Peucker tolerance, in grid units. 0.45 ≈ invisible at any real size. */
-const EPSILON = 0.45;
-
-// ── trace ───────────────────────────────────────────────────────────────────
+// ── the logo, cut out ───────────────────────────────────────────────────────
 
 /**
- * Marching squares over the "limeness" field of the icon. Returns closed
- * loops — outer silhouette first, then the holes (the two wheel centres),
- * which an even-odd fill knocks back out.
+ * The V on a transparent background. Against a near-black render, how bright a
+ * pixel is says how much logo is in it, so brightness becomes alpha and the
+ * colour is divided back out of the black — the glow survives as a soft green
+ * halo. Everything from the first empty row under the wheels down is the floor
+ * reflection, and goes.
  */
-async function traceMark() {
-  const { data, info } = await sharp(SOURCE)
-    .resize(GRID, GRID)
-    .ensureAlpha()
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-
+async function cutLogo() {
+  const { data, info } = await sharp(MASTER).removeAlpha().raw().toBuffer({ resolveWithObject: true });
   const { width: W, height: H } = info;
-  const field = new Float64Array(W * H);
-  for (let i = 0; i < W * H; i++) {
-    const g = data[i * 4 + 1];
-    const b = data[i * 4 + 2];
-    field[i] = b < 150 ? Math.max(0, Math.min(1, (g - 90) / 100)) : 0;
-  }
-
-  const T = 0.5;
-  const at = (x, y) => (x < 0 || y < 0 || x >= W || y >= H ? 0 : field[y * W + x]);
-  const lerp = (x1, y1, v1, x2, y2, v2) => {
-    const t = (T - v1) / (v2 - v1);
-    return [x1 + (x2 - x1) * t, y1 + (y2 - y1) * t];
+  const lime = (x, y) => {
+    const i = (y * W + x) * 3;
+    return isLime(data[i], data[i + 1], data[i + 2]);
+  };
+  const rowHasLime = (y) => {
+    for (let x = 0; x < W; x += 1) if (lime(x, y)) return true;
+    return false;
   };
 
-  const segments = [];
-  for (let y = -1; y < H; y++) {
-    for (let x = -1; x < W; x++) {
-      const v0 = at(x, y);
-      const v1 = at(x + 1, y);
-      const v2 = at(x + 1, y + 1);
-      const v3 = at(x, y + 1);
-      const code = (v0 > T ? 8 : 0) | (v1 > T ? 4 : 0) | (v2 > T ? 2 : 0) | (v3 > T ? 1 : 0);
-      if (code === 0 || code === 15) continue;
-
-      const top = () => lerp(x, y, v0, x + 1, y, v1);
-      const right = () => lerp(x + 1, y, v1, x + 1, y + 1, v2);
-      const bottom = () => lerp(x + 1, y + 1, v2, x, y + 1, v3);
-      const left = () => lerp(x, y + 1, v3, x, y, v0);
-      const add = (a, b) => segments.push([a, b]);
-
-      // Cases 5 and 10 are the ambiguous saddles; both diagonals are emitted,
-      // which is correct for a shape this size (no thin one-pixel bridges).
-      switch (code) {
-        case 1: add(bottom(), left()); break;
-        case 2: add(right(), bottom()); break;
-        case 3: add(right(), left()); break;
-        case 4: add(top(), right()); break;
-        case 5: add(top(), left()); add(bottom(), right()); break;
-        case 6: add(top(), bottom()); break;
-        case 7: add(top(), left()); break;
-        case 8: add(left(), top()); break;
-        case 9: add(bottom(), top()); break;
-        case 10: add(left(), bottom()); add(right(), top()); break;
-        case 11: add(right(), top()); break;
-        case 12: add(left(), right()); break;
-        case 13: add(bottom(), right()); break;
-        case 14: add(left(), bottom()); break;
+  // The body, top to the gap above the reflection.
+  let top = 0;
+  while (top < H && !rowHasLime(top)) top += 1;
+  let cut = top;
+  while (cut < H && rowHasLime(cut)) cut += 1;
+  let left = W;
+  let right = 0;
+  for (let y = top; y < cut; y += 1) {
+    for (let x = 0; x < W; x += 1) {
+      if (lime(x, y)) {
+        if (x < left) left = x;
+        if (x > right) right = x;
       }
     }
   }
+  if (cut - top < H * 0.2) throw new Error('Could not find the logo in the master render.');
 
-  // Stitch the segments head-to-tail into closed loops.
-  const key = (p) => `${p[0].toFixed(3)},${p[1].toFixed(3)}`;
-  const startingAt = new Map();
-  segments.forEach((s, i) => {
-    const k = key(s[0]);
-    if (!startingAt.has(k)) startingAt.set(k, []);
-    startingAt.get(k).push(i);
-  });
-
-  const used = new Array(segments.length).fill(false);
-  const loops = [];
-  for (let i = 0; i < segments.length; i++) {
-    if (used[i]) continue;
-    used[i] = true;
-    const loop = [segments[i][0], segments[i][1]];
-    let cursor = segments[i][1];
-    for (;;) {
-      const next = (startingAt.get(key(cursor)) ?? []).find((j) => !used[j]);
-      if (next === undefined) break;
-      used[next] = true;
-      cursor = segments[next][1];
-      loop.push(cursor);
+  const rgba = Buffer.alloc(W * H * 4);
+  for (let y = 0; y < H; y += 1) {
+    for (let x = 0; x < W; x += 1) {
+      const i = (y * W + x) * 3;
+      const o = (y * W + x) * 4;
+      const [r, g, b] = [data[i], data[i + 1], data[i + 2]];
+      const a = y >= cut ? 0 : Math.min(1, Math.max(0, (Math.max(r, g, b) - 24) / 200)) ** 0.75;
+      rgba[o] = a ? Math.min(255, r / a) : 0;
+      rgba[o + 1] = a ? Math.min(255, g / a) : 0;
+      rgba[o + 2] = a ? Math.min(255, b / a) : 0;
+      rgba[o + 3] = Math.round(a * 255);
     }
-    if (loop.length > 8) loops.push(loop);
   }
-  return loops;
+
+  // Square around the body, with room for the glow.
+  const side = Math.round(Math.max(right - left, cut - top) * 1.14);
+  const cx = Math.round((left + right) / 2);
+  const cy = Math.round((top + cut) / 2);
+  const x0 = Math.max(0, cx - Math.round(side / 2));
+  const y0 = Math.max(0, cy - Math.round(side / 2));
+  return sharp(rgba, { raw: { width: W, height: H, channels: 4 } })
+    .extract({ left: x0, top: y0, width: Math.min(side, W - x0), height: Math.min(side, H - y0) })
+    .png()
+    .toBuffer();
 }
 
-/** Ramer–Douglas–Peucker on an open polyline. */
-function simplify(points, eps) {
-  if (points.length < 3) return points;
-  const [ax, ay] = points[0];
-  const [bx, by] = points[points.length - 1];
-  const dx = bx - ax;
-  const dy = by - ay;
-  const len = Math.hypot(dx, dy) || 1;
-  let far = 0;
-  let max = 0;
-  for (let i = 1; i < points.length - 1; i++) {
-    const d = Math.abs(dy * points[i][0] - dx * points[i][1] + bx * ay - by * ax) / len;
-    if (d > max) {
-      max = d;
-      far = i;
-    }
-  }
-  if (max <= eps) return [points[0], points[points.length - 1]];
-  return [...simplify(points.slice(0, far + 1), eps).slice(0, -1), ...simplify(points.slice(far), eps)];
+// ── icons ───────────────────────────────────────────────────────────────────
+
+const icon = (size) => sharp(MASTER).removeAlpha().resize(size, size).png().toBuffer();
+
+/** The icon with rounded corners, for browser tabs. */
+async function roundedIcon(size) {
+  const r = Math.round(size * 0.22);
+  const mask = Buffer.from(`<svg width="${size}" height="${size}"><rect width="${size}" height="${size}" rx="${r}"/></svg>`);
+  return sharp(await icon(size)).ensureAlpha().composite([{ input: mask, blend: 'dest-in' }]).png().toBuffer();
+}
+
+/** `logo` centred on a transparent square, at `scale` of its side. */
+async function placed(logo, size, scale) {
+  const inner = Math.round(size * scale);
+  return sharp({ create: { width: size, height: size, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+    .composite([{ input: await sharp(logo).resize(inner, inner).png().toBuffer(), gravity: 'center' }])
+    .png()
+    .toBuffer();
+}
+
+/** The render's background, averaged off its bottom-right corner (the left one carries a light). */
+async function backgroundColour() {
+  const { data } = await sharp(MASTER).removeAlpha().extract({ left: 1154, top: 1154, width: 100, height: 100 })
+    .raw().toBuffer({ resolveWithObject: true });
+  const sum = [0, 0, 0];
+  for (let i = 0; i < data.length; i += 3) for (let c = 0; c < 3; c += 1) sum[c] += data[i + c];
+  const n = data.length / 3;
+  return { r: Math.round(sum[0] / n), g: Math.round(sum[1] / n), b: Math.round(sum[2] / n) };
 }
 
 /**
- * A closed loop has a degenerate first→last baseline, so cut it at the point
- * farthest from the start and simplify the two halves separately.
- */
-function simplifyLoop(loop, eps) {
-  const pts = loop.slice(0, -1);
-  let far = 0;
-  let max = -1;
-  for (let i = 1; i < pts.length; i++) {
-    const d = Math.hypot(pts[i][0] - pts[0][0], pts[i][1] - pts[0][1]);
-    if (d > max) {
-      max = d;
-      far = i;
-    }
-  }
-  const head = simplify(pts.slice(0, far + 1), eps);
-  const tail = simplify([...pts.slice(far), pts[0]], eps);
-  return [...head.slice(0, -1), ...tail.slice(0, -1)];
-}
-
-// ── ico ─────────────────────────────────────────────────────────────────────
-
-/**
- * Pack PNGs into an .ico. Every browser that reads .ico at all has understood
- * PNG-in-ICO since Vista, so there is no need for a BMP encoder here.
+ * A minimal multi-image ICO: a 6-byte header, a 16-byte directory entry per
+ * image, then the PNG payloads verbatim. Every browser since Vista accepts PNG
+ * frames, so there is no need to emit legacy BMP data.
  */
 function buildIco(images) {
   const header = Buffer.alloc(6);
@@ -209,152 +165,43 @@ function buildIco(images) {
   return Buffer.concat([header, ...entries, ...images.map((i) => i.png)]);
 }
 
-// ── react component ─────────────────────────────────────────────────────────
-
-/**
- * The mark as a React component, so every surface inlines the same geometry
- * instead of each one inventing a placeholder. Generated rather than
- * hand-written: the path is 1.3KB of traced coordinates nobody should edit.
- */
-const brandComponent = ({ w, h, path: d }) => `/**
- * The Velocity mark — GENERATED, do not edit by hand.
- *
- * Traced from apps/mobile/assets/icon.png by scripts/generate-brand-assets.mjs.
- * Re-run that script after any change to the app icon; everything on the web
- * (site header, admin sidebar, sign-in, deep-link page) renders from here, so
- * the logo cannot drift from the one on the Play listing.
- */
-
-/** Brand colours, lifted from the app icon itself. */
-export const BRAND_LIME = '${LIME}';
-export const BRAND_INK = '${INK}';
-
-/**
- * The bare silhouette. Inherits \`currentColor\`, so set the colour on it or on
- * any parent — lime on dark surfaces, ink on lime ones.
- */
-export function VelocityMark({
-  size = 24,
-  style,
-  className,
-}: {
-  size?: number | string;
-  style?: React.CSSProperties;
-  className?: string;
-}) {
-  return (
-    <svg
-      viewBox="0 0 ${w} ${h}"
-      width={size}
-      height={size}
-      role="img"
-      aria-label="Velocity"
-      className={className}
-      style={{ display: 'block', color: 'currentColor', ...style }}
-    >
-      <path fill="currentColor" fillRule="evenodd" d="${d}" />
-    </svg>
-  );
-}
-
-/**
- * The mark on its dark tile — the app icon, at any size. Use this wherever the
- * logo sits on a light background; use {@link VelocityMark} on dark ones.
- */
-export function VelocityIcon({
-  size = 32,
-  radius = 0.22,
-  style,
-  className,
-}: {
-  size?: number;
-  /** Corner rounding as a fraction of the tile, matching the app icon's mask. */
-  radius?: number;
-  style?: React.CSSProperties;
-  className?: string;
-}) {
-  return (
-    <span
-      className={className}
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size * radius,
-        background: BRAND_INK,
-        display: 'grid',
-        placeItems: 'center',
-        flex: 'none',
-        ...style,
-      }}
-    >
-      <VelocityMark size={size * 0.62} style={{ color: BRAND_LIME }} />
-    </span>
-  );
-}
-`;
-
 // ── build ───────────────────────────────────────────────────────────────────
 
-const round = (v) => Math.round(v * 10) / 10;
-
 async function main() {
-  const loops = await traceMark();
-  const simplified = loops.map((l) => simplifyLoop(l, EPSILON)).filter((l) => l.length > 3);
+  const logo = await cutLogo();
+  const logoAt = (size) => sharp(logo).resize(size, size).png().toBuffer();
+  const bg = await backgroundColour();
 
-  // Tight bounding box, so the standalone mark has no dead margin to centre against.
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  for (const loop of simplified) {
-    for (const [x, y] of loop) {
-      if (x < minX) minX = x;
-      if (y < minY) minY = y;
-      if (x > maxX) maxX = x;
-      if (y > maxY) maxY = y;
-    }
-  }
+  // Adaptive icons show the middle 66% of the layer; the logo sits inside that.
+  const silhouette = await sharp(await placed(logo, 432, 0.62))
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true })
+    .then(({ data, info }) => {
+      for (let i = 0; i < data.length; i += 4) {
+        const solid = data[i + 3] > 70;
+        data[i] = data[i + 1] = data[i + 2] = 255;
+        data[i + 3] = solid ? 255 : 0;
+      }
+      return sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
+    });
 
-  const toPath = (loop, ox = 0, oy = 0) =>
-    `M${loop.map(([x, y]) => `${round(x - ox)} ${round(y - oy)}`).join('L')}Z`;
-
-  const tiled = simplified.map((l) => toPath(l)).join('');
-  const bare = simplified.map((l) => toPath(l, minX, minY)).join('');
-  const w = round(maxX - minX);
-  const h = round(maxY - minY);
-
-  const markSvg =
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" fill="none">` +
-    `<path fill="currentColor" fill-rule="evenodd" d="${bare}"/></svg>\n`;
-
-  const tileSvg = (radius) =>
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${GRID} ${GRID}">` +
-    `<rect width="${GRID}" height="${GRID}" rx="${radius}" fill="${INK}"/>` +
-    `<path fill="${LIME}" fill-rule="evenodd" d="${tiled}"/></svg>`;
-
-  const rounded = tileSvg(112);
-  const square = tileSvg(0);
-
-  await mkdir(path.join(ROOT, 'public/brand'), { recursive: true });
-  await writeFile(path.join(ROOT, 'public/brand/velocity-mark.svg'), markSvg);
-  await writeFile(path.join(ROOT, 'public/brand/velocity-icon.svg'), `${rounded}\n`);
-  await writeFile(path.join(ROOT, 'components/BrandMark.tsx'), brandComponent({ w, h, path: bare }));
-
-  const render = (svg, size) => sharp(Buffer.from(svg)).resize(size, size).png().toBuffer();
-
-  await writeFile(path.join(ROOT, 'public/app/icon.png'), await render(square, 512));
-  await writeFile(path.join(ROOT, 'app/icon.png'), await render(rounded, 512));
-  await writeFile(path.join(ROOT, 'app/apple-icon.png'), await render(square, 180));
-
-  const ico = buildIco(
-    await Promise.all([16, 32, 48].map(async (size) => ({ size, png: await render(rounded, size) }))),
-  );
-  await writeFile(path.join(ROOT, 'app/favicon.ico'), ico);
-
-  console.log(
-    `Traced ${simplified.length} contours (${simplified.reduce((n, l) => n + l.length, 0)} points), ` +
-      `mark ${w}×${h}. Wrote brand SVGs, icon.png, apple-icon.png and favicon.ico.`,
-  );
+  const files = {
+    'apps/mobile/assets/icon.png': await icon(1024),
+    'apps/mobile/assets/logo.png': await logoAt(512),
+    'apps/mobile/assets/splash-icon.png': await logoAt(1024),
+    'apps/mobile/assets/android-icon-foreground.png': await placed(logo, 512, 0.62),
+    'apps/mobile/assets/android-icon-background.png': await sharp({ create: { width: 512, height: 512, channels: 3, background: bg } }).png().toBuffer(),
+    'apps/mobile/assets/android-icon-monochrome.png': silhouette,
+    'apps/mobile/assets/favicon.png': await icon(48),
+    'public/brand/velocity-logo.png': await logoAt(512),
+    'public/app/icon.png': await icon(512),
+    'app/icon.png': await roundedIcon(512),
+    'app/apple-icon.png': await icon(180),
+    'app/favicon.ico': buildIco(await Promise.all([16, 32, 48].map(async (size) => ({ size, png: await roundedIcon(size) })))),
+  };
+  for (const [file, buf] of Object.entries(files)) await writeFile(out(file), buf);
+  console.log(`Wrote ${Object.keys(files).length} brand images from ${path.relative(ROOT, MASTER)}.`);
 }
 
 main().catch((e) => {

@@ -497,9 +497,9 @@
   border: 1px solid rgba(204, 255, 0, 0.22);
 }
 
-.brandMark svg {
-  width: 21px;
-  height: 21px;
+.brandMark img {
+  width: 32px;
+  height: 32px;
 }
 
 .brandName {
@@ -3010,4 +3010,57 @@
   .mark::after {
     transform: scaleX(1);
   }
+}
+
+/* ── Liquid glass (owner, 2026-11-06) ─────────────────────────────────────
+   Apple's look on the header, buttons and feature cards: see-through,
+   blurred behind, lit along the top edge. One block, last in the file, so it
+   reads in one place and comes out in one place. */
+.site {
+  --glass-blur: blur(22px) saturate(180%);
+  --glass-rim: inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 -1px 0 rgba(255, 255, 255, 0.05);
+  --glass-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.02) 60%);
+}
+
+.light {
+  --glass-rim: inset 0 1px 0 #ffffff, inset 0 -1px 0 rgba(255, 255, 255, 0.6);
+  --glass-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.7));
+}
+
+.navScrolled,
+.mobileBar {
+  background: var(--glass-sheen), rgba(4, 18, 12, 0.62);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-rim);
+}
+
+.mobileBar {
+  box-shadow: var(--glass-rim), var(--shadow-lg);
+}
+
+.tile,
+.platformCard,
+.btnGhost {
+  background: var(--glass-sheen);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-rim);
+}
+
+.btnLime,
+.btnLime:hover {
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 55%);
+}
+
+.btnLime {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), inset 0 -2px 6px rgba(70, 100, 0, 0.28), var(--shadow-lime);
+}
+
+.btnLime:hover {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), inset 0 -2px 6px rgba(70, 100, 0, 0.28), 0 18px 54px rgba(204, 255, 0, 0.32);
+}
+
+.store {
+  box-shadow: inset 0 1px 0 #ffffff, inset 0 -2px 6px rgba(0, 0, 0, 0.08), 0 10px 34px rgba(0, 0, 0, 0.32);
 }

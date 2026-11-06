@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../config';
 import { themed } from '../theme';
 import { AdBanner } from '../ads';
+import { Glass } from './Glass';
 import { FeedIcon, GroupsIcon, HomeIcon, ProfileIcon } from './TabBarIcons';
 
 type TabIconComponent = (props: {
@@ -57,7 +58,7 @@ export function TravelMateTabBar({ state, navigation }: BottomTabBarProps) {
           that screen more ad than content. */}
       {focusedRoute.name !== 'index' && <AdBanner />}
       <View style={[s.wrap, { paddingBottom: bottomInset }]}>
-        <View style={s.bar}>
+        <Glass style={s.bar} radius={28}>
         {state.routes.map((route) => {
           const tab = TABS[route.name];
           if (!tab) return null;
@@ -94,7 +95,7 @@ export function TravelMateTabBar({ state, navigation }: BottomTabBarProps) {
             </Pressable>
           );
           })}
-        </View>
+        </Glass>
       </View>
     </View>
   );

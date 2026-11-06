@@ -67,6 +67,8 @@ import { drainDashcamQueue, ensureDashcamPermission } from '../../src/lib/dashca
 import { DriverPoolManifest } from '../../src/ui/DriverPoolManifest';
 import { SharingRidesFeed } from '../../src/ui/SharingRidesFeed';
 import { SharedRidesStrip } from '../../src/ui/SharedRidesStrip';
+import { CorporateBoard } from '../../src/ui/CorporateBoard';
+import { GlassSheen } from '../../src/ui/Glass';
 import { distanceMeters, formatDistance } from '../../src/lib/geo';
 import { RIDE_TYPE_LABELS, type Trip, type TripStatus } from '../../src/domain/types';
 import { documentsExpiringSoon } from '../../src/domain/documentExpiry';
@@ -150,10 +152,11 @@ export default function DriverHome() {
   // driver saw a shared ride filed as solo. Every ride is in one list now, each
   // boxed by kind. A driver who last left the switch on Solo is still skipped
   // by the shared-ride offer ladder (poolRideRequests/dispatch.ts) until the
-  // field says otherwise, so put them back in it.
+  // field says otherwise, so put them back in it. Likewise the old "Regular"
+  // choice, which skipped corporate pushes: the selector is Corporate | All now.
   useEffect(() => {
-    if (uid && profile?.rideMode === 'solo') {
-      setDoc(doc(db, 'drivers', uid), { rideMode: 'sharing' }, { merge: true }).catch(() => {});
+    if (uid && (profile?.rideMode === 'solo' || profile?.rideMode === 'regular')) {
+      setDoc(doc(db, 'drivers', uid), { rideMode: 'all' }, { merge: true }).catch(() => {});
     }
   }, [uid, profile?.rideMode]);
   // A push only reaches a backgrounded app. With the trip screen open —
@@ -251,12 +254,12 @@ export default function DriverHome() {
     }).catch(() => {});
   }, []);
 
-  // "Corporate & Students" (the default) shows every ride, corporate ones boxed
-  // in yellow; "Regular" leaves the corporate ones out.
-  const regularOnly = profile?.rideMode === 'regular';
+  // "All" (the default) lists every ride, corporate ones boxed in yellow;
+  // "Corporate & Students" shows only those, by time (CorporateBoard).
+  const corporateOnly = profile?.rideMode === 'corporate';
   const visible = useMemo(
-    () => liveRequests.filter((r) => !hiddenIds.has(r.tripId) && !(regularOnly && r.commute)),
-    [liveRequests, hiddenIds, regularOnly],
+    () => liveRequests.filter((r) => !hiddenIds.has(r.tripId)),
+    [liveRequests, hiddenIds],
   );
 
   // ── "Show new requests" ──────────────────────────────────────────────────
@@ -645,6 +648,7 @@ export default function DriverHome() {
         </Pressable>
 
         <View style={styles.toggle}>
+          <GlassSheen radius={22} />
           <Pressable
             style={[styles.toggleHalf, !online && styles.toggleOffActive]}
             disabled={busy}
@@ -671,27 +675,44 @@ export default function DriverHome() {
           </Pressable>
       </View>
 
-      {/* ── Which rides: Corporate & Students (every ride, the corporate ones in
-          yellow) or Regular (shared and solo only). Hidden mid-trip. ── */}
+      {/* ── Which rides: Corporate & Students (only those, Right now in green
+          and Coming up next in red) or All (every ride). Hidden mid-trip. ── */}
       {!activeTrip ? (
         <View style={[styles.toggle, styles.modeToggle]}>
+          <GlassSheen radius={22} />
           <Pressable
-            style={[styles.toggleHalf, !regularOnly && styles.modeCorporateActive]}
+            style={[styles.toggleHalf, corporateOnly && styles.modeCorporateActive]}
             onPress={() => uid && setDoc(doc(db, 'drivers', uid), { rideMode: 'corporate' }, { merge: true }).catch(() => {})}
             accessibilityRole="radio"
-            accessibilityState={{ selected: !regularOnly }}
+            accessibilityState={{ selected: corporateOnly }}
           >
-            <Text style={[styles.modeTxt, !regularOnly && styles.toggleOnTxt]} numberOfLines={1}>Corporate & Students</Text>
+            <Text style={[styles.modeTxt, corporateOnly && styles.toggleOnTxt]} numberOfLines={1}>Corporate & Students</Text>
           </Pressable>
           <Pressable
-            style={[styles.toggleHalf, regularOnly && styles.toggleOnActive]}
-            onPress={() => uid && setDoc(doc(db, 'drivers', uid), { rideMode: 'regular' }, { merge: true }).catch(() => {})}
+            style={[styles.toggleHalf, !corporateOnly && styles.toggleOnActive]}
+            onPress={() => uid && setDoc(doc(db, 'drivers', uid), { rideMode: 'all' }, { merge: true }).catch(() => {})}
             accessibilityRole="radio"
-            accessibilityState={{ selected: regularOnly }}
+            accessibilityState={{ selected: !corporateOnly }}
           >
-            <Text style={[styles.modeTxt, regularOnly && styles.toggleOnTxt]} numberOfLines={1}>Regular</Text>
+            <Text style={[styles.modeTxt, !corporateOnly && styles.toggleOnTxt]} numberOfLines={1}>All</Text>
           </Pressable>
         </View>
+      ) : null}
+
+      {/* ── No WhatsApp number ── Rides reach a driver there once the app is
+          closed, so a driver who never gave one is asked for it here. A number
+          that was given and then stopped (STOP, or switched off) is not asked again. */}
+      {profile && !profile.whatsappAlerts?.number && !activeTrip ? (
+        <Pressable style={styles.carBanner} onPress={() => router.push('/driver/whatsapp-alerts')}>
+          <Text style={styles.carBannerIcon}>💬</Text>
+          <View style={styles.carBannerBody}>
+            <Text style={styles.carBannerTitle}>Please add your WhatsApp number</Text>
+            <Text style={styles.carBannerBody2}>
+              Ride requests come on WhatsApp too. Keep WhatsApp and the Velocity app on the same phone.
+            </Text>
+          </View>
+          <Text style={styles.carBannerChevron}>›</Text>
+        </Pressable>
       ) : null}
 
       {/* ── Car not confirmed ── The one thing standing between this driver and
@@ -1047,6 +1068,10 @@ export default function DriverHome() {
             subtitle="Go online to start receiving ride requests from passengers near you."
           />
         </View>
+      ) : corporateOnly ? (
+        <ScrollView contentContainerStyle={{ paddingBottom: DRIVER_TAB_BAR_HEIGHT }}>
+          <CorporateBoard coords={driverCoords} requests={visible} onOpenRequest={openRequest} />
+        </ScrollView>
       ) : (
         // Every ride in one list: the rider-booked rides (solo and shared, one
         // feed on the server) as rows, the passenger-posted shared-ride pools in
@@ -1084,9 +1109,9 @@ export default function DriverHome() {
                 {/* Shared-ride pools passengers posted themselves — a separate
                     queue on the server, shown here so no ride lives behind a
                     tab the driver never opens. Renders nothing when quiet. */}
-                {/* Corporate & Students: the shared rides booked near here, with
-                    how many people are going on each. */}
-                {!regularOnly ? <SharedRidesStrip coords={driverCoords} /> : null}
+                {/* The shared rides booked near here, with how many people are
+                    going on each. */}
+                <SharedRidesStrip coords={driverCoords} />
                 {uid ? <SharingRidesFeed uid={uid} coords={driverCoords} /> : null}
                 {poolRides.length > 0 ? <PoolRoutesHeader rides={poolRides} /> : null}
               </>

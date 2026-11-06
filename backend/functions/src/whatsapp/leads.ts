@@ -10,6 +10,10 @@
  * Every reply is free-form, never a template: the person wrote first, so we are
  * inside Meta's 24-hour service window, where non-template replies are allowed
  * and not billed. The bot never messages anyone who has not just messaged it.
+ * Drivers hear about finished leads ahead of their times (scheduledDemand.ts).
+ *
+ * The QR is printed on paper: wa.me/923165004012 with "Hi Velocity" must keep
+ * starting this bot for as long as those posters are up.
  */
 import { logger } from 'firebase-functions';
 
@@ -76,6 +80,29 @@ const REPLY_TEXT: Record<LeadReply, string> = {
   timingsAgain: 'Please type your office timings with the time, e.g. 9am to 5pm',
   thanks: `Thank you! ✅\nPlease download the Velocity app:\n${APP_LINKS}`,
 };
+
+/**
+ * The office timings someone typed, as 24-hour "HH:MM": "8am to 6pm",
+ * "9 - 5", "09:00-17:00". A start with no am/pm under 6 is read as afternoon
+ * ("2 to 10" is a 14:00 shift), and an end at or before the start as pm.
+ * `null` when there is no readable time at all.
+ */
+export function leadTimes(timings: string | null | undefined): { start: string; end: string | null } | null {
+  const found = [...(timings ?? '').toLowerCase().matchAll(/(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?/g)].slice(0, 2);
+  const hhmm = (h: number, m: number) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  const hour = (h: number, mer: string | undefined) => (mer === 'pm' ? (h % 12) + 12 : mer === 'am' ? h % 12 : h);
+  const [a, b] = found;
+  if (!a) return null;
+  let start = hour(Number(a[1]), a[3]);
+  if (!a[3] && start >= 1 && start <= 5) start += 12;
+  const startM = Number(a[2] ?? 0);
+  if (start > 23 || startM > 59) return null;
+  if (!b) return { start: hhmm(start, startM), end: null };
+  let end = hour(Number(b[1]), b[3]);
+  if (!b[3] && end <= start && end < 12) end += 12;
+  const endM = Number(b[2] ?? 0);
+  return { start: hhmm(start, startM), end: end > 23 || endM > 59 ? null : hhmm(end, endM) };
+}
 
 /** Replies that carry WhatsApp's own "Send location" button. */
 const PIN_REPLIES = new Set<LeadReply>(['askPickup', 'pickupPinOnly', 'askDropoff', 'dropoffPinOnly']);

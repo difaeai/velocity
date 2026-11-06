@@ -11,6 +11,7 @@ import {
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { Text } from './Text';
+import { Glass, GlassSheen, glassEdge } from './Glass';
 import { colors } from '../config';
 import { SUPPORT_EMAIL } from '../share/links';
 import { themed } from '../theme';
@@ -54,16 +55,18 @@ export function PrimaryButton({
       disabled={disabled || loading}
       style={({ pressed }) => [
         styles.btn,
+        glassEdge,
         { backgroundColor: bg, opacity: disabled ? 0.5 : pressed ? 0.85 : 1 },
       ]}
     >
+      <GlassSheen radius={14} />
       {loading ? <ActivityIndicator color={fg} /> : <Text style={[styles.btnText, { color: fg }]}>{label}</Text>}
     </Pressable>
   );
 }
 
 export function Card({ children, style }: { children: React.ReactNode; style?: ViewStyle }) {
-  return <View style={[styles.card, style]}>{children}</View>;
+  return <Glass style={[styles.card, style]} radius={style?.borderRadius as number | undefined ?? 20}>{children}</Glass>;
 }
 
 export function Badge({ label, color = colors.primary }: { label: string; color?: string }) {

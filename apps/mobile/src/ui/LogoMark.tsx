@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Animated, Easing } from 'react-native';
-import Svg, { Defs, Mask, Rect, Circle, Path, G } from 'react-native-svg';
+import { Animated, Easing, Image } from 'react-native';
 
 /**
- * Velocity brand mark: a bold "V" (hood/windshield) merged with a car
- * chassis + wheels. Glyph-only (transparent) — wrap in a colored badge
- * View for contexts that previously used a filled square/circle.
+ * Velocity brand mark: the owner's glowing lime V on wheels (2026-11-06),
+ * cut out on a transparent background by scripts/generate-brand-assets.mjs —
+ * the same master as the app icon. Put it on a dark surface: it is lime.
  *
  * `spin` runs a one-shot spin on mount (used on the splash and brand
  * screens): the mark turns around its vertical axis for 3 seconds,
@@ -18,10 +17,10 @@ import Svg, { Defs, Mask, Rect, Circle, Path, G } from 'react-native-svg';
  */
 export function LogoMark({
   size = 60,
-  color = '#ccff00',
   spin = false,
 }: {
   size?: number;
+  /** Ignored: the logo is an image with its own colour. Kept so callers compile. */
   color?: string;
   spin?: boolean;
 }) {
@@ -42,23 +41,12 @@ export function LogoMark({
   }, [spin, progress]);
 
   const mark = (
-    <Svg width={size} height={size} viewBox="0 0 200 200">
-      <Defs>
-        <Mask id="hubs">
-          <Rect x={0} y={0} width={200} height={200} fill="#ffffff" />
-          <Circle cx={66} cy={152} r={6.5} fill="#000000" />
-          <Circle cx={134} cy={152} r={6.5} fill="#000000" />
-        </Mask>
-      </Defs>
-      <G mask="url(#hubs)" fill={color}>
-        <Rect x={50} y={118} width={32} height={22} rx={11} />
-        <Rect x={118} y={118} width={32} height={22} rx={11} />
-        <Rect x={44} y={130} width={112} height={18} rx={9} />
-        <Circle cx={66} cy={152} r={17} />
-        <Circle cx={134} cy={152} r={17} />
-        <Path d="M 36,30 L 60,30 Q 65,30 67,36 L 100,112 L 133,36 Q 135,30 140,30 L 164,30 Q 172,30 168,38 L 112,134 Q 108,142 100,142 Q 92,142 88,134 L 32,38 Q 28,30 36,30 Z" />
-      </G>
-    </Svg>
+    <Image
+      source={require('../../assets/logo.png')}
+      style={{ width: size, height: size }}
+      resizeMode="contain"
+      accessibilityLabel="Velocity Rides"
+    />
   );
 
   if (!spin) return mark;

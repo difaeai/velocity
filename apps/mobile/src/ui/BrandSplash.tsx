@@ -64,7 +64,7 @@ export function BrandSplash() {
       importantForAccessibility="no-hide-descendants"
     >
       <View style={styles.center}>
-        <LogoMark size={96} color="#ccff00" spin />
+        <LogoMark size={120} spin />
         {/* react-native's Text: the brand is never translated. */}
         <RNText style={styles.brand} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
           VELOCITY RIDES
