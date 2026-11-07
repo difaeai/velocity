@@ -1907,6 +1907,12 @@ export interface SalesSettingsDoc {
   sentCount: number;
   lastStatus: string | null;
   callAgents: SalesCallAgent[];
+  /** The email agent reads every email a person sends the mailbox and drafts an answer. */
+  inboxAgent: boolean;
+  /** Prices, timings, policies — the only facts its answers may state. */
+  mailKnowledge: string;
+  /** What the owner last asked to tell every customer. */
+  campaign: { brief: string; atMs: number } | null;
 }
 
 /** The sales agent: settings, finding, writing, and what happens to each lead. */
@@ -1942,6 +1948,65 @@ export const salesApi = {
     'salesCallScript',
     LONG_CALL_MS,
   ),
+};
+
+// ── the email agent ─────────────────────────────────────────────────────────
+
+export type MailKind = 'question' | 'order' | 'complaint' | 'thanks' | 'sales_pitch' | 'unsubscribe' | 'other';
+
+/** An email a person sent the connected mailbox, at `mailInbox/{id}`, with the answer the agent drafted. */
+export interface MailInboxDoc {
+  id: string;
+  from: string;
+  name: string;
+  subject: string;
+  text: string;
+  messageId: string;
+  atMs: number;
+  kind: MailKind;
+  summary: string;
+  draft: { subject: string; body: string } | null;
+  /** "open": waits for you. "answered": sent from here. "done": needs nothing. */
+  status: 'open' | 'answered' | 'done';
+  answeredAtMs: number | null;
+  error: string | null;
+}
+
+export type MailCustomerStatus = 'idle' | 'drafted' | 'approved' | 'sent' | 'failed' | 'skipped' | 'unsubscribed';
+
+/** A customer the email agent writes to, at `mailCustomers/{id}`, with this campaign's email. */
+export interface MailCustomerDoc {
+  id: string;
+  email: string;
+  name: string;
+  note: string;
+  source: 'inbox' | 'list';
+  createdAtMs: number;
+  lastWroteAtMs: number | null;
+  lastText: string;
+  status: MailCustomerStatus;
+  draft: { subject: string; body: string } | null;
+  problems: string[];
+  campaignAtMs: number;
+  sentAtMs: number | null;
+  error: string | null;
+}
+
+/** The email agent: the inbox it answers, and the customers it writes to. Its switches save through `salesApi.saveSettings`. */
+export const mailApi = {
+  inboxAction: callable<
+    { action: 'send' | 'done' | 'check'; id?: string; subject?: string; body?: string },
+    { ok: boolean; mail?: number; replies?: number }
+  >('mailInboxAction', LONG_CALL_MS),
+  addCustomers: callable<{ lines: string }, { ok: boolean; added: number; updated: number }>('mailAddCustomers'),
+  writeCustomers: callable<{ brief?: string }, { ok: boolean; written: number; more: boolean; direct: boolean }>(
+    'mailWriteCustomers',
+    LONG_CALL_MS,
+  ),
+  customerAction: callable<
+    { action: 'approve' | 'send' | 'skip' | 'rewrite' | 'edit' | 'optout' | 'approveAll'; id?: string; subject?: string; body?: string },
+    { ok: boolean; sent?: number; approved?: number; written?: number }
+  >('mailCustomerAction', LONG_CALL_MS),
 };
 
 // ── AI keys & usage (admins) ────────────────────────────────────────────────

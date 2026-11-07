@@ -18,7 +18,7 @@
  * password — over IMAP on the matching host. Written from RFC 3501 and
  * imapflow's documentation; not yet run against a live mailbox.
  */
-import { ImapFlow, type MessageStructureObject } from 'imapflow';
+import { ImapFlow, type FetchMessageObject, type MessageStructureObject } from 'imapflow';
 import type { Readable } from 'node:stream';
 
 import { textOf } from './site';
@@ -143,10 +143,40 @@ export interface InboxReply {
   text: string;
 }
 
+/** A message a person wrote to the business — not a lead's reply, not a newsletter. */
+export interface InboxMail {
+  from: string;
+  name: string;
+  subject: string;
+  messageId: string;
+  atMs: number;
+  text: string;
+}
+
 /**
- * The replies to our leads that arrived since `sinceMs`. Only messages from a
- * lead are opened at all; everything else in the owner's inbox is left unread
- * — not downloaded, not flagged, not moved.
+ * Whether a message was written by a person to this mailbox: not our own, not a
+ * no-reply or system address, and not bulk mail (list headers, Precedence,
+ * Auto-Submitted). `headers` is the raw header block. Pure.
+ */
+export function fromPerson(p: { from: string; own: string[]; headers: string }): boolean {
+  const from = p.from.trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(from) || p.own.some((o) => o.trim().toLowerCase() === from)) return false;
+  const local = from.split('@')[0];
+  if (/no-?reply|do-?not-?reply|^(mailer-daemon|postmaster|bounces?|notifications?|alerts?|newsletters?|news|marketing|updates?|digest|automated|system)([+._-]|$)/.test(local)) {
+    return false;
+  }
+  return !/^(list-id|list-unsubscribe):|^precedence:\s*(bulk|list|junk)|^auto-submitted:[ \t]*(?!no\b)\S/m.test(p.headers.toLowerCase());
+}
+
+/**
+ * The replies to our leads that arrived since `sinceMs` — and, only when `mail`
+ * is passed (the owner turned the inbox agent on), what people wrote after
+ * `mail.afterMs` that is not known yet, at most `mail.max`, oldest first.
+ * Without `mail` only messages from a lead are opened at all; everything else
+ * in the owner's inbox is left unread — not downloaded, not flagged, not moved.
+ * The mailbox is opened read-only either way. `cursorMs` is the arrival time
+ * of the last message taken when `max` cut the list short, so the next pass
+ * starts there; null when everything new was taken.
  */
 export async function readReplies(params: {
   host: string;
@@ -154,7 +184,8 @@ export async function readReplies(params: {
   pass: string;
   sinceMs: number;
   leads: LeadRef[];
-}): Promise<InboxReply[]> {
+  mail?: { own: string[]; afterMs: number; max: number; known: (messageId: string) => Promise<boolean> };
+}): Promise<{ replies: InboxReply[]; mail: InboxMail[]; cursorMs: number | null }> {
   const client = new ImapFlow({
     host: params.host,
     port: 993,
@@ -163,31 +194,62 @@ export async function readReplies(params: {
     logger: false,
   });
   await client.connect();
-  const out: InboxReply[] = [];
+  const replies: InboxReply[] = [];
+  const mail: InboxMail[] = [];
+  let cursorMs: number | null = null;
   try {
     const lock = await client.getMailboxLock('INBOX', { readOnly: true });
     try {
+      const body = async (msg: FetchMessageObject): Promise<string> => {
+        const where = textPart(msg.bodyStructure);
+        if (!where) return '';
+        const file = await client.download(String(msg.uid), where.part, { uid: true, maxBytes: 64_000 });
+        const raw = file.content ? await streamText(file.content) : '';
+        return where.html ? textOf(raw) : raw;
+      };
       // The whole list first: imapflow cannot download while a fetch is still streaming.
-      const messages = await client.fetchAll({ since: new Date(params.sinceMs) }, { envelope: true, bodyStructure: true, uid: true });
+      const messages = await client.fetchAll(
+        { since: new Date(params.sinceMs) },
+        {
+          envelope: true,
+          bodyStructure: true,
+          uid: true,
+          internalDate: true,
+          ...(params.mail ? { headers: ['list-id', 'list-unsubscribe', 'precedence', 'auto-submitted'] } : {}),
+        },
+      );
       for (const msg of messages.slice(-300)) {
         const env = msg.envelope;
         const from = env?.from?.[0]?.address?.toLowerCase() ?? '';
         const lead = from ? matchLead({ from, inReplyTo: env?.inReplyTo ?? '' }, params.leads) : null;
-        if (!lead) continue;
-        const where = textPart(msg.bodyStructure);
-        let text = '';
-        if (where) {
-          const file = await client.download(String(msg.uid), where.part, { uid: true, maxBytes: 64_000 });
-          if (file.content) text = await streamText(file.content);
-          if (where.html) text = textOf(text);
+        if (lead) {
+          replies.push({
+            leadId: lead.id,
+            from,
+            messageId: env?.messageId ?? '',
+            atMs: env?.date ? new Date(env.date).getTime() : Date.now(),
+            text: freshText(await body(msg)) || '(no text — open it in your inbox)',
+          });
+          continue;
         }
-        out.push({
-          leadId: lead.id,
-          from,
-          messageId: env?.messageId ?? '',
-          atMs: env?.date ? new Date(env.date).getTime() : Date.now(),
-          text: freshText(text) || '(no text — open it in your inbox)',
+        const m = params.mail;
+        if (!m || cursorMs !== null) continue;
+        // A contact form sends from the site with the customer in Reply-To: answer them, not the form.
+        const who = env?.replyTo?.[0] ?? env?.from?.[0];
+        const atMs = msg.internalDate ? new Date(msg.internalDate).getTime() : 0;
+        const messageId = env?.messageId ?? '';
+        if (!who?.address || !messageId || atMs <= m.afterMs) continue;
+        if (!fromPerson({ from: who.address, own: m.own, headers: msg.headers?.toString('utf8') ?? '' })) continue;
+        if (await m.known(messageId)) continue;
+        mail.push({
+          from: who.address.toLowerCase(),
+          name: (who.name ?? '').slice(0, 80),
+          subject: (env?.subject ?? '').slice(0, 200),
+          messageId,
+          atMs,
+          text: freshText(await body(msg)) || '(no text — open it in your inbox)',
         });
+        if (mail.length >= m.max) cursorMs = atMs;
       }
     } finally {
       lock.release();
@@ -195,5 +257,5 @@ export async function readReplies(params: {
   } finally {
     await client.logout().catch(() => client.close());
   }
-  return out;
+  return { replies, mail, cursorMs };
 }
