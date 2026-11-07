@@ -74,8 +74,8 @@ function StoreBadge({ variant }: { variant: 'play' | 'ios' }) {
 const SLIDES: HeroSlide[] = [
   {
     key: 'studio',
-    // The same full pitch the assistant gives on the whole-team plan's card.
-    voice: '/site/voice/plan-all.mp3',
+    // The whole-team card's full pitch, in a woman's voice: the film shows a woman.
+    voice: '/site/voice/hero-studio.mp3',
     tab: 'Social Media Virtual Assistant',
     sub: 'Your social media, run for you',
     film: {
