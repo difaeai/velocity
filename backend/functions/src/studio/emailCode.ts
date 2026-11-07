@@ -103,9 +103,9 @@ export const studioSendEmailCode = onCall(async (req) => {
 
   await sendStudioMail({
     to: email,
-    subject: `${code} is your Velocity Studio code`,
-    text: `Your Velocity Studio verification code is ${code}.\n\nIt works for 10 minutes. If you did not sign up, ignore this email.`,
-    html: `<p>Your Velocity Studio verification code is</p><p style="font-size:28px;font-weight:800;letter-spacing:6px">${code}</p><p>It works for 10 minutes. If you did not sign up, ignore this email.</p>`,
+    subject: `${code} is your Social Media Virtual Assistant code`,
+    text: `Your Social Media Virtual Assistant verification code is ${code}.\n\nIt works for 10 minutes. If you did not sign up, ignore this email.`,
+    html: `<p>Your Social Media Virtual Assistant verification code is</p><p style="font-size:28px;font-weight:800;letter-spacing:6px">${code}</p><p>It works for 10 minutes. If you did not sign up, ignore this email.</p>`,
   });
   return { ok: true, sentTo: email };
 });

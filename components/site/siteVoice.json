@@ -5,7 +5,12 @@
   },
   {
     "key": "hero-studio",
-    "text": "Velocity Studio. It reads your market, makes thirty days of content, posts at your time, runs your Meta ads, and follows up every lead."
+    "text": "Your Social Media Virtual Assistant. It reads your market, makes thirty days of content, posts at your time, runs your Meta ads, and follows up every lead."
+  },
+  {
+    "key": "assistant",
+    "voice": "am_michael",
+    "text": "Hi! I'm your Social Media Virtual Assistant. I manage your social media, and I analyse your competition. Then I write your content, create it, and make your videos myself. I post everything, and I manage your ads. I do all of it on my own, with no human intervention."
   },
   {
     "key": "film-intro",

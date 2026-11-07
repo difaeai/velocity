@@ -71,7 +71,7 @@ const RIDE_LINKS = [
   { href: '#app', label: 'The app' },
   { href: '#earn', label: 'Earn' },
   { href: '#safety', label: 'Safety' },
-  { href: '/', label: 'Velocity Studio' },
+  { href: '/', label: 'Social Media Virtual Assistant' },
 ];
 
 /**

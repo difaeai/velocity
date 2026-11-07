@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { VelocityMark } from '@/components/BrandMark';
+import { Assistant } from '@/components/site/Assistant';
 import { HeroSlider, type HeroSlide } from '@/components/site/HeroSlider';
 import { Reveal } from '@/components/site/Reveal';
 import { SiteNav } from '@/components/site/SiteNav';
@@ -25,10 +26,12 @@ import {
 } from '@/lib/site';
 
 /**
- * The homepage: Velocity Studio, with the Velocity Rides app sharing its hero.
+ * The homepage: the Social Media Virtual Assistant, with the Velocity Rides app
+ * sharing its hero.
  *
- * The hero is two films — the ride app and the studio — and everything under it
- * is the studio: the scroll film (the whole team in one camera move), then how
+ * The hero is two films — the ride app and the assistant — and everything under
+ * it is the assistant: he introduces himself (tap him and he says what he does),
+ * then the scroll film (the whole team in one camera move), then how
  * it works (five numbered steps acted out in a mock of the console, each read
  * aloud as it scrolls in), then the prices, then the questions. The ride app's
  * own long page lives at /rides, linked from its slide.
@@ -42,7 +45,7 @@ import {
  */
 export const metadata: Metadata = {
   description:
-    'Velocity Rides: book a ride and share it with people going your way. Velocity Studio: an AI team that reads your market, posts every day at your time, runs your Meta ads and closes your leads.',
+    'Velocity Rides: book a ride and share it with people going your way. Social Media Virtual Assistant: an AI that manages your social media — reads your market, posts every day at your time, runs your Meta ads and closes your leads.',
   alternates: { canonical: '/' },
 };
 
@@ -52,8 +55,8 @@ const LINKS = [
   { href: '/rides', label: 'Velocity Rides' },
   { href: '/studio/signup', label: 'Start free' },
 ];
-// The homepage sells Studio, so its nav button is the way back in; /rides keeps "Get the app".
-const STUDIO_LOGIN = { href: '/studio/login', label: 'Velocity AI Studio login' };
+// The homepage sells the assistant, so its nav button is the way back in; /rides keeps "Get the app".
+const STUDIO_LOGIN = { href: '/studio/login', label: 'Virtual Assistant login' };
 
 function StoreBadge({ variant }: { variant: 'play' | 'ios' }) {
   const ios = variant === 'ios';
@@ -68,13 +71,13 @@ function StoreBadge({ variant }: { variant: 'play' | 'ios' }) {
   );
 }
 
-// Studio first: it is the slide that opens when the site loads, and the tab selected under it.
+// The assistant first: it is the slide that opens when the site loads, and the tab selected under it.
 const SLIDES: HeroSlide[] = [
   {
     key: 'studio',
     voice: '/site/voice/hero-studio.mp3',
-    tab: 'Velocity Studio',
-    sub: 'Your own digital marketing agency',
+    tab: 'Social Media Virtual Assistant',
+    sub: 'Your social media, run for you',
     film: {
       large: '/site/studio.mp4',
       small: '/site/studio-sm.mp4',
@@ -91,12 +94,12 @@ const SLIDES: HeroSlide[] = [
     copy: (
       <>
         <span className={styles.eyebrow}>
-          <Sparkle /> Velocity Studio
+          <Sparkle /> Velocity
         </span>
         <h1 className={styles.heroTitle}>
           Make your own
           <br />
-          <em>Digital Marketing Agency.</em>
+          <em>Social Media Virtual Assistant.</em>
         </h1>
         <p className={styles.heroLead}>
           It reads your market, plans a month of content, posts every day at your time, runs your Meta ads and closes
@@ -187,7 +190,7 @@ const JSON_LD = {
     },
     {
       '@type': 'SoftwareApplication',
-      name: 'Velocity Studio',
+      name: 'Social Media Virtual Assistant',
       applicationCategory: 'BusinessApplication',
       operatingSystem: 'Web',
       publisher: { '@id': `${SITE}#org` },
@@ -232,6 +235,8 @@ export default function Home() {
       <main>
         <HeroSlider slides={SLIDES} />
 
+        <Assistant />
+
         <StudioScrub />
 
         <StudioStory />
@@ -245,7 +250,7 @@ export default function Home() {
             <div className={home.duo}>
               <Reveal className={home.duoCard}>
                 <span className={styles.eyebrow}>
-                  <Sparkle /> Velocity Studio
+                  <Sparkle /> Social Media Virtual Assistant
                 </span>
                 <h3>Connect your account. Watch your team work.</h3>
                 <p>The first {STUDIO_TRIAL_HOURS} hours are on us — the market analysis starts the minute you sign up.</p>
@@ -283,13 +288,13 @@ export default function Home() {
                 <span className={styles.brandName}>Velocity</span>
               </a>
               <p>
-                Velocity Studio — an AI team for your business. Velocity Rides — ride-hailing and shared rides, built
+                Social Media Virtual Assistant — runs your social media on its own. Velocity Rides — ride-hailing and shared rides, built
                 for Pakistan.
               </p>
             </div>
 
             <div className={styles.footerCol}>
-              <h3>Studio</h3>
+              <h3>Virtual Assistant</h3>
               <a href="#how-it-works">How it works</a>
               <a href="#pricing">Pricing</a>
               <Link href="/studio/signup">Start free</Link>
@@ -320,7 +325,7 @@ export default function Home() {
 
           <div className={styles.footerBase}>
             <span>
-              © {new Date().getFullYear()} Velocity. Velocity Rides and Velocity Studio are products of{' '}
+              © {new Date().getFullYear()} Velocity. Velocity Rides and the Social Media Virtual Assistant are products of{' '}
               <a className={styles.footerOwner} href="https://berreto.com" target="_blank" rel="noreferrer">
                 Berreto (Private) Limited
               </a>

@@ -73,7 +73,7 @@ function Start() {
         <header className={s.top}>
           <Link href="/" className={s.brand}>
             <VelocityIcon size={32} />
-            Velocity Studio
+            Social Media Virtual Assistant
           </Link>
           {user ? (
             <button type="button" className={s.topLink} style={{ border: 'none', background: 'none', cursor: 'pointer' }} onClick={signOut}>

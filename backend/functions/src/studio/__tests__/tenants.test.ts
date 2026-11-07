@@ -115,8 +115,8 @@ describe('every plan gets exactly its parts', () => {
     await expect(deskWorkspace(asUser({}, 'owner-a', { ws: 'b' }), 'content')).rejects.toThrow(/not yours/);
     // A Velocity admin holding a customer's claim is that customer, not a skeleton key.
     await expect(deskWorkspace(asUser({}, 'some-admin', { role: 'admin', ws: 'b' }), 'content')).rejects.toThrow(/not yours/);
-    await expect(deskWorkspace(asUser({}, 'owner-a', { ws: HOUSE }), 'content')).rejects.toThrow(/no Velocity Studio workspace/);
-    await expect(deskWorkspace(asUser({}, 'owner-a', { ws: '../b' }), 'content')).rejects.toThrow(/no Velocity Studio workspace/);
+    await expect(deskWorkspace(asUser({}, 'owner-a', { ws: HOUSE }), 'content')).rejects.toThrow(/no Social Media Virtual Assistant workspace/);
+    await expect(deskWorkspace(asUser({}, 'owner-a', { ws: '../b' }), 'content')).rejects.toThrow(/no Social Media Virtual Assistant workspace/);
   });
 });
 

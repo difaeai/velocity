@@ -2,7 +2,7 @@
 
 The hero, the scroll film and the five steps each have lines here (the films
 themselves are silent). Kokoro-82M (Apache-2.0), on this machine, no key and
-no bill; voice af_heart. Run from the repo root:
+no bill; voice af_heart unless a line names its own (`"voice"`). Run from the repo root:
 
     uv run --python 3.13 --with kokoro==0.9.4 --with soundfile python scripts/render-site-voice.py
 
@@ -31,7 +31,7 @@ todo = [l for l in LINES if "--all" in sys.argv or not (OUT / f"{l['key']}.mp3")
 pipe = KPipeline(lang_code="a", repo_id="hexgrad/Kokoro-82M") if todo else None
 
 for line in todo:
-    audio = [chunk for _, _, chunk in pipe(line["text"], voice=VOICE, speed=0.98)]
+    audio = [chunk for _, _, chunk in pipe(line["text"], voice=line.get("voice", VOICE), speed=0.98)]
     # A breath before and after the line.
     pad = np.zeros(int(RATE * 0.25), dtype=np.float32)
     wav = np.concatenate([pad, *[np.asarray(a, dtype=np.float32) for a in audio], pad])

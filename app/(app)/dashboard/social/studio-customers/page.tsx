@@ -133,7 +133,7 @@ export default function StudioUsersPage() {
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       <header>
-        <h1 style={{ fontSize: 24, fontWeight: 900, margin: '0 0 4px' }}>Velocity AI Studio — users</h1>
+        <h1 style={{ fontSize: 24, fontWeight: 900, margin: '0 0 4px' }}>Social Media Virtual Assistant — users</h1>
         <p style={{ color: colors.muted, margin: 0 }}>
           Everyone who signed up, live. Open a row to manage that customer.{' '}
           {waiting ? (

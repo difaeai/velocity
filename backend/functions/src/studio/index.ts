@@ -95,7 +95,7 @@ export function aboutFrom(s: z.infer<typeof signUpSchema>): string {
 
 export const studioCreateWorkspace = onCall(async (req) => {
   const ctx = requireAuth(req);
-  if (ctx.token.ws) throw new HttpsError('already-exists', 'This account already has a Velocity Studio workspace.');
+  if (ctx.token.ws) throw new HttpsError('already-exists', 'This account already has a Social Media Virtual Assistant workspace.');
   if (ctx.role === 'admin') {
     throw new HttpsError('failed-precondition', 'Admins run the Velocity desk. Sign up with a different account.');
   }
@@ -109,7 +109,7 @@ export const studioCreateWorkspace = onCall(async (req) => {
 
   // One workspace per person, also when the claim has not reached their token yet.
   const owned = await db.collection('workspaces').where('ownerUid', '==', ctx.uid).limit(1).get();
-  if (!owned.empty) throw new HttpsError('already-exists', 'This account already has a Velocity Studio workspace.');
+  if (!owned.empty) throw new HttpsError('already-exists', 'This account already has a Social Media Virtual Assistant workspace.');
 
   const now = Date.now();
   const ref = db.collection('workspaces').doc();
@@ -166,7 +166,7 @@ export const txnKey = (txnId: string): string => txnId.toUpperCase().replace(/[^
 export const studioSubmitPayment = onCall({ timeoutSeconds: 120, memory: '1GiB' }, async (req) => {
   const ctx = requireAuth(req);
   const wid = ctx.token.ws;
-  if (typeof wid !== 'string') throw new HttpsError('failed-precondition', 'Sign up for Velocity Studio first.');
+  if (typeof wid !== 'string') throw new HttpsError('failed-precondition', 'Sign up for the Social Media Virtual Assistant first.');
   const parsed = z
     .object({
       plan: z.enum(PLAN_IDS as [PlanId, ...PlanId[]]).optional(),

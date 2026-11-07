@@ -137,7 +137,7 @@ function AuthForm({ mode }: { mode: AuthMode }) {
         <header className={s.top}>
           <Link href="/" className={s.brand}>
             <VelocityIcon size={32} />
-            Velocity Studio
+            Social Media Virtual Assistant
           </Link>
           <Link href={signup ? `/studio/login${keep}` : `/studio/signup${keep}`} className={s.topLink}>
             {signup ? 'Log in' : 'Sign up'}
@@ -258,7 +258,7 @@ function AuthForm({ mode }: { mode: AuthMode }) {
             </div>
 
             <p className={s.switch}>
-              {signup ? 'Already have an account? ' : 'New to Velocity Studio? '}
+              {signup ? 'Already have an account? ' : 'New to the Social Media Virtual Assistant? '}
               <Link href={signup ? `/studio/login${keep}` : `/studio/signup${keep}`} className={s.link}>
                 {signup ? 'Log in' : 'Create an account'}
               </Link>
@@ -271,7 +271,7 @@ function AuthForm({ mode }: { mode: AuthMode }) {
         </div>
       </section>
 
-      <Showcase title={signup ? 'Make your own Digital Marketing Agency.' : 'Your team kept working while you were away.'} />
+      <Showcase title={signup ? 'Make your own Social Media Virtual Assistant.' : 'Your team kept working while you were away.'} />
     </main>
   );
 }
@@ -294,7 +294,7 @@ function Showcase({ title }: { title: string }) {
         <video className={s.film} src="/site/studio.mp4" poster="/site/studio.jpg" muted loop autoPlay playsInline />
       ) : null}
       <div className={s.showBody}>
-        <span className={s.showKicker}>Velocity Studio</span>
+        <span className={s.showKicker}>Social Media Virtual Assistant</span>
         <h2 className={s.showTitle}>{title}</h2>
         <ul className={s.feed}>
           {FEED.map((f) => (
