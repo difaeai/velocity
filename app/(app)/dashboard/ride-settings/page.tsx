@@ -5,7 +5,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase';
 import { colors } from '@/lib/config';
-import { Button, Card } from '@/components/ui';
+import { Button, Card, glass } from '@/components/ui';
 import { SkeletonRows } from '@/components/states';
 
 interface FareConfig {
@@ -237,9 +237,8 @@ export default function RideSettingsPage() {
           </div>
           <div style={{
             padding: '12px 20px',
-            background: colors.surface,
+            ...glass,
             borderRadius: 12,
-            border: `1px solid ${colors.border}`,
             textAlign: 'center',
             minWidth: 120,
           }}>

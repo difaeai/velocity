@@ -779,3 +779,22 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ── Liquid glass (owner, 2026-11-07) — tokens in app/globals.css ─────────
+   Plans and options keep their own selected-state rings, so they take only
+   the glass fill. */
+.plan,
+.option,
+.box,
+.order,
+.card {
+  background: var(--glass-sheen);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+.box,
+.order,
+.card {
+  box-shadow: var(--glass-rim), var(--glass-drop);
+}

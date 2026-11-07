@@ -17,6 +17,7 @@ import Link from 'next/link';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 
 import { colors } from '@/lib/config';
+import { glass } from '@/components/ui';
 import { callsVersion, explainError, oldestCall, subscribeCalls } from '@/lib/connection';
 
 export type StateAction = { label: string; onClick?: () => void; href?: string };
@@ -24,9 +25,9 @@ export type StateAction = { label: string; onClick?: () => void; href?: string }
 const box: React.CSSProperties = {
   textAlign: 'center',
   padding: '32px 20px',
+  ...glass,
   border: `1px dashed ${colors.border}`,
   borderRadius: 14,
-  background: '#fff',
 };
 
 function ActionButton({ action, quiet }: { action: StateAction; quiet?: boolean }) {

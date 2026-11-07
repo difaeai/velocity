@@ -109,7 +109,9 @@ describe('storeWooCallback', () => {
       const url = new URL(String(input));
       if (url.origin !== SHOP) return realFetch(input, init);
       seen.push(url.pathname);
-      const body = url.searchParams.get('per_page') === '1' ? [] : [order({ campaign: '120211', source: 'ig' })];
+      // The callback reads the real clock, so the order is dated off it too (a fixed NOW expired on 2026-11-07).
+      const sale = order({ campaign: '120211', source: 'ig', date_created_gmt: gmt(Date.now() - DAY) });
+      const body = url.searchParams.get('per_page') === '1' ? [] : [sale];
       return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
     });
   });

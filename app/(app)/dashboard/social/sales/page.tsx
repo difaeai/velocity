@@ -20,7 +20,7 @@ import { db } from '@/lib/firebase';
 import { useWorkspace } from '@/lib/workspace';
 import { colors } from '@/lib/config';
 import { salesApi, type SalesLeadDoc, type SalesLeadStatus, type SalesSettingsDoc } from '@/lib/api';
-import { Button, Card } from '@/components/ui';
+import { Button, Card, glass } from '@/components/ui';
 import { CallingAgents } from '@/components/social/calling';
 import { AgentPackageCard, AiCallLog, WhatsAppChats, WhatsAppLine, useAgentDesk } from '@/components/social/agentsDesk';
 import { FX_CSS } from '@/components/social/fx';
@@ -539,7 +539,7 @@ function LeadBox({
   }
 
   return (
-    <div style={{ display: 'grid', gap: 8, padding: 14, borderRadius: 14, border: `1px solid ${colors.border}`, background: colors.surface }}>
+    <div style={{ ...glass, display: 'grid', gap: 8, padding: 14, borderRadius: 14 }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
         <strong style={{ fontSize: 14.5 }}>{lead.name}</strong>
         <span style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 800, color: colors.muted, textTransform: 'uppercase' }}>
@@ -724,8 +724,8 @@ function Choice({ on, onClick, title, children }: { on: boolean; onClick: () => 
         textAlign: 'left',
         padding: 12,
         borderRadius: 12,
+        ...glass,
         border: `${on ? 2 : 1}px solid ${on ? colors.primary : colors.border}`,
-        background: colors.surface,
         cursor: 'pointer',
         fontFamily: 'inherit',
         color: colors.text,
