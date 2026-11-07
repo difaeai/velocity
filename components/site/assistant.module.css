@@ -1,149 +1,25 @@
-/* The Social Media Virtual Assistant at the head of the pricing section.
+/* The Social Media Virtual Assistant inside a plan card's film: standing at
+   the right, cut off by the film's bottom edge like a presenter in frame, with
+   a "Tap me" button in the top-left corner. The film's chip (z-index 1, later
+   in the DOM) stays readable over his legs. */
 
-   Wide screens: who he is and his jobs on the left, him on the right. His
-   stage is pushed down (translate, so the layout keeps its height) behind the
-   plan cards, which sit in front of him — he stands behind them, legs hidden,
-   as if handing them over. Narrow screens stack it: heading, him, his jobs. */
-
-.head {
-  display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
-  grid-template-areas:
-    'text stage'
-    'jobs stage';
-  column-gap: clamp(24px, 4vw, 64px);
-  align-items: start;
-  margin-bottom: clamp(28px, 3vw, 40px);
-}
-
-.text {
-  grid-area: text;
-  padding-top: clamp(8px, 3vw, 40px);
-}
-
-.text h2 {
-  margin-top: 14px;
-}
-
-.name {
-  font-style: italic;
-  color: var(--brand);
-}
-
-/* ── his jobs ─────────────────────────────────────────────────────────── */
-
-.jobs {
-  grid-area: jobs;
-  list-style: none;
-  margin: 26px 0 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.job {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  min-height: 54px;
-  padding: 8px 14px 8px 8px;
-  border-radius: 16px;
-  border: 1px solid var(--line-hi);
-  background: rgba(255, 255, 255, 0.82);
-  box-shadow: 0 1px 2px rgba(4, 18, 12, 0.04), 0 12px 26px -18px rgba(4, 18, 12, 0.35);
-  font-family: var(--font-display), system-ui, sans-serif;
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1.25;
-  letter-spacing: -0.01em;
-  color: var(--text);
-  transition:
-    border-color 0.3s,
-    box-shadow 0.3s,
-    background-color 0.3s,
-    scale 0.3s;
-}
-
-.icon {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 36px;
-  height: 36px;
-  border-radius: 11px;
-  background: var(--paper-2);
-  font-size: 18px;
-  transition: background-color 0.3s;
-}
-
-.lit {
-  border-color: var(--brand-hi);
-}
-
-.lit .icon {
-  background: rgba(204, 255, 0, 0.45);
-}
-
-/* The job he is saying right now. */
-.now {
-  scale: 1.04;
-  border-color: var(--lime-deep);
-  background: #fbffe9;
-  box-shadow: 0 0 0 3px rgba(204, 255, 0, 0.45), 0 14px 30px -16px rgba(4, 18, 12, 0.45);
-}
-
-/* The last one is the point of all the others. */
-.own {
-  border-color: transparent;
-  background: var(--ink);
-  color: var(--lime);
-}
-
-.own .icon {
-  background: rgba(204, 255, 0, 0.14);
-}
-
-/* ── him ──────────────────────────────────────────────────────────────── */
-
-.stage {
-  --rx: 0deg;
-  --ry: 0deg;
-  grid-area: stage;
-  position: relative;
-  display: flex;
-  justify-content: flex-end;
-  /* Down behind the cards; the cards are lifted in front by .front in pricing.module.css. */
-  translate: 0 clamp(170px, 14vw, 200px);
-}
-
-.figure {
-  position: relative;
-  width: min(100%, 410px);
+.agent {
+  position: absolute;
+  z-index: 1;
+  right: 3%;
+  bottom: -34%;
+  height: 114%;
+  aspect-ratio: 806 / 1240;
   cursor: pointer;
-  transform: perspective(1200px) rotateX(var(--rx)) rotateY(var(--ry));
-  transform-style: preserve-3d;
-  transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
   -webkit-tap-highlight-color: transparent;
 }
 
-.halo {
-  position: absolute;
-  inset: 4% -8% 30%;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(204, 255, 0, 0.55), rgba(18, 161, 94, 0.22) 45%, transparent 70%);
-  filter: blur(14px);
-  transform: translateZ(-60px);
-}
-
-.person {
-  position: relative;
+.agent img {
   display: block;
   width: 100%;
-  height: auto;
+  height: 100%;
   user-select: none;
-  filter: drop-shadow(0 26px 30px rgba(4, 18, 12, 0.28));
-  transform: translateZ(20px);
+  filter: drop-shadow(0 0 14px rgba(204, 255, 0, 0.3)) drop-shadow(0 12px 18px rgba(0, 0, 0, 0.55));
   transform-origin: 50% 100%;
   animation: float 5s ease-in-out infinite;
 }
@@ -154,92 +30,45 @@
     translate: 0 0;
   }
   50% {
-    translate: 0 -8px;
+    translate: 0 -5px;
   }
 }
 
-/* Talking: a small sway and nod, and the halo breathes with it. */
-.talking .person {
+/* Talking: a small sway and nod. */
+.talking img {
   animation:
     float 5s ease-in-out infinite,
     talk 0.9s ease-in-out infinite alternate;
 }
 
-.talking .halo {
-  animation: pulse 1.2s ease-in-out infinite alternate;
-}
-
 @keyframes talk {
   from {
-    rotate: -0.8deg;
+    rotate: -1deg;
     scale: 1;
   }
   to {
-    rotate: 0.8deg;
-    scale: 1.012;
+    rotate: 1deg;
+    scale: 1.015;
   }
 }
 
-@keyframes pulse {
-  from {
-    opacity: 0.65;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-/* ── his speech bubble, over his head ─────────────────────────────────── */
-
-.bubble {
+.ask {
   position: absolute;
   z-index: 2;
-  bottom: calc(100% + 14px);
-  right: clamp(0px, 3vw, 40px);
-  width: 262px;
-  padding: 16px 16px 14px;
-  border-radius: 22px;
-  border: 1px solid var(--line-hi);
-  background: #fff;
-  box-shadow: 0 22px 44px -22px rgba(4, 18, 12, 0.45);
-  text-align: center;
-}
-
-/* The tail, pointing down at him. */
-.bubble::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  bottom: -8px;
-  width: 14px;
-  height: 14px;
-  translate: -50% 0;
-  rotate: 45deg;
-  background: #fff;
-  border-right: 1px solid var(--line-hi);
-  border-bottom: 1px solid var(--line-hi);
-}
-
-.bubble p {
-  margin: 0 0 12px;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.45;
-  color: var(--text);
-}
-
-.cue {
-  position: relative;
+  top: 10px;
+  left: 10px;
   display: inline-flex;
   align-items: center;
-  gap: 9px;
-  min-height: 42px;
-  padding: 0 16px;
-  border: 0;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 13px;
+  border: 1px solid rgba(204, 255, 0, 0.55);
   border-radius: 999px;
-  background: var(--ink);
+  background: rgba(4, 18, 12, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   font-family: var(--font-display), system-ui, sans-serif;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
   white-space: nowrap;
   color: var(--lime);
@@ -247,35 +76,35 @@
 }
 
 /* A ring that keeps asking for the first tap. */
-.cue::before {
+.ask::before {
   content: '';
   position: absolute;
-  inset: 0;
+  inset: -1px;
   border-radius: inherit;
-  border: 2px solid var(--lime-deep);
+  border: 1.5px solid var(--lime);
   animation: ring 2.2s ease-out infinite;
   pointer-events: none;
 }
 
-.cue[aria-pressed='true']::before {
+.ask[aria-pressed='true']::before {
   animation: none;
   opacity: 0;
 }
 
 @keyframes ring {
   from {
-    opacity: 0.9;
+    opacity: 0.85;
     scale: 1;
   }
   to {
     opacity: 0;
-    scale: 1.18 1.5;
+    scale: 1.2 1.6;
   }
 }
 
 .play {
-  width: 10px;
-  height: 12px;
+  width: 9px;
+  height: 11px;
   background: var(--lime);
   clip-path: polygon(0 0, 100% 50%, 0 100%);
 }
@@ -284,7 +113,7 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  height: 14px;
+  height: 13px;
 }
 
 .wave i {
@@ -316,89 +145,11 @@
   }
 }
 
-/* ── narrower screens: heading, him, his jobs ─────────────────────────── */
-
-@media (max-width: 1000px) {
-  .head {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas:
-      'text'
-      'stage'
-      'jobs';
-    text-align: center;
-  }
-
-  .text {
-    padding-top: 0;
-  }
-
-  .text p {
-    margin-inline: auto;
-  }
-
-  .stage {
-    translate: none;
-    flex-direction: column;
-    align-items: center;
-    margin-top: 22px;
-  }
-
-  .bubble {
-    position: relative;
-    bottom: auto;
-    right: auto;
-    width: min(340px, 100%);
-  }
-
-  .figure {
-    width: min(78vw, 340px);
-    margin: 4px 0 0;
-  }
-
-  /* No cards in front of him here, and his shins are cut off in the source: fade them into the page. */
-  .person {
-    -webkit-mask-image: linear-gradient(to bottom, #000 78%, transparent 100%);
-    mask-image: linear-gradient(to bottom, #000 78%, transparent 100%);
-    /* A mask clips at the image's box, so a drop shadow would show as a grey rectangle. */
-    filter: none;
-  }
-
-  .jobs {
-    text-align: left;
-  }
-}
-
-@media (max-width: 480px) {
-  .job {
-    font-size: 13.5px;
-    gap: 8px;
-    padding: 7px 10px 7px 7px;
-  }
-
-  .icon {
-    width: 30px;
-    height: 30px;
-    font-size: 15px;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .figure {
-    transform: none;
-    transition: none;
-  }
-
-  .person,
-  .talking .person,
-  .talking .halo,
-  .cue::before,
+  .agent img,
+  .talking img,
+  .ask::before,
   .wave i {
     animation: none;
   }
-}
-
-/* The switch and the plan cards, in front of him. */
-.front {
-  position: relative;
-  z-index: 2;
 }

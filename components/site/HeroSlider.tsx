@@ -18,7 +18,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
-import { hush, say, useAtMiddle } from './siteSound';
+import { hush, say, useAtMiddle, useSiteSound } from './siteSound';
 import { useReducedMotion, useSaveData } from './useReducedMotion';
 import styles from './hero.module.css';
 
@@ -37,7 +37,7 @@ export interface HeroSlide {
   film: { large: string; small: string; poster: string; label: string };
   beats: HeroBeat[];
   copy: ReactNode;
-  /** Narration for the (silent) film, read while the slide shows — shorter than the film, or the next slide cuts it. */
+  /** Narration for the (silent) film, read while the slide shows. A line longer than the film holds the slide: the film plays again until the line ends. */
   voice?: string;
 }
 
@@ -53,6 +53,7 @@ export function HeroSlider({ slides }: { slides: HeroSlide[] }) {
   const hero = useRef<HTMLElement>(null);
   const running = !still && !paused;
   const inView = useAtMiddle(hero);
+  const sound = useSiteSound();
 
   // The shown slide's narration, while the hero holds the middle of the screen and the films are not paused.
   const line = slides[index].voice;
@@ -117,7 +118,12 @@ export function HeroSlider({ slides }: { slides: HeroSlide[] }) {
                     const v = e.currentTarget;
                     setClock({ t: v.currentTime, share: v.duration ? v.currentTime / v.duration : 0 });
                   }}
-                  onEnded={() => on && show((i + 1) % slides.length)}
+                  onEnded={(e) => {
+                    if (!on) return;
+                    // Still being read: play the film again (play() after the end starts from the top) and stay.
+                    if (s.voice && sound.owner === 'hero' && sound.speaking) void e.currentTarget.play().catch(() => undefined);
+                    else show((i + 1) % slides.length);
+                  }}
                 >
                   <source src={s.film.small} type="video/mp4" media="(max-width: 760px)" />
                   <source src={s.film.large} type="video/mp4" />

@@ -10,6 +10,9 @@
  * posters and download nothing. Flipping the switch runs the figures to their
  * new values; hovering a card brings it to the middle and grows it (CSS, on the
  * fixed slot each card sits in), and leaving puts every card back.
+ *
+ * The Social Media Virtual Assistant stands in each card's film: tap him and he
+ * says what he does on that plan (Assistant.tsx).
  */
 
 import Link from 'next/link';
@@ -23,7 +26,9 @@ import {
   type StudioBilling,
   type StudioPlanId,
 } from '@/lib/studio';
+import { PlanAssistant, planVoice } from './Assistant';
 import { ArrowRight, Check } from './Icons';
+import { hush } from './siteSound';
 import { useReducedMotion, useSaveData } from './useReducedMotion';
 import site from './site.module.css';
 import styles from './pricing.module.css';
@@ -107,6 +112,8 @@ export function StudioPlans() {
         for (const e of entries) {
           const i = Number((e.target as HTMLElement).dataset.i);
           if (e.isIntersecting) setSeen((s) => (s[i] ? s : s.map((v, j) => v || j === i)));
+          // The card scrolled away: its assistant stops talking.
+          else hush(planVoice(STUDIO_PLAN_IDS[i]));
           const film = films.current[i];
           if (!film) continue;
           if (e.isIntersecting && !still) void film.play().catch(() => undefined);
@@ -164,6 +171,7 @@ export function StudioPlans() {
                   >
                     <source src={`${FILMS[id].src}.mp4`} type="video/mp4" />
                   </video>
+                  <PlanAssistant plan={id} />
                   <span className={styles.live}>
                     <i aria-hidden />
                     {FILMS[id].chip}
