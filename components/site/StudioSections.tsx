@@ -1,5 +1,7 @@
 import { STUDIO_YEAR_DISCOUNT_PCT } from '@/lib/studio';
 import s from '@/app/studio/studio.module.css';
+import { Assistant } from './Assistant';
+import a from './assistant.module.css';
 import site from './site.module.css';
 import { StudioPlans } from './StudioPlans';
 
@@ -44,19 +46,32 @@ export const STUDIO_FAQ = [
   },
 ];
 
-export function StudioPricing({ heading = 'Pay for what you use. Nothing else.' }: { heading?: string }) {
+/** `assistant`: the Social Media Virtual Assistant heads the section and stands behind the cards (the homepage). */
+export function StudioPricing({
+  heading = 'Pay for what you use. Nothing else.',
+  assistant = false,
+}: {
+  heading?: string;
+  assistant?: boolean;
+}) {
   return (
     <section id="pricing" className={`${site.section} ${site.light}`}>
       <div className={site.wrap}>
-        <div className={`${site.sectionHead} ${site.center}`}>
-          <span className={site.eyebrow}>Pricing</span>
-          <h2 className={site.h2}>{heading}</h2>
-          <p className={`${site.lead} ${site.center}`}>
-            Every plan starts with a free day. Pay monthly and stop any time, or pay for a year and save{' '}
-            {STUDIO_YEAR_DISCOUNT_PCT}%.
-          </p>
+        {assistant ? (
+          <Assistant />
+        ) : (
+          <div className={`${site.sectionHead} ${site.center}`}>
+            <span className={site.eyebrow}>Pricing</span>
+            <h2 className={site.h2}>{heading}</h2>
+            <p className={`${site.lead} ${site.center}`}>
+              Every plan starts with a free day. Pay monthly and stop any time, or pay for a year and save{' '}
+              {STUDIO_YEAR_DISCOUNT_PCT}%.
+            </p>
+          </div>
+        )}
+        <div className={assistant ? a.front : undefined}>
+          <StudioPlans />
         </div>
-        <StudioPlans />
         <p className={s.payNote}>Pay by bank transfer, EasyPaisa or JazzCash.</p>
       </div>
     </section>

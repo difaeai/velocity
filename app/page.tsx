@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { VelocityMark } from '@/components/BrandMark';
-import { Assistant } from '@/components/site/Assistant';
 import { HeroSlider, type HeroSlide } from '@/components/site/HeroSlider';
 import { Reveal } from '@/components/site/Reveal';
 import { SiteNav } from '@/components/site/SiteNav';
@@ -30,11 +29,11 @@ import {
  * sharing its hero.
  *
  * The hero is two films — the ride app and the assistant — and everything under
- * it is the assistant: he introduces himself (tap him and he says what he does),
- * then the scroll film (the whole team in one camera move), then how
- * it works (five numbered steps acted out in a mock of the console, each read
- * aloud as it scrolls in), then the prices, then the questions. The ride app's
- * own long page lives at /rides, linked from its slide.
+ * it is the assistant: the scroll film (the whole team in one camera move), then
+ * how it works (five numbered steps acted out in a mock of the console, each
+ * read aloud as it scrolls in), then the prices — headed by the assistant
+ * himself, who says what he does when tapped — then the questions. The ride
+ * app's own long page lives at /rides, linked from its slide.
  *
  * The canonical lives here rather than in the root layout: a canonical declared
  * in the layout is inherited by the console and the fleet portal, which would
@@ -97,7 +96,7 @@ const SLIDES: HeroSlide[] = [
           <Sparkle /> Velocity
         </span>
         <h1 className={styles.heroTitle}>
-          Make your own
+          Give all your social media work to your
           <br />
           <em>Social Media Virtual Assistant.</em>
         </h1>
@@ -235,13 +234,11 @@ export default function Home() {
       <main>
         <HeroSlider slides={SLIDES} />
 
-        <Assistant />
-
         <StudioScrub />
 
         <StudioStory />
 
-        <StudioPricing heading="One team. Three ways to hire it." />
+        <StudioPricing assistant />
         <StudioFaq />
 
         {/* ── the two products, and the way in to each ───────────────────── */}
