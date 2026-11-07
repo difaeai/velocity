@@ -176,6 +176,18 @@ a.fx-hero-chip:hover { background: rgba(255,255,255,.16); transform: translateY(
 @media (max-width: 900px) { .fx-grid-kpi { grid-template-columns: repeat(2, minmax(0, 1fr)); } .fx-hero h1 { font-size: 24px; } }
 @media (max-width: 520px) { .fx-grid-kpi { grid-template-columns: minmax(0, 1fr); } .fx-hero { padding: 20px; } }
 
+/* Liquid glass (owner, 2026-11-07), tokens in app/globals.css. Re-states .fx-dark after .fx-card so dark cards stay dark. */
+.fx-card, .fx-opt, .fx-btn.ghost, .fx-seg button { backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); }
+.fx-card { background: var(--glass-sheen); border-color: var(--glass-edge); box-shadow: var(--glass-rim), 0 8px 24px -14px rgba(16,40,28,.16); }
+.fx-lift:hover { box-shadow: var(--glass-rim), 0 20px 40px -18px rgba(16,40,28,.28); }
+.fx-dark { background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,0) 40%), radial-gradient(130% 120% at 100% 0%, #11402c 0%, #0a2318 42%, #07150f 100%);
+  border-color: rgba(255,255,255,.12); box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 8px 24px -14px rgba(16,40,28,.3); }
+.fx-opt, .fx-btn.ghost, .fx-seg button { background: var(--glass-sheen); }
+.fx-btn.ghost, .fx-seg button { box-shadow: var(--glass-rim); }
+.fx-hero { box-shadow: inset 0 1px 0 rgba(255,255,255,.22); }
+.fx-stat { background: linear-gradient(180deg, rgba(255,255,255,.11), rgba(255,255,255,.03)); box-shadow: inset 0 1px 0 rgba(255,255,255,.2);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+
 @media (prefers-reduced-motion: reduce) {
   .fx *, .fx *::before, .fx *::after { animation: none !important; transition: none !important; }
   .fx-rise { opacity: 1; transform: none; }

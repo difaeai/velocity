@@ -24,7 +24,7 @@ import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestor
 import { db } from '@/lib/firebase';
 import { adminApi } from '@/lib/api';
 import { colors } from '@/lib/config';
-import { Badge, Button, Card } from '@/components/ui';
+import { Badge, Button, Card, glass } from '@/components/ui';
 
 type Status = 'ai_handling' | 'waiting_human' | 'human_handling' | 'resolved';
 type Priority = 'normal' | 'high' | 'urgent';
@@ -541,8 +541,7 @@ const sideTab: React.CSSProperties = {
 };
 const queueRow: React.CSSProperties = {
   textAlign: 'left',
-  background: '#fff',
-  border: `1px solid ${colors.border}`,
+  ...glass,
   borderRadius: 12,
   padding: 12,
   cursor: 'pointer',

@@ -533,3 +533,35 @@
     display: none;
   }
 }
+
+/* ── Liquid glass (owner, 2026-11-07) ─────────────────────────────────────
+   The dark variant of app/globals.css's tokens: see-through panels, blurred
+   behind, lit along the top edge. */
+.page,
+.shell {
+  --glass-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.02) 60%);
+  --glass-rim: inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 -1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.topbar,
+.authCard,
+.panel,
+.stat {
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-rim);
+}
+
+.topbar {
+  background: var(--glass-sheen), rgba(4, 23, 15, 0.62);
+}
+
+.authCard,
+.panel,
+.stat {
+  background: var(--glass-sheen), rgba(11, 42, 29, 0.55);
+}
+
+.authCard {
+  box-shadow: var(--glass-rim), 0 30px 80px rgba(0, 0, 0, 0.45);
+}

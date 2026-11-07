@@ -15,6 +15,7 @@ import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestor
 
 import { db } from '@/lib/firebase';
 import { colors } from '@/lib/config';
+import { glass } from '@/components/ui';
 import {
   agentPrice,
   agentsApi,
@@ -216,7 +217,7 @@ export function AiCallLog({ calls }: { calls: AgentCallDoc[] }) {
           const isOpen = open === c.id;
           const lines = c.transcript ?? [];
           return (
-            <div key={c.id} style={{ border: '1px solid var(--line)', borderRadius: 14, padding: 12, background: '#fff' }}>
+            <div key={c.id} style={{ ...glass, borderRadius: 14, padding: 12 }}>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                 <span style={{ flex: 1, minWidth: 200 }}>
                   <strong style={{ display: 'block', fontSize: 14 }}>{c.leadName}</strong>

@@ -349,3 +349,39 @@
     display: none;
   }
 }
+
+/* ── Liquid glass (owner, 2026-11-07) — the tokens are site.module.css's. ── */
+.topBar {
+  background: var(--glass-sheen), rgba(4, 18, 12, 0.3);
+  border-bottom: 1px solid var(--line);
+}
+
+.topBar,
+.mockAsk,
+.mockBox,
+.step,
+.agent,
+.make,
+.faq details,
+.footer {
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-rim);
+}
+
+.mockAsk,
+.mockBox,
+.step,
+.agent,
+.make,
+.faq details,
+.footer {
+  background: var(--glass-sheen);
+}
+
+.footer {
+  margin-bottom: 28px;
+  padding-inline: 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}

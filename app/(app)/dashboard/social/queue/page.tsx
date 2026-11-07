@@ -46,7 +46,7 @@ import {
 import { ContentTabs } from '@/components/social/contentTabs';
 import { ViralFinds } from '@/components/social/dashboard';
 import { FX_CSS } from '@/components/social/fx';
-import { Button, Card } from '@/components/ui';
+import { Button, Card, glass } from '@/components/ui';
 import {
   FormatChip,
   PLATFORM_META,
@@ -241,10 +241,10 @@ function PostTile({ post, open, onOpen }: { post: SocialPostDoc; open: boolean; 
         display: 'grid',
         gridTemplateRows: 'auto 1fr',
         padding: 0,
+        ...glass,
         border: `${open ? 2 : 1}px solid ${open ? colors.primary : colors.border}`,
         borderRadius: 14,
         overflow: 'hidden',
-        background: colors.surface,
         cursor: 'pointer',
         textAlign: 'left',
         font: 'inherit',

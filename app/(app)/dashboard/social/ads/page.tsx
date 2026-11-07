@@ -41,7 +41,7 @@ import {
   type SocialEmployee,
   type SocialPostDoc,
 } from '@/lib/api';
-import { Button, Card } from '@/components/ui';
+import { Button, Card, glass } from '@/components/ui';
 import { ChartCard, Stat, TimeSeries, SERIES } from '@/components/charts';
 import { GRADE_META, adMoney, campaignState, tone } from '@/components/social/ads';
 import { LaunchSequence } from '@/components/social/launch';
@@ -915,8 +915,7 @@ function Tile({ label, value, hint, colour }: { label: string; value: string; hi
   return (
     <div
       style={{
-        background: colors.surface,
-        border: `1px solid ${colors.border}`,
+        ...glass,
         borderRadius: 16,
         padding: 18,
         flex: '1 1 160px',
@@ -977,8 +976,7 @@ function Choice({
         textAlign: 'left',
         padding: 14,
         borderRadius: 12,
-        border: `1px solid ${colors.border}`,
-        background: colors.surface,
+        ...glass,
         cursor: disabled ? 'wait' : 'pointer',
         font: 'inherit',
       }}

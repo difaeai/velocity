@@ -16,6 +16,7 @@ import { doc, onSnapshot } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase';
 import { colors } from '@/lib/config';
+import { glass } from '@/components/ui';
 import { CategoryBars, compact } from '@/components/charts';
 import {
   COST_COLLECTION,
@@ -53,8 +54,7 @@ export function CostOfVelocityTile() {
       href="/dashboard/costs"
       style={{
         display: 'block',
-        background: colors.surface,
-        border: `1px solid ${colors.border}`,
+        ...glass,
         borderRadius: 16,
         padding: 18,
         color: colors.text,

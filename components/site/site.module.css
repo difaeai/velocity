@@ -3027,6 +3027,39 @@
   --glass-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.7));
 }
 
+/* The header is glass from the first frame, a lighter tint over the hero. */
+.nav {
+  background: var(--glass-sheen), rgba(4, 18, 12, 0.3);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-rim);
+  border-bottom-color: var(--line);
+}
+
+/* Menu open: a deeper tint so its links read over the hero. */
+.nav:has(.mobileMenu) {
+  background: var(--glass-sheen), rgba(4, 18, 12, 0.78);
+}
+
+/* The footer: a glass slab over a soft brand glow. */
+.footer {
+  padding-block: clamp(32px, 4vw, 56px);
+  background:
+    radial-gradient(50% 90% at 12% 0%, rgba(18, 161, 94, 0.22), transparent 70%),
+    radial-gradient(40% 80% at 92% 100%, rgba(204, 255, 0, 0.08), transparent 70%),
+    var(--void);
+}
+
+.footer > .wrap {
+  padding: clamp(28px, 4vw, 48px) clamp(20px, 3vw, 40px) clamp(20px, 2.5vw, 28px);
+  border: 1px solid var(--line);
+  border-radius: var(--r-xl);
+  background: var(--glass-sheen);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-rim), var(--shadow-md);
+}
+
 .navScrolled,
 .mobileBar {
   background: var(--glass-sheen), rgba(4, 18, 12, 0.62);
@@ -3041,7 +3074,15 @@
 
 .tile,
 .platformCard,
-.btnGhost {
+.btnGhost,
+.burger,
+.trustItem,
+.changeCard,
+.step,
+.routeStep,
+.phaseItem,
+.tabActive,
+.faqItem {
   background: var(--glass-sheen);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);

@@ -31,7 +31,7 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth';
 import { colors } from '@/lib/config';
 import { costsApi } from '@/lib/api';
-import { Badge, Button, Card } from '@/components/ui';
+import { Badge, Button, Card, glass } from '@/components/ui';
 import { CategoryBars, ChartCard, compact } from '@/components/charts';
 import {
   BILLING_LABELS,
@@ -553,8 +553,7 @@ function Figure({
   return (
     <div
       style={{
-        background: colors.surface,
-        border: `1px solid ${colors.border}`,
+        ...glass,
         borderRadius: 16,
         padding: 18,
         flex: '1 1 200px',
@@ -605,8 +604,8 @@ function Row({
         gridTemplateColumns: COLS,
         gap: 10,
         alignItems: 'start',
-        background: colors.surface,
-        border: `1px solid ${auto ? `${colors.success}44` : colors.border}`,
+        ...glass,
+        border: `1px solid ${auto ? `${colors.success}44` : glass.border}`,
         borderRadius: 14,
         padding: 14,
         opacity: counted ? 1 : 0.72,

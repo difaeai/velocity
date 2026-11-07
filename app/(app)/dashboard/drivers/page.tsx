@@ -6,7 +6,7 @@ import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { adminApi, type DriverCommissionReport } from '@/lib/api';
 import { colors } from '@/lib/config';
-import { Badge, Button, Card } from '@/components/ui';
+import { Badge, Button, Card, glass } from '@/components/ui';
 import { SkeletonRows } from '@/components/states';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -465,7 +465,7 @@ export default function DriversPage() {
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 100,
           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
         }}>
-          <div style={{ background: '#fff', borderRadius: 16, padding: 28, width: '100%', maxWidth: 540, boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}>
+          <div style={{ ...glass, background: 'rgba(255,255,255,0.92)', borderRadius: 16, padding: 28, width: '100%', maxWidth: 540, boxShadow: `${glass.boxShadow}, 0 20px 60px rgba(0,0,0,0.15)` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <h2 style={{ fontSize: 18, fontWeight: 900, margin: 0 }}>Edit driver</h2>
               <button onClick={() => setEditingId(null)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: colors.muted }}>✕</button>

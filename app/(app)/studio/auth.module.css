@@ -588,3 +588,19 @@ textarea.input {
     animation-duration: 2.4s;
   }
 }
+
+/* ── Liquid glass (owner, 2026-11-07) — tokens in app/globals.css ───────── */
+.page {
+  background:
+    radial-gradient(circle at 8% 0%, rgba(204, 255, 0, 0.2), transparent 36%),
+    radial-gradient(circle at 45% 100%, rgba(4, 107, 65, 0.12), transparent 45%),
+    var(--paper);
+}
+
+.card {
+  background: var(--glass-sheen);
+  border-color: var(--glass-edge);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-rim), var(--glass-drop);
+}

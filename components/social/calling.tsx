@@ -18,6 +18,7 @@
 import { useMemo, useState } from 'react';
 
 import { colors } from '@/lib/config';
+import { glass } from '@/components/ui';
 import {
   agentsApi,
   salesApi,
@@ -451,7 +452,7 @@ function CallRow({
   }
 
   return (
-    <div style={{ border: '1px solid var(--line)', borderRadius: 14, padding: 12, background: '#fff' }}>
+    <div style={{ ...glass, borderRadius: 14, padding: 12 }}>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         <span style={{ flex: 1, minWidth: 180 }}>
           <strong style={{ display: 'block', fontSize: 14 }}>{lead.name}</strong>
