@@ -19,12 +19,12 @@ import s from './studio.module.css';
  */
 
 export const metadata: Metadata = {
-  title: { absolute: 'Velocity Studio — your AI social media team' },
+  title: { absolute: 'Social Media Virtual Assistant — your social media, run for you' },
   description:
     `Connect Instagram and Facebook and an AI team plans your month, makes reels with voice-over and music, posts every day, runs your Meta ads and finds you customers. From $${STUDIO_FROM_USD} a month.`,
   alternates: { canonical: '/studio' },
   openGraph: {
-    title: 'Velocity Studio — you don’t need a social media team anymore',
+    title: 'Social Media Virtual Assistant — you don’t need a social media team anymore',
     description: 'Connect your account and watch the AI team plan, make, post, advertise and sell for you.',
     url: '/studio',
   },
@@ -65,9 +65,9 @@ export default function StudioPage() {
         <div className={`${site.wrap} ${s.topInner}`}>
           <Link href="/studio" className={s.topBrand}>
             <VelocityMark size={30} />
-            Velocity Studio
+            Social Media Virtual Assistant
           </Link>
-          <nav className={s.topLinks} aria-label="Velocity Studio">
+          <nav className={s.topLinks} aria-label="Social Media Virtual Assistant">
             <a href="#how" className={s.topHide}>
               How it works
             </a>
@@ -84,7 +84,7 @@ export default function StudioPage() {
         <div className={`${site.wrap} ${s.heroGrid}`}>
           <div>
             <span className={site.eyebrow}>
-              <Sparkle /> Velocity Studio
+              <Sparkle /> Social Media Virtual Assistant
             </span>
             <h1 className={site.h1}>
               You don’t need a social media team <span className={site.accent}>anymore.</span>
@@ -219,7 +219,7 @@ export default function StudioPage() {
 
       <footer className={site.wrap}>
         <div className={s.footer}>
-          <span>Velocity Studio by Berreto (Private) Limited</span>
+          <span>Social Media Virtual Assistant by Berreto (Private) Limited</span>
           <span>
             <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a> · <a href="mailto:business@velocityrides.app">business@velocityrides.app</a>
           </span>

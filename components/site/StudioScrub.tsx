@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Velocity AI Studio, told by scrolling: one pinned film that plays as far as
+ * The Social Media Virtual Assistant, told by scrolling: one pinned film that plays as far as
  * the reader has scrolled, forwards and backwards, and a chapter beside it for
  * each job the team does — lit when the film reaches that scene.
  *
@@ -39,7 +39,7 @@ const CHAPTERS = [
     chord: [110, 164.81, 196, 246.94, 261.63],
     kicker: 'After hours',
     title: 'The shop is closed. Your team isn’t.',
-    body: 'Velocity AI Studio gives your business its own AI team. Every scene in this film is a job the team does for you.',
+    body: 'Your Social Media Virtual Assistant works while the shop is shut. Every scene in this film is a job it does for you.',
   },
   {
     at: 2.8,

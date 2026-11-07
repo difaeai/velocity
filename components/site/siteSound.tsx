@@ -143,6 +143,9 @@ export function toggleMute(at: number) {
   else if (audio?.src && state.owner) audio.play().then(started, () => undefined);
 }
 
+/** How far into its current line the voice is, in seconds. */
+export const voiceAt = (): number => audio?.currentTime ?? 0;
+
 /** A running audio context for the small sound effects, or null while muted or not yet allowed. */
 export const effects = (): AudioContext | null => (!state.muted && ctx?.state === 'running' ? ctx : null);
 

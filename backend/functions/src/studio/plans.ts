@@ -136,7 +136,7 @@ export function refusal(
   if (ws.suspended) return 'Velocity has paused this workspace. Email business@velocityrides.app to sort it out.';
   if (Math.max(ws.trialEndsAtMs, ws.paidUntilMs) <= nowMs) {
     return ws.paidUntilMs
-      ? 'Your Velocity Studio plan has run out. Pay for the next month — or buy credits, $1 a day — on the Billing page to carry on.'
+      ? 'Your Social Media Virtual Assistant plan has run out. Pay for the next month — or buy credits, $1 a day — on the Billing page to carry on.'
       : 'Your free day is over. Choose a plan — or buy credits, $1 a day — on the Billing page to carry on.';
   }
   // 'any' never gets here: it is refused only for time or a pause, both answered above.

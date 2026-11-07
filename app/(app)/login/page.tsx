@@ -63,7 +63,7 @@ export default function Login() {
             <p style={{ color: colors.muted, fontSize: 13 }}>
               Ask an existing admin to grant your account the <code>admin</code> role — or{' '}
               <a href="/studio/start" style={{ color: colors.secondary, fontWeight: 700 }}>
-                start Velocity Studio
+                start the Social Media Virtual Assistant
               </a>{' '}
               for your own business.
             </p>
@@ -106,7 +106,7 @@ export default function Login() {
               {loading ? 'Signing in…' : 'Sign in'}
             </Button>
             <p style={{ color: colors.muted, fontSize: 13, textAlign: 'center' }}>
-              Velocity Studio customer?{' '}
+              Social Media Virtual Assistant customer?{' '}
               <a href="/studio/login" style={{ color: colors.secondary, fontWeight: 700 }}>
                 Log in here
               </a>

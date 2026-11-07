@@ -31,7 +31,7 @@ interface MailerDoc {
 export default function StudioEmailPage() {
   const { isAdmin, user } = useAuth();
   const [saved, setSaved] = useState<MailerDoc | null | undefined>(undefined);
-  const [f, setF] = useState({ host: 'smtp.gmail.com', port: '465', user: '', pass: '', from: '', fromName: 'Velocity Studio' });
+  const [f, setF] = useState({ host: 'smtp.gmail.com', port: '465', user: '', pass: '', from: '', fromName: 'Social Media Virtual Assistant' });
   const [testTo, setTestTo] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,7 +81,7 @@ export default function StudioEmailPage() {
   return (
     <div style={{ display: 'grid', gap: 16, maxWidth: 760 }}>
       <header>
-        <h1 style={{ fontSize: 24, fontWeight: 900, margin: '0 0 4px' }}>Velocity AI Studio — sign-up email</h1>
+        <h1 style={{ fontSize: 24, fontWeight: 900, margin: '0 0 4px' }}>Social Media Virtual Assistant — sign-up email</h1>
         <p style={{ color: colors.muted, margin: 0, lineHeight: 1.6 }}>
           The mailbox that sends each new customer their 6-digit code.{' '}
           {saved === undefined ? '' : saved ? (
@@ -137,7 +137,7 @@ export default function StudioEmailPage() {
         <ol style={{ margin: 0, paddingLeft: 18, fontSize: 13.5, lineHeight: 1.7, color: colors.text }}>
           <li>Turn on 2-Step Verification for that Google account.</li>
           <li>
-            Open Google Account → Security → <strong>App passwords</strong>, make one called &quot;Velocity Studio&quot;, and
+            Open Google Account → Security → <strong>App passwords</strong>, make one called &quot;Social Media Virtual Assistant&quot;, and
             paste the 16 letters as the password here.
           </li>
           <li>

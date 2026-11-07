@@ -259,7 +259,7 @@ export const storeStartConnect = deskCall('ads', async (req) => {
   await statesRef(state).set({ wid: currentWorkspace(), uid: ctx.uid, url, createdAtMs: Date.now() });
   const web = (process.env.VELOCITY_WEB_ORIGIN ?? 'https://velocityrides.app').replace(/\/+$/, '');
   const q = new URLSearchParams({
-    app_name: 'Velocity Studio',
+    app_name: 'Social Media Virtual Assistant',
     scope: 'read',
     user_id: state,
     return_url: `${web}/dashboard/social/accounts?store=done#store`,

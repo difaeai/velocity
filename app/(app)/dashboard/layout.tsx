@@ -137,7 +137,7 @@ const SOCIAL_NAV: NavGroup[] = [
 
 /** Admins only: everyone on Velocity Studio, the payments our AI has read, the sign-up mailbox, agent billing and AI spend. */
 const STUDIO_ADMIN_NAV: NavGroup = {
-  title: 'Velocity AI Studio',
+  title: 'Social Media Virtual Assistant',
   items: [
     { href: '/dashboard/social/studio-customers', label: '👥 Users' },
     { href: '/dashboard/social/studio-payments', label: '🧾 Payments · AI checked' },
@@ -218,10 +218,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div style={{ display: 'grid', gap: 12, textAlign: 'center' }}>
           <strong style={{ color: colors.danger }}>Not authorized</strong>
           <span style={{ color: colors.muted, fontSize: 14 }}>
-            This account is not an admin and has no Velocity Studio workspace.
+            This account is not an admin and has no Social Media Virtual Assistant workspace.
           </span>
           <Link href="/studio/start" style={{ color: colors.secondary, fontWeight: 800 }}>
-            Finish setting up Velocity Studio →
+            Finish setting up your Social Media Virtual Assistant →
           </Link>
           <Button variant="secondary" onClick={signOut}>
             Sign out
@@ -407,7 +407,7 @@ function StudioShell({ email, name, signOut, children }: ShellProps) {
       <aside style={asideStyle}>
         <Link href={home} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
           <VelocityIcon size={32} />
-          <strong>Velocity Studio</strong>
+          <strong>Social Media Virtual Assistant</strong>
         </Link>
         <div style={{ fontSize: 12, color: colors.muted, marginBottom: 8 }}>
           {ws.name} · {STUDIO_PLANS[ws.plan].name} plan

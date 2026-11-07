@@ -241,7 +241,7 @@ export function StudioStory() {
     <section id="how-it-works" className={`${site.section} ${site.deep} ${s.story}`} aria-labelledby="story-heading">
       <div className={`${site.wrap} ${s.wide}`}>
         <header className={s.head}>
-          <span className={site.eyebrow}>How Velocity Studio works</span>
+          <span className={site.eyebrow}>How your Social Media Virtual Assistant works</span>
           <h2 id="story-heading" className={site.h2}>
             Five steps. Your team runs them <span className={site.accent}>on its own.</span>
           </h2>
@@ -322,7 +322,7 @@ export function StudioStory() {
                   <div className={s.app}>
                     <nav className={s.side}>
                       <span className={s.logo}>
-                        <b>V</b> Velocity Studio
+                        <b>V</b> Social Media Virtual Assistant
                       </span>
                       {NAV.map((n) => (
                         <span key={n} className={`${s.navItem} ${n === step.nav ? s.navOn : ''}`}>

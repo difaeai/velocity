@@ -99,7 +99,7 @@ export const studioCreditSweep = onSchedule({ schedule: 'every 30 minutes', time
 export const studioUsage = onCall(async (req) => {
   const ctx = requireAuth(req);
   const wid = ctx.token.ws;
-  if (typeof wid !== 'string' || !isDocId(wid)) throw new HttpsError('failed-precondition', 'Sign up for Velocity Studio first.');
+  if (typeof wid !== 'string' || !isDocId(wid)) throw new HttpsError('failed-precondition', 'Sign up for the Social Media Virtual Assistant first.');
   const [row, ws] = await Promise.all([db.doc(`aiUsage/${usageId(wid)}`).get(), db.doc(`workspaces/${wid}`).get()]);
   if (ws.get('ownerUid') !== ctx.uid) throw new HttpsError('permission-denied', 'This workspace is not yours.');
   await warmAi(wid);

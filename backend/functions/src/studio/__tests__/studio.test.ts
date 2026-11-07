@@ -203,7 +203,7 @@ describe('whose desk a call reaches', () => {
   });
 
   it('refuses a signed-in person with no workspace', async () => {
-    await expect(deskWorkspace(asUser({}, 'rider-1'), 'content')).rejects.toThrow(/no Velocity Studio workspace/);
+    await expect(deskWorkspace(asUser({}, 'rider-1'), 'content')).rejects.toThrow(/no Social Media Virtual Assistant workspace/);
   });
 });
 
