@@ -131,7 +131,13 @@ const ART: Record<string, ReactNode> = {
       <circle cx="4" cy="24" r="1.800" fill="currentColor" stroke="none" />
     </Pic>
   ),
-  meta: <Logo name="meta" />,
+  metaAds: (
+    <span className={s.trio}>
+      <Logo name="meta" />
+      <Logo name="instagram" />
+      <Logo name="facebook" />
+    </span>
+  ),
   googleAds: <Logo name="google-ads" />,
   mail: <Logo name="gmail" />,
   solo: (
@@ -145,7 +151,7 @@ const ART: Record<string, ReactNode> = {
 const PICTURES: Partial<Record<StudioPlanId, string[]>> = {
   research: ['market', 'social', 'audience', 'see'],
   content: ['calendar', 'film', 'clock', 'comments'],
-  all: ['product', 'rivals', 'route', 'film', 'meta', 'googleAds', 'comments', 'mail', 'solo'],
+  all: ['product', 'rivals', 'route', 'film', 'metaAds', 'googleAds', 'comments', 'mail', 'solo'],
 };
 
 /** Which line she has reached while she reads this plan's voice line. */
@@ -191,11 +197,13 @@ export function PlanJobs({ plan, lines, className }: { plan: StudioPlanId; lines
   }, [inView, reduced, talking]);
 
   const lit = talking ? reached : reduced ? -1 : beat % lines.length;
+  // A short list shares a card as tall as the longest plan's: its rows grow to fill it.
+  const roomy = lines.length <= 5;
 
   return (
-    <ul ref={list} className={className}>
+    <ul ref={list} className={`${className} ${roomy ? s.fill : ''}`}>
       {lines.map((line, j) => (
-        <li key={line} className={`${s.job} ${j === lit ? s.on : ''}`} style={{ ['--j' as string]: j }}>
+        <li key={line} className={`${s.job} ${roomy ? s.roomy : ''} ${j === lit ? s.on : ''}`} style={{ ['--j' as string]: j }}>
           <span className={s.tile} aria-hidden>
             {ART[PICTURES[plan]?.[j] ?? 'solo']}
           </span>

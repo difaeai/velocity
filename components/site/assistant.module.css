@@ -16,18 +16,18 @@
 /* The networks she runs, a rainbow over her head: `--a` is each one's place on the bow. */
 .arc {
   --w: clamp(118px, 15vw, 230px);
-  --r: calc(var(--w) * 0.43);
+  --r: calc(var(--w) * 0.4);
   position: absolute;
   z-index: 1;
-  left: 47%;
-  bottom: 72%;
+  left: 52%;
+  bottom: 86%;
   width: 0;
   height: 0;
 }
 
 .mark {
   position: absolute;
-  --size: max(24px, calc(var(--w) * 0.175));
+  --size: max(20px, calc(var(--w) * 0.135));
   left: calc(var(--size) / -2);
   top: calc(var(--size) / -2);
   width: var(--size);
