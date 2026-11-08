@@ -217,7 +217,7 @@ export function StudioScrub() {
           <header className={styles.head}>
             <span className={styles.kickerTop}>An AI team for your business</span>
             <h2 id="ai-studio-heading" className={styles.title}>
-              Velocity <span className={site.accent}>AI</span> Studio
+              Social Media <span className={site.accent}>Virtual Assistant</span>
             </h2>
           </header>
 
