@@ -56,7 +56,7 @@ import { assertFaceCheckedIn } from '../domain/faceCheckIn';
 import { sharedRideFare } from '../fare/sharedRideFare';
 import { ACTIVE_STATUSES, assertRiderCanBook, broadcastTripToNearbyDrivers, haversineKm, lockInBid } from '../trips';
 import { generateShareCode, writeTripDocuments } from '../trips/poolTripFactory';
-import { alertOfflineDriversOnWhatsApp, demandTemplateReady, pktClock } from '../whatsapp/alerts';
+import { alertOfflineDriversOnWhatsApp, pktClock } from '../whatsapp/alerts';
 import { areaLabel } from '../dailyRoutes/travelAreas';
 import { joinPoolTripAsRider, POOL_JOIN_WINDOW_MS } from '../trips/poolShare';
 import { firstNameOf, hostRosterEntry, rosterForTrip } from '../trips/poolRoster';
@@ -862,9 +862,9 @@ async function alertDriversOfDemand(poolRef: FirebaseFirestore.DocumentReference
     .map((d) => d.id);
   const gross = priceInOrder(riders).gross;
   // Drivers with the app closed hear on WhatsApp, under the same caps as ride
-  // alerts: "2 passengers will travel from F-10 at 5:00 PM", once the demand
-  // template is set up and the ride has a time. No trip yet, so the link is the
-  // pool (link page → Shared rides).
+  // alerts: "2 passengers will travel from F-10 at 5:00 PM" when the ride has a
+  // time (the demand template), else the ride alert. No trip yet, so the link is
+  // the pool (link page → Shared rides).
   alertOfflineDriversOnWhatsApp({
     tripId: `pool-${poolRef.id}`,
     pickup,
@@ -872,7 +872,7 @@ async function alertDriversOfDemand(poolRef: FirebaseFirestore.DocumentReference
     fare: gross,
     onlineNearby: near.length,
     shared: { riders: riders.length, to: (pool.dropoff as Place).address },
-    ...(dep !== null && demandTemplateReady()
+    ...(dep !== null
       ? { demand: { people: riders.length, from: areaLabel(pickup.address), time: pktClock(dep), link: 'shared-pools' as const } }
       : {}),
   }).catch((err) => logger.warn('sharedPools: WhatsApp demand alert failed', { poolId: poolRef.id, err: String(err) }));
