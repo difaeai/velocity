@@ -25,7 +25,7 @@ import {
 } from '@/lib/site';
 
 /**
- * The homepage: the Social Media Virtual Assistant, with the Velocity Rides app
+ * The homepage: Vexa, the Social Media Virtual Assistant, with the Velocity Rides app
  * sharing its hero.
  *
  * The hero is two films — the ride app and the assistant — and everything under
@@ -44,7 +44,7 @@ import {
  */
 export const metadata: Metadata = {
   description:
-    'Velocity Rides: book a ride and share it with people going your way. Social Media Virtual Assistant: an AI that manages your social media — reads your market, posts every day at your time, runs your Meta ads and closes your leads.',
+    'Velocity Rides: book a ride and share it with people going your way. Vexa, your Social Media Virtual Assistant, manages your social media — reads your market, posts every day at your time, runs your Meta ads and closes your leads.',
   alternates: { canonical: '/' },
 };
 
@@ -55,7 +55,7 @@ const LINKS = [
   { href: '/studio/signup', label: 'Start free' },
 ];
 // The homepage sells the assistant, so its nav button is the way back in; /rides keeps "Get the app".
-const STUDIO_LOGIN = { href: '/studio/login', label: 'Virtual Assistant login' };
+const STUDIO_LOGIN = { href: '/studio/login', label: 'Vexa login' };
 
 function StoreBadge({ variant }: { variant: 'play' | 'ios' }) {
   const ios = variant === 'ios';
@@ -74,10 +74,10 @@ function StoreBadge({ variant }: { variant: 'play' | 'ios' }) {
 const SLIDES: HeroSlide[] = [
   {
     key: 'studio',
-    // The whole-team card's full pitch, in a woman's voice: the film shows a woman.
-    voice: '/site/voice/hero-studio.mp3',
-    tab: 'Social Media Virtual Assistant',
-    sub: 'Your social media, run for you',
+    // Vexa's full pitch — the line she reads when tapped beside the plans.
+    voice: '/site/voice/vexa.mp3',
+    tab: 'Vexa',
+    sub: 'Your Social Media Virtual Assistant',
     film: {
       large: '/site/studio.mp4',
       small: '/site/studio-sm.mp4',
@@ -97,12 +97,12 @@ const SLIDES: HeroSlide[] = [
           <Sparkle /> Velocity
         </span>
         <h1 className={styles.heroTitle}>
-          Give all your social media work to your
+          Give all your social media work to
           <br />
-          <em>Social Media Virtual Assistant.</em>
+          <em>Vexa, your Social Media Virtual Assistant.</em>
         </h1>
         <p className={styles.heroLead}>
-          It reads your market, plans a month of content, posts every day at your time, runs your Meta ads and closes
+          Vexa reads your market, plans a month of content, posts every day at your time, runs your Meta ads and closes
           your leads — while you run the shop.
         </p>
         <div className={styles.heroActions}>
@@ -190,7 +190,7 @@ const JSON_LD = {
     },
     {
       '@type': 'SoftwareApplication',
-      name: 'Social Media Virtual Assistant',
+      name: 'Vexa — Your Social Media Virtual Assistant',
       applicationCategory: 'BusinessApplication',
       operatingSystem: 'Web',
       publisher: { '@id': `${SITE}#org` },
@@ -248,7 +248,7 @@ export default function Home() {
             <div className={home.duo}>
               <Reveal className={home.duoCard}>
                 <span className={styles.eyebrow}>
-                  <Sparkle /> Social Media Virtual Assistant
+                  <Sparkle /> Vexa — Your Social Media Virtual Assistant
                 </span>
                 <h3>Connect your account. Watch your team work.</h3>
                 <p>The first {STUDIO_TRIAL_HOURS} hours are on us — the market analysis starts the minute you sign up.</p>
@@ -286,13 +286,13 @@ export default function Home() {
                 <span className={styles.brandName}>Velocity</span>
               </a>
               <p>
-                Social Media Virtual Assistant — runs your social media on its own. Velocity Rides — ride-hailing and shared rides, built
+                Vexa — Your Social Media Virtual Assistant — runs your social media on its own. Velocity Rides — ride-hailing and shared rides, built
                 for Pakistan.
               </p>
             </div>
 
             <div className={styles.footerCol}>
-              <h3>Virtual Assistant</h3>
+              <h3>Vexa</h3>
               <a href="#how-it-works">How it works</a>
               <a href="#pricing">Pricing</a>
               <Link href="/studio/signup">Start free</Link>
@@ -323,7 +323,7 @@ export default function Home() {
 
           <div className={styles.footerBase}>
             <span>
-              © {new Date().getFullYear()} Velocity. Velocity Rides and the Social Media Virtual Assistant are products of{' '}
+              © {new Date().getFullYear()} Velocity. Velocity Rides and Vexa are products of{' '}
               <a className={styles.footerOwner} href="https://berreto.com" target="_blank" rel="noreferrer">
                 Berreto (Private) Limited
               </a>

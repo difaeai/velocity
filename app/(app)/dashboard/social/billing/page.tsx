@@ -126,7 +126,7 @@ function Checkout() {
     return () => clearTimeout(t);
   }, []);
 
-  if (!wid || !ws) return <p className={a.muted}>Checkout is for Social Media Virtual Assistant workspaces.</p>;
+  if (!wid || !ws) return <p className={a.muted}>Checkout is for Vexa workspaces.</p>;
 
   // The agents work from the Sales page, so only a plan with it can buy a package (the server says the same).
   const agentPkg = askedPkg && planIncludes(ws.plan, 'sales') ? askedPkg : null;

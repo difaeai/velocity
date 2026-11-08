@@ -11,8 +11,8 @@
  * new values; hovering a card brings it to the middle and grows it (CSS, on the
  * fixed slot each card sits in), and leaving puts every card back.
  *
- * The Social Media Virtual Assistant stands in each card's film: tap him and he
- * says what he does on that plan (Assistant.tsx).
+ * Tap a card, or its "Hear Vexa" button, and Vexa says what she does on that
+ * plan (Assistant.tsx).
  */
 
 import Link from 'next/link';
@@ -26,7 +26,7 @@ import {
   type StudioBilling,
   type StudioPlanId,
 } from '@/lib/studio';
-import { PlanAssistant, planVoice } from './Assistant';
+import { PlanAsk, planVoice, useVexa } from './Assistant';
 import { ArrowRight, Check } from './Icons';
 import { hush } from './siteSound';
 import { useReducedMotion, useSaveData } from './useReducedMotion';
@@ -105,6 +105,7 @@ export function StudioPlans() {
   const [seen, setSeen] = useState(() => STUDIO_PLAN_IDS.map(() => false));
   const cards = useRef<(HTMLElement | null)[]>([]);
   const films = useRef<(HTMLVideoElement | null)[]>([]);
+  const { speak } = useVexa();
 
   useEffect(() => {
     const io = new IntersectionObserver(
@@ -155,6 +156,10 @@ export function StudioPlans() {
                 className={`${styles.card} ${best ? styles.best : ''} ${seen[i] ? styles.seen : ''}`}
                 style={{ ['--i' as string]: i }}
                 onPointerMove={glow}
+                // A tap anywhere on the card but its links and buttons: Vexa says what she does on this plan.
+                onClick={(e) => {
+                  if (!(e.target as Element).closest('a, button')) speak(planVoice(id), e);
+                }}
               >
                 {best ? <span className={styles.tag}>The whole team</span> : null}
                 <div className={styles.film}>
@@ -171,7 +176,7 @@ export function StudioPlans() {
                   >
                     <source src={`${FILMS[id].src}.mp4`} type="video/mp4" />
                   </video>
-                  <PlanAssistant plan={id} />
+                  <PlanAsk plan={id} />
                   <span className={styles.live}>
                     <i aria-hidden />
                     {FILMS[id].chip}

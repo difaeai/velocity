@@ -69,6 +69,11 @@
 }
 
 /* ── the cards ────────────────────────────────────────────────────────── */
+/* A tap on a card has Vexa explain it (StudioPlans). */
+.card {
+  cursor: pointer;
+}
+
 .plans {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

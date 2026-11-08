@@ -4,23 +4,20 @@
     "text": "Velocity Rides. Book a shared ride at a fixed fare. Your verified driver is tracked live, and when a second rider joins, you each pay sixty percent."
   },
   {
-    "key": "hero-studio",
-    "text": "Hi! I'm your Social Media Virtual Assistant, and on this plan, I do everything. First, I analyse your product. Then, I study your competition. Then I do all the work of a social media manager: I plan your campaigns, make your content and videos, and post them every day. As your Meta and Google ad expert, I run your Facebook and Instagram ads inside your daily limit, and read your Google ads beside them. I reply to the comments on your posts. And I find new buyers, email each one from your own mailbox, and follow up. All on my own, with no human intervention."
+    "key": "vexa",
+    "text": "Hi! I'm Vexa, your Social Media Virtual Assistant, and I do all your social media work. First, I analyse your product. Then, I study your competition. Then I do all the work of a social media manager: I plan your campaigns, make your content and videos, and post them every day. As your Meta and Google ad expert, I run your Facebook and Instagram ads inside your daily limit, and read your Google ads beside them. I reply to the comments on your posts. And I find new buyers, email each one from your own mailbox, and follow up. All on my own, with no human intervention."
   },
   {
     "key": "plan-research",
-    "voice": "am_michael",
-    "text": "Hi! I'm your Social Media Virtual Assistant, and on this plan, I manage your research. I read your market and your competitors, and I study your Instagram and Facebook. Then I test every campaign on a simulated audience, so you see what works before you spend."
+    "text": "Hi! I'm Vexa, your Social Media Virtual Assistant. On this plan, I manage your research. I read your market and your competitors, and I study your Instagram and Facebook. Then I test every campaign on a simulated audience, so you see what works before you spend."
   },
   {
     "key": "plan-content",
-    "voice": "am_michael",
-    "text": "Hi! I'm your Social Media Virtual Assistant, and on this plan, I manage your content. I plan thirty days ahead, make your reels, posts and stories, post them at your time every day, and answer your comments."
+    "text": "Hi! I'm Vexa, your Social Media Virtual Assistant. On this plan, I manage your content. I plan thirty days ahead, make your reels, posts and stories, post them at your time every day, and answer your comments."
   },
   {
     "key": "plan-all",
-    "voice": "am_michael",
-    "text": "Hi! I'm your Social Media Virtual Assistant, and on this plan, I do everything. First, I analyse your product. Then, I study your competition. Then I do all the work of a social media manager: I plan your campaigns, make your content and videos, and post them every day. As your Meta and Google ad expert, I run your Facebook and Instagram ads inside your daily limit, and read your Google ads beside them. I reply to the comments on your posts. And I find new buyers, email each one from your own mailbox, and follow up. All on my own, with no human intervention."
+    "text": "Hi! I'm Vexa, your Social Media Virtual Assistant. On this plan, I do everything. First, I analyse your product. Then, I study your competition. Then I do all the work of a social media manager: I plan your campaigns, make your content and videos, and post them every day. As your Meta and Google ad expert, I run your Facebook and Instagram ads inside your daily limit, and read your Google ads beside them. I reply to the comments on your posts. And I find new buyers, email each one from your own mailbox, and follow up. All on my own, with no human intervention."
   },
   {
     "key": "film-intro",
