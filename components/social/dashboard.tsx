@@ -107,14 +107,14 @@ export function Hero({
       <span className="fx-orb c" />
       <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'flex-start' }}>
         <div style={{ flex: 1, minWidth: 260 }}>
-          <div className="fx-eyebrow">Manage social · your AI team</div>
+          <div className="fx-eyebrow">Manage social · Vexa</div>
           <h1>
             {greeting}
             {name ? `, ${name}` : ''} <span className="fx-wave">👋</span>
           </h1>
           <p>{summary}</p>
           {team.length ? (
-            <div className="fx-team" aria-label="Your AI team">
+            <div className="fx-team" aria-label="Vexa's team">
               {team.map((e, i) => {
                 const busy = desk.doing.get(e.id)?.now;
                 return (
@@ -272,7 +272,7 @@ export function ApprovalBox({
           <strong>Daily run {running ? 'on' : 'off'}</strong>
           <span className="fx-muted" style={{ display: 'block', fontSize: 12 }}>
             {noTeam
-              ? 'Hire the AI team first.'
+              ? 'Hire Vexa first.'
               : running
                 ? `Next: ${nextRun ?? localHourLabel(settings.runHour)}`
                 : 'Nothing is made unless you ask for it.'}

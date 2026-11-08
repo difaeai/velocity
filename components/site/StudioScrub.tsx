@@ -215,7 +215,7 @@ export function StudioScrub() {
 
         <div className={`${site.wrap} ${styles.panel}`}>
           <header className={styles.head}>
-            <span className={styles.kickerTop}>An AI team for your business</span>
+            <span className={styles.kickerTop}>A whole team for your business</span>
             <h2 id="ai-studio-heading" className={styles.title}>
               <span className={site.accent}>Vexa</span> — your Social Media Virtual Assistant
             </h2>
