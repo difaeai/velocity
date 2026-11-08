@@ -52,7 +52,7 @@ export const STUDIO_PLANS: Record<
       'Social Media Manager: plans every campaign from the Research Assistant’s free dummy runs',
       'Meta & Google Ad Expert: runs Facebook & Instagram ads inside your daily limit, reads Google Ads beside them',
       'Sales agents and email marketing: finds buyers, writes from your own mailbox, follows up twice',
-      'AI calling & WhatsApp agents for your leads — a package on top of the plan',
+      'Calling & WhatsApp agents for your leads — a package on top of the plan',
     ],
   },
   // No longer sold: kept so a workspace already on one keeps working.

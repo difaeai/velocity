@@ -128,7 +128,7 @@ export function LaunchSequence({ settings }: { settings: SocialSettings | null }
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 4 }}>
         <h2 style={{ fontSize: 17, fontWeight: 900, margin: 0 }}>Your launch</h2>
         <span style={{ fontSize: 12.5, color: colors.muted }}>
-          {shownSteps.length} steps your AI team runs in order, on its own. Tap a box to see it — or to tell it what you
+          {shownSteps.length} steps Vexa runs in order, on its own. Tap a box to see it — or to tell it what you
           know.
         </span>
       </div>

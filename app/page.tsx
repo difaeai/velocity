@@ -83,7 +83,7 @@ const SLIDES: HeroSlide[] = [
       large: '/site/studio.mp4',
       small: '/site/studio-sm.mp4',
       poster: '/site/studio.jpg',
-      label: 'A bakery owner in Lahore while her AI team works: her laptop plans the month, her phone fills with likes, and her café fills with customers.',
+      label: 'A bakery owner in Lahore while Vexa works for her: her laptop plans the month, her phone fills with likes, and her café fills with customers.',
     },
     beats: [
       { at: 0, icon: '🔎', title: 'Market analysed', detail: 'Your notes and links, a live search, an audience test' },
