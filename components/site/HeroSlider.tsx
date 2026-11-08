@@ -84,7 +84,7 @@ export function HeroSlider({ slides }: { slides: HeroSlide[] }) {
       ref={hero}
       className={styles.hero}
       aria-roledescription="carousel"
-      aria-label="Velocity Rides and the Social Media Virtual Assistant"
+      aria-label="Velocity Rides and Vexa"
     >
       <div className={styles.stage}>
         {slides.map((s, i) => {

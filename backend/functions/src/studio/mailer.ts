@@ -120,8 +120,8 @@ export const adminSetStudioMailer = onCall({ timeoutSeconds: 60 }, async (req) =
     await t.sendMail({
       from: { name: config.fromName, address: config.from },
       to: testTo,
-      subject: 'Social Media Virtual Assistant sign-up email is connected',
-      text: 'This mailbox now sends the verification codes for Social Media Virtual Assistant sign-ups.',
+      subject: 'Vexa sign-up email is connected',
+      text: 'This mailbox now sends the verification codes for Vexa sign-ups.',
     });
   } catch (e) {
     throw new HttpsError('failed-precondition', `The mailbox refused: ${(e as Error).message.slice(0, 200)}`);

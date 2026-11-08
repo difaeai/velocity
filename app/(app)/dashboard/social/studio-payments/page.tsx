@@ -47,7 +47,7 @@ export default function StudioPaymentsPage() {
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       <header>
-        <h1 style={{ fontSize: 24, fontWeight: 900, margin: '0 0 4px' }}>Social Media Virtual Assistant — payments</h1>
+        <h1 style={{ fontSize: 24, fontWeight: 900, margin: '0 0 4px' }}>Vexa — payments</h1>
         <p style={{ color: colors.muted, margin: 0 }}>
           Our AI reads every receipt the moment it arrives. Approve only once the money is in the account.
         </p>

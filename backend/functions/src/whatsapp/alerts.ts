@@ -182,22 +182,19 @@ export function pktClock(ms: number): string {
   return `${h % 12 || 12}:${String(d.getUTCMinutes()).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
 }
 
-/** True once the demand template is configured — callers with a fallback check first. */
-export const demandTemplateReady = (): boolean => !!(process.env.WHATSAPP_DEMAND_TEMPLATE_NAME ?? '').trim();
-
 /**
- * The demand template's config, or null while it is not set up. Stays dark until
- * `WHATSAPP_DEMAND_TEMPLATE_NAME` names a template Meta has APPROVED: a name Meta
- * does not know is a `halt`, which would stop ride alerts too. Its "See ride"
- * URL button is first unless WHATSAPP_DEMAND_TEMPLATE_BUTTON_INDEX says otherwise.
+ * The demand template: `driver_ride_schedule`, Utility, English, approved by
+ * Meta on 6 Nov 2026 — not a secret, so it lives here. The env names override
+ * it only if Meta's copy is ever renamed; a name Meta does not know is a `halt`,
+ * which would stop ride alerts too. Its "See ride" URL button is first unless
+ * WHATSAPP_DEMAND_TEMPLATE_BUTTON_INDEX says otherwise.
  */
 function demandConfig(cfg: WhatsAppConfig | null): WhatsAppConfig | null {
-  const name = (process.env.WHATSAPP_DEMAND_TEMPLATE_NAME ?? '').trim();
-  if (!cfg || !name) return null;
+  if (!cfg) return null;
   const index = (process.env.WHATSAPP_DEMAND_TEMPLATE_BUTTON_INDEX ?? '').trim();
   return {
     ...cfg,
-    templateName: name,
+    templateName: (process.env.WHATSAPP_DEMAND_TEMPLATE_NAME ?? '').trim() || 'driver_ride_schedule',
     templateLang: (process.env.WHATSAPP_DEMAND_TEMPLATE_LANG ?? '').trim() || 'en',
     // Meta's editor can put the quick reply first; then this is 1.
     urlButtonIndex: /^\d$/.test(index) ? index : '0',
