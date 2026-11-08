@@ -29,6 +29,7 @@ const PRIVACY: Record<string, string> = {
 const NOT_PRIVATE = 'Branded content visibility cannot be set to private.';
 const MUSIC = 'https://www.tiktok.com/legal/page/global/music-usage-confirmation/en';
 const BRANDED = 'https://www.tiktok.com/legal/page/global/bc-policy/en';
+const LINK = { color: colors.secondary, fontWeight: 700, textDecoration: 'underline' };
 
 export interface TikTokVideo {
   url: string | null;
@@ -254,13 +255,13 @@ export function TikTokForm({
         By posting, you agree to TikTok&apos;s{' '}
         {branded ? (
           <>
-            <a href={BRANDED} target="_blank" rel="noreferrer">
+            <a href={BRANDED} target="_blank" rel="noreferrer" style={LINK}>
               Branded Content Policy
             </a>{' '}
             and{' '}
           </>
         ) : null}
-        <a href={MUSIC} target="_blank" rel="noreferrer">
+        <a href={MUSIC} target="_blank" rel="noreferrer" style={LINK}>
           Music Usage Confirmation
         </a>
         . After you post, it may take a few minutes to process and show on your profile.
