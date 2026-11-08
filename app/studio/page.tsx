@@ -22,11 +22,11 @@ import s from './studio.module.css';
 export const metadata: Metadata = {
   title: { absolute: 'Vexa — Your Social Media Virtual Assistant' },
   description:
-    `Connect Instagram and Facebook and an AI team plans your month, makes reels with voice-over and music, posts every day, runs your Meta ads and finds you customers. From $${STUDIO_FROM_USD} a month.`,
+    `Connect Instagram and Facebook and Vexa plans your month, makes reels with voice-over and music, posts every day, runs your Meta ads and finds you customers. From $${STUDIO_FROM_USD} a month.`,
   alternates: { canonical: '/studio' },
   openGraph: {
     title: 'Vexa — you don’t need a social media team anymore',
-    description: 'Connect your account and watch the AI team plan, make, post, advertise and sell for you.',
+    description: 'Connect your account and watch Vexa plan, make, post, advertise and sell for you.',
     url: '/studio',
   },
 };
@@ -91,7 +91,7 @@ export default function StudioPage() {
               You don’t need a social media team <span className={site.accent}>anymore.</span>
             </h1>
             <p className={site.lead}>
-              An AI team plans your month, makes reels with voice-over and music, posts every day, answers comments, runs
+              Vexa plans your month, makes reels with voice-over and music, posts every day, answers comments, runs
               your Meta ads and finds you new customers. Connect your account — and watch.
             </p>
             <div className={s.heroActions}>

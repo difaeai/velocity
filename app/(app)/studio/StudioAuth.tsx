@@ -154,7 +154,7 @@ function AuthForm({ mode }: { mode: AuthMode }) {
             ) : null}
 
             <div className={s.head}>
-              <h1 className={s.title}>{signup ? 'Your AI team, in two minutes' : 'Welcome back'}</h1>
+              <h1 className={s.title}>{signup ? 'Hire Vexa in two minutes' : 'Welcome back'}</h1>
               <p className={s.sub}>
                 {signup
                   ? `Create your account. The first ${STUDIO_TRIAL_HOURS} hours are free — no card.`

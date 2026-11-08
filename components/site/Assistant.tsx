@@ -4,7 +4,8 @@
  * Vexa, the Social Media Virtual Assistant: she stands at the bottom right of
  * every page of the site, scrolls with it, and is the voice of all of it —
  * whenever the page's narration plays (the hero, the scroll film, the five
- * steps, a plan card), she talks and its subtitles run beside her. Tap her and
+ * steps, a plan card), her mouth moves with it and its subtitles run beside
+ * her. Tap her and
  * she gives her full pitch (the line the homepage hero reads); tap a plan
  * card, or its "Hear Vexa" button, and she says what she does on that plan.
  *
@@ -12,9 +13,10 @@
  * and the other parts' narration behave as they do everywhere else.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 
 import { captionAt } from './captions';
+import MOUTH from './voiceMouth.json';
 import { hush, say, toggleMute, useSiteSound, voiceNow } from './siteSound';
 import styles from './assistant.module.css';
 import type { StudioPlanId } from '@/lib/studio';
@@ -63,11 +65,37 @@ function useCaption(talking: boolean): string | null {
   return talking ? caption : null;
 }
 
+/**
+ * Moves her mouth with the voice: voiceMouth.json has how open it is every 50 ms of each line, and the
+ * frame is written straight to the element so a 60-a-second update never re-renders React.
+ * shortcut: the mouth follows loudness, not the shapes of the words; real visemes need a paid lip-sync render.
+ */
+function useLipSync(talking: boolean, mouth: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const el = mouth.current;
+    if (!talking || !el) return;
+    let frame = 0;
+    const tick = () => {
+      const v = voiceNow();
+      const line = (MOUTH as Record<string, string>)[v.src.slice(v.src.lastIndexOf('/') + 1)];
+      el.dataset.l = line?.[Math.floor(v.at * 20)] ?? '0';
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(frame);
+      el.dataset.l = '0';
+    };
+  }, [talking, mouth]);
+}
+
 /** Vexa herself, at the bottom right of every page; `aboveBar` on a page with a fixed bar at the foot (rides). */
 export function Vexa({ aboveBar = false }: { aboveBar?: boolean }) {
   const sound = useSiteSound();
   const talking = sound.speaking;
   const caption = useCaption(talking);
+  const mouth = useRef<HTMLSpanElement>(null);
+  useLipSync(talking, mouth);
 
   const tap = (e: React.MouseEvent) => {
     if (talking && sound.owner) return hush(sound.owner);
@@ -103,9 +131,18 @@ export function Vexa({ aboveBar = false }: { aboveBar?: boolean }) {
         aria-pressed={talking}
         aria-label={talking ? 'Stop Vexa' : 'Hear Vexa, your Social Media Virtual Assistant'}
       >
-        {/* A 110 KB cut-out with its own alpha: next/image would only re-encode it. */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/site/vexa.webp" alt="" width={854} height={853} draggable={false} />
+        <span className={styles.fig}>
+          {/* A 110 KB cut-out with its own alpha: next/image would only re-encode it. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/site/vexa.webp" alt="" width={854} height={853} draggable={false} />
+          {/* Her mouth, a little more open in each: patches laid over her face, one shown at a time. */}
+          <span ref={mouth} className={styles.mouth} data-l="0">
+            {[1, 2, 3].map((n) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img key={n} src={`/site/vexa-mouth-${n}.webp`} alt="" width={142} height={170} draggable={false} />
+            ))}
+          </span>
+        </span>
       </button>
     </div>
   );

@@ -90,14 +90,41 @@
   border-radius: 24px;
 }
 
-.vexa img {
+.fig {
+  position: relative;
+  display: block;
+  filter: drop-shadow(0 0 16px rgba(18, 161, 94, 0.35)) drop-shadow(0 10px 22px rgba(4, 18, 12, 0.35));
+  transform-origin: 60% 100%;
+  animation: float 5s ease-in-out infinite;
+}
+
+.fig img {
   display: block;
   width: 100%;
   height: auto;
   user-select: none;
-  filter: drop-shadow(0 0 16px rgba(18, 161, 94, 0.35)) drop-shadow(0 10px 22px rgba(4, 18, 12, 0.35));
-  transform-origin: 60% 100%;
-  animation: float 5s ease-in-out infinite;
+}
+
+/* Her mouth: the patch box in her picture (530,262 142x170 of 854x853), one frame shown per level. */
+.mouth {
+  position: absolute;
+  left: 62.06%;
+  top: 30.72%;
+  width: 16.63%;
+  height: 19.93%;
+}
+
+.fig .mouth img {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  opacity: 0;
+}
+
+.mouth[data-l='1'] img:nth-child(1),
+.mouth[data-l='2'] img:nth-child(2),
+.mouth[data-l='3'] img:nth-child(3) {
+  opacity: 1;
 }
 
 @keyframes float {
@@ -111,7 +138,7 @@
 }
 
 /* Talking: a small sway and nod. */
-.talking img {
+.talking .fig {
   animation:
     float 5s ease-in-out infinite,
     talk 0.9s ease-in-out infinite alternate;
@@ -284,12 +311,19 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .vexa img,
-  .talking img,
+  .fig,
+  .talking .fig,
   .mark,
   .mark img,
   .ask::before,
   .wave i {
     animation: none;
+  }
+}
+
+/* No moving mouth for anyone who asked for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  .mouth {
+    display: none;
   }
 }

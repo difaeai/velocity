@@ -39,7 +39,7 @@ import { adMoney } from './ads';
 export type Agent = 'team' | 'expert' | 'campaign' | 'email';
 
 const AGENTS: Record<Agent, { icon: string; name: string; does: string }> = {
-  team: { icon: '🎬', name: 'AI team', does: 'Reels, posts, stories, carousels' },
+  team: { icon: '🎬', name: 'Content team', does: 'Reels, posts, stories, carousels' },
   expert: { icon: '📣', name: 'Meta Ad Expert', does: 'Plans a campaign with you' },
   campaign: { icon: '🚀', name: 'New campaign', does: 'Meta, YouTube or TikTok, now' },
   email: { icon: '✉️', name: 'Email agent', does: 'Gmail inbox + customers' },
