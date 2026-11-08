@@ -3,7 +3,7 @@
 /**
  * Velocity Studio's three plans as cards, each topped with a short looping film
  * of that team at work, under a Monthly / Yearly switch. Yearly is twelve months
- * less 13% (`studioPriceUsd`) — the same figure the Billing page asks for.
+ * less 3% (`studioPriceUsd`) — the same figure the Billing page asks for.
  *
  * Each card rises in the first time it is seen, and its film plays only while
  * the card is on screen. With reduced motion or Data Saver the films show their
@@ -23,6 +23,7 @@ import {
   STUDIO_PLANS,
   STUDIO_YEAR_DISCOUNT_PCT,
   studioPriceUsd,
+  studioUsd,
   type StudioBilling,
   type StudioPlanId,
 } from '@/lib/studio';
@@ -63,8 +64,6 @@ const FILMS: Record<StudioPlanId, { src: string; chip: string; alt: string }> = 
   },
 };
 
-const dollars = (n: number) => `$${Number.isInteger(n) ? n : n.toFixed(2)}`;
-
 /** Runs a figure from where it stood to `to` in a fast ease-out, so flipping Monthly / Yearly reads as the price moving. */
 function Count({ to, from = to }: { to: number; from?: number }) {
   const reduced = useReducedMotion();
@@ -85,7 +84,7 @@ function Count({ to, from = to }: { to: number; from?: number }) {
   }, [to, reduced]);
 
   const v = reduced ? to : shown;
-  return <>{dollars(Number.isInteger(to) ? Math.round(v) : v)}</>;
+  return <>{studioUsd(Number.isInteger(to) ? Math.round(v) : v)}</>;
 }
 
 /** Tells the hovered card's glow where the mouse is. */
@@ -204,7 +203,7 @@ export function StudioPlans() {
                         </>
                       ) : (
                         <>
-                          or ${year} a year — save ${twelve - year}
+                          or {studioUsd(year)} a year — save {studioUsd(twelve - year)}
                         </>
                       )}
                     </p>

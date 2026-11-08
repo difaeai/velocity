@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { PERIOD_MS, PLAN_IDS, PLANS, YEAR_MS, canUse, extendPaid, paidAfter, priceUsd, refusal } from '../plans';
+import { PERIOD_MS, PKR_PER_USD, PLAN_IDS, PLANS, YEAR_MS, canUse, extendPaid, paidAfter, pricePkr, priceUsd, refusal } from '../plans';
 
 const NOW = 1_800_000_000_000;
 const live = { trialEndsAtMs: NOW + 1000, paidUntilMs: 0 };
@@ -104,7 +104,7 @@ describe('priceUsd', () => {
     expect(priceUsd('content', 'month')).toBe(PLANS.content.usd);
   });
   it('prices a year at the figures the site shows', () => {
-    expect([priceUsd('research', 'year'), priceUsd('content', 'year'), priceUsd('all', 'year')]).toEqual([208, 271, 334]);
+    expect([priceUsd('research', 'year'), priceUsd('content', 'year'), priceUsd('all', 'year')]).toEqual([232.8, 302.64, 372.48]);
   });
   it('sells the Research Assistant, Content and the whole team, left to right — not the old sales-only or ads-only plans', () => {
     expect(PLAN_IDS).toEqual(['research', 'content', 'all']);
@@ -114,7 +114,18 @@ describe('priceUsd', () => {
     // The whole team carries the sales, calling and email agents the old Sales plan sold on their own.
     expect(PLANS.all.can).toEqual(expect.arrayContaining(['research', 'content', 'ads', 'sales']));
   });
-  it('never saves less than 13% on twelve months', () => {
-    for (const id of PLAN_IDS) expect(priceUsd(id, 'year')).toBeLessThanOrEqual(PLANS[id].usd * 12 * 0.87);
+  it('takes exactly 3% off twelve months, never more, and nothing off a month', () => {
+    for (const id of PLAN_IDS) {
+      expect(priceUsd(id, 'year')).toBeCloseTo(PLANS[id].usd * 12 * 0.97, 10);
+      expect(priceUsd(id, 'month')).toBe(PLANS[id].usd);
+    }
+  });
+  it('asks for whole rupees, rounded up so a year never saves more than 3%', () => {
+    expect(PLAN_IDS.map((id) => pricePkr(id, 'year'))).toEqual([65184, 84740, 104295]);
+    for (const id of PLAN_IDS) {
+      expect(Number.isInteger(pricePkr(id, 'year'))).toBe(true);
+      expect(pricePkr(id, 'year')).toBeGreaterThanOrEqual(pricePkr(id, 'month') * 12 * 0.97);
+      expect(pricePkr(id, 'month')).toBe(PLANS[id].usd * PKR_PER_USD);
+    }
   });
 });

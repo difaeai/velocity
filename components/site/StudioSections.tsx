@@ -36,7 +36,7 @@ export const STUDIO_FAQ = [
   },
   {
     q: 'How do I pay?',
-    a: 'By bank transfer, EasyPaisa or JazzCash, for a month or for a year at 13% less. Send the payment, then upload the screenshot or type the transaction ID — your plan switches on as soon as it is checked.',
+    a: `By bank transfer, EasyPaisa or JazzCash, for a month or for a year at ${STUDIO_YEAR_DISCOUNT_PCT}% less. Send the payment, then upload the screenshot or type the transaction ID — your plan switches on as soon as it is checked.`,
   },
   {
     q: 'Can I stop?',

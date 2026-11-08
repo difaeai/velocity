@@ -21,7 +21,7 @@ import { db, storage } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth';
 import { colors } from '@/lib/config';
 import { studioApi, studioPaymentLabel, type StudioPaymentDoc } from '@/lib/api';
-import { PKR_PER_USD, STUDIO_PLANS } from '@/lib/studio';
+import { STUDIO_PLANS, studioPkr, studioUsd } from '@/lib/studio';
 import { Button, Card } from '@/components/ui';
 import { VerdictBadge, VerdictChecks } from '@/components/social/studioVerdict';
 
@@ -76,7 +76,7 @@ export default function StudioPaymentsPage() {
                 <span style={{ minWidth: 110, color: colors.muted }}>{day(p.createdAtMs)}</span>
                 <span style={{ flex: 1 }}>
                   {p.business} · {studioPaymentLabel(p, STUDIO_PLANS[p.plan].name)}
-                  {p.billing === 'year' ? ' · a year' : ''} · ${p.amountUsd}
+                  {p.billing === 'year' ? ' · a year' : ''} · {studioUsd(p.amountUsd)}
                   {p.txnId ? ` · ${p.txnId}` : ''}
                 </span>
                 <VerdictBadge analysis={p.analysis} />
@@ -115,7 +115,7 @@ function PendingRow({ payment: p }: { payment: StudioPaymentDoc }) {
   }
 
   const a = p.analysis;
-  const asked = p.amountPkr ?? p.amountUsd * PKR_PER_USD;
+  const asked = p.amountPkr ?? studioPkr(p.amountUsd);
   return (
     <div
       style={{
@@ -146,7 +146,7 @@ function PendingRow({ payment: p }: { payment: StudioPaymentDoc }) {
               ? `Credits — ${p.credits} days of the team's work`
               : `${STUDIO_PLANS[p.plan].name} plan`}{' '}
           · <strong>{p.kind === 'credits' ? '$1 a day' : p.billing === 'year' ? 'a year' : 'a month'}</strong> ·{' '}
-          <strong>${p.amountUsd}</strong> (Rs {asked.toLocaleString('en-PK')}) · sent {day(p.createdAtMs)}
+          <strong>{studioUsd(p.amountUsd)}</strong> (Rs {asked.toLocaleString('en-PK')}) · sent {day(p.createdAtMs)}
         </div>
         <div>
           Transaction ID typed: <code style={{ fontWeight: 800 }}>{p.txnId ?? '—'}</code>

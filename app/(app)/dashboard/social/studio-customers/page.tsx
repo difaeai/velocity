@@ -19,7 +19,7 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth';
 import { colors } from '@/lib/config';
 import { studioApi, studioPaymentLabel, type StudioPaymentDoc } from '@/lib/api';
-import { STUDIO_PLAN_IDS, STUDIO_PLANS, type StudioPlanId, type StudioUserDoc, type StudioWorkspace } from '@/lib/studio';
+import { STUDIO_PLAN_IDS, STUDIO_PLANS, studioUsd, type StudioPlanId, type StudioUserDoc, type StudioWorkspace } from '@/lib/studio';
 import { Badge, Button, Card, StatCard } from '@/components/ui';
 import { VerdictBadge } from '@/components/social/studioVerdict';
 
@@ -410,7 +410,7 @@ function Manage({ ws, savedNote, payments }: { ws: Workspace; savedNote: string;
                   <strong>{day(p.createdAtMs)}</strong>
                   <span>
                     {studioPaymentLabel(p, STUDIO_PLANS[p.plan].name)}
-                    {p.billing === 'year' ? ' · a year' : ''} · ${p.amountUsd}
+                    {p.billing === 'year' ? ' · a year' : ''} · {studioUsd(p.amountUsd)}
                   </span>
                   <Badge
                     label={p.status}
