@@ -1,16 +1,14 @@
 'use client';
 
 /**
- * The Social Media Virtual Assistant, standing in a plan card's film. Tap him
- * (or his "Tap me" button) and he says what he does on that plan; the
- * whole-team card gets the full pitch, the same line the homepage hero reads.
+ * Vexa, the Social Media Virtual Assistant, explaining the plans: tap a plan
+ * card, or its "Hear Vexa" button, and she says what she does on that plan;
+ * the whole-team card gets her full pitch.
  *
- * He speaks through the page's one voice (`siteSound`), so the header's mute
+ * She speaks through the page's one voice (`siteSound`), so the header's mute
  * and the other parts' narration behave as they do everywhere else, and
- * StudioPlans hushes him when his card scrolls away.
+ * StudioPlans hushes her when a card scrolls away.
  */
-
-import type { MouseEvent } from 'react';
 
 import { hush, say, toggleMute, useSiteSound } from './siteSound';
 import styles from './assistant.module.css';
@@ -19,50 +17,48 @@ import type { StudioPlanId } from '@/lib/studio';
 /** The voice's owner for a plan's card — also its line's file name in /site/voice (siteVoice.json). */
 export const planVoice = (plan: StudioPlanId) => `plan-${plan}`;
 
-export function PlanAssistant({ plan }: { plan: StudioPlanId }) {
-  const owner = planVoice(plan);
+/** Vexa's voice: which of her plan lines is playing, and a tap that starts or stops one. */
+export function useVexa() {
   const sound = useSiteSound();
-  const talking = sound.owner === owner && sound.speaking;
-
-  const tap = (e: MouseEvent) => {
-    if (talking) return hush(owner);
+  const line = sound.speaking && sound.owner?.startsWith('plan-') ? sound.owner : null;
+  const speak = (owner: string, e: { timeStamp: number }) => {
+    if (line === owner) return hush(owner);
     say(owner, `/site/voice/${owner}.mp3`);
-    // Tapping him is asking to hear him, so it turns the page's sound back on.
+    // A tap is asking to hear her, so it turns the page's sound back on.
     if (sound.muted) toggleMute(e.timeStamp);
   };
+  return { line, speak };
+}
 
+/** A plan card's "Hear Vexa" button, in the corner of its film. */
+export function PlanAsk({ plan }: { plan: StudioPlanId }) {
+  const owner = planVoice(plan);
+  const { line, speak } = useVexa();
+  const talking = line === owner;
   return (
-    <>
-      {/* The figure answers a tap too; the button is the control for keyboards and screen readers. */}
-      <div className={`${styles.agent} ${talking ? styles.talking : ''}`} onClick={tap} aria-hidden>
-        {/* An 71 KB cut-out with its own alpha: next/image would only re-encode it. */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/site/assistant.webp" alt="" width={806} height={1240} draggable={false} />
-      </div>
-      <button
-        type="button"
-        className={styles.ask}
-        onClick={tap}
-        aria-pressed={talking}
-        aria-label={talking ? 'Stop the assistant' : 'Hear the Social Media Virtual Assistant explain this plan'}
-      >
-        {talking ? (
-          <>
-            <span className={styles.wave} aria-hidden>
-              <i />
-              <i />
-              <i />
-              <i />
-            </span>
-            Stop
-          </>
-        ) : (
-          <>
-            <span className={styles.play} aria-hidden />
-            Tap me
-          </>
-        )}
-      </button>
-    </>
+    <button
+      type="button"
+      className={styles.ask}
+      onClick={(e) => speak(owner, e)}
+      aria-pressed={talking}
+      aria-label={talking ? 'Stop Vexa' : 'Hear Vexa explain this plan'}
+    >
+      {talking ? (
+        <>
+          <span className={styles.wave} aria-hidden>
+            <i />
+            <i />
+            <i />
+            <i />
+          </span>
+          Stop
+        </>
+      ) : (
+        <>
+          <span className={styles.play} aria-hidden />
+          Hear Vexa
+        </>
+      )}
+    </button>
   );
 }

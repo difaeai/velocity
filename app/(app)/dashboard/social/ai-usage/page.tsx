@@ -31,7 +31,7 @@ import { AreaSpark, CountUp, FX_CSS } from '@/components/social/fx';
 
 const SLOT_LABEL: Record<AiKeySlot, { title: string; what: string }> = {
   house: { title: 'Velocity’s own work', what: 'The content desk, Meta Ad Expert, sales agent and support desk for Velocity Rides.' },
-  customers: { title: 'Studio customers', what: 'Every Social Media Virtual Assistant workspace. Empty means customers use the Velocity key.' },
+  customers: { title: 'Studio customers', what: 'Every Vexa workspace. Empty means customers use the Velocity key.' },
   voice: { title: 'Phone calls', what: 'The phone helpline and the AI calling agents (Gemini Live).' },
 };
 

@@ -50,7 +50,7 @@ export async function inWorkspace<T>(wid: string, fn: () => Promise<T>): Promise
   await warmAi(wid);
   if (wid === HOUSE) return scope.run({ wid, brand: null }, fn);
   const ws = (await workspaceRef(wid).get()).data() as Workspace | undefined;
-  if (!ws) throw new HttpsError('not-found', 'That Social Media Virtual Assistant workspace no longer exists.');
+  if (!ws) throw new HttpsError('not-found', 'That Vexa workspace no longer exists.');
   return scope.run({ wid, brand: ws.brand }, fn);
 }
 
@@ -66,7 +66,7 @@ export async function deskWorkspace(req: CallableRequest, need: Needs): Promise<
   const wid = ctx.token.ws;
   if (ctx.role === 'admin' && wid === undefined) return HOUSE;
   if (typeof wid !== 'string' || !isDocId(wid) || wid === HOUSE) {
-    throw new HttpsError('permission-denied', 'This account has no Social Media Virtual Assistant workspace. Sign up at /studio.');
+    throw new HttpsError('permission-denied', 'This account has no Vexa workspace. Sign up at /studio.');
   }
   let ws = (await workspaceRef(wid).get()).data() as Workspace | undefined;
   if (!ws || ws.ownerUid !== ctx.uid) throw new HttpsError('permission-denied', 'This workspace is not yours.');

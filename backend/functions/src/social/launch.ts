@@ -589,7 +589,7 @@ export const socialLaunchSweep = onSchedule(
  */
 export const adminLaunchMarket = deskCall('any', { timeoutSeconds: 540, memory: '2GiB' }, async (req) => {
   requireAuth(req);
-  if (isHouse()) throw new HttpsError('failed-precondition', 'The launch sequence runs for Social Media Virtual Assistant workspaces.');
+  if (isHouse()) throw new HttpsError('failed-precondition', 'The launch sequence runs for Vexa workspaces.');
   const parsed = z
     .object({
       knowledge: z.string().max(6000).optional(),

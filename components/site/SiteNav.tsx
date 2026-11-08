@@ -19,7 +19,7 @@ export type NavLink = { href: string; label: string };
  *
  * It takes its links: the homepage (Velocity Studio) and the ride app's page
  * each point at their own sections. `cta` is the button on the right — the
- * homepage's is the Social Media Virtual Assistant log-in. `sound` adds the page's one
+ * homepage's is the Vexa log-in. `sound` adds the page's one
  * mute (a narrated page only), in the header rather than over the content;
  * on a phone it lives in the menu.
  */
@@ -162,7 +162,7 @@ export function SiteNav({ links, cta, sound }: { links: NavLink[]; cta?: NavLink
 }
 
 /**
- * The homepage's way into the Social Media Virtual Assistant, with a little magic that never
+ * The homepage's way into Vexa, with a little magic that never
  * stops: a ring of light running round the edge, a shine sweeping across, a
  * turning sparkle and stars twinkling at the corners. All CSS; still for anyone
  * who asked their device for reduced motion.
