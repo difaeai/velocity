@@ -62,6 +62,7 @@ export {
   adminRequestSocialChanges,
   adminReviewSocialPost,
   adminPublishSocialPost,
+  adminPostToTikTok,
   adminRenderSocialPost,
   adminAttachSocialMedia,
   adminDeleteSocialPost,

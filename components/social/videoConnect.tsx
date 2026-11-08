@@ -45,8 +45,8 @@ const COPY: Record<VideoProvider, { mark: string; id: string; title: string; but
     id: 'tiktok',
     title: 'TikTok',
     button: 'Continue with TikTok',
-    off: 'Connect your account and every reel the team makes goes up on TikTok. Until TikTok has audited this app, it can only post as "Only me" to a private account.',
-    on: 'Every reel the team makes goes up here. Until TikTok has audited this app, it posts as "Only me" to a private account.',
+    off: 'Connect your account. Each reel then waits for you: open it on Content & calendar and press Post to TikTok. Until TikTok has audited this app, it can only post as "Only me" to a private account.',
+    on: 'Each reel waits for you on Content & calendar: press Post to TikTok. Until TikTok has audited this app, it posts as "Only me" to a private account.',
   },
   'tiktok-ads': {
     mark: 'ta',

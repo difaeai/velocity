@@ -33,6 +33,7 @@ import { ref, uploadBytes } from 'firebase/storage';
 
 import { db, storage } from '@/lib/firebase';
 import { useWorkspace } from '@/lib/workspace';
+import { TikTokPost } from '@/components/social/tiktokPost';
 import { colors } from '@/lib/config';
 import {
   postAssets,
@@ -589,6 +590,10 @@ function PostCard({ post }: { post: SocialPostDoc }) {
               })}
             </div>
           </div>
+
+          {assets.some((a) => a.kind === 'video') && (format === 'reel' || format === 'video') ? (
+            <TikTokPost post={post} video={assets.find((a) => a.kind === 'video')!} />
+          ) : null}
 
           <button
             onClick={() => setShowDetail(!showDetail)}

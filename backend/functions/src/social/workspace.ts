@@ -82,8 +82,8 @@ export async function deskWorkspace(req: CallableRequest, need: Needs): Promise<
     throw new HttpsError(
       'unavailable',
       overBudget(wid)
-        ? 'This month’s AI work for your workspace is used up. Buy credits on the Billing page to carry on today — or it starts again on the 1st.'
-        : 'The AI team is offline for a moment. Try again shortly.',
+        ? 'This month’s work allowance for your workspace is used up. Buy credits on the Billing page to carry on today — or it starts again on the 1st.'
+        : 'Vexa is offline for a moment. Try again shortly.',
     );
   }
   return wid;

@@ -11,8 +11,8 @@
  * here, for every workspace.
  *
  * A YouTube or TikTok account lands in the same `socialAccounts` record a pasted
- * one did, through `connectVerifiedAccount`, and goes straight on the list of
- * networks the team posts to.
+ * one did, through `connectVerifiedAccount`. YouTube goes straight on the list of
+ * networks the team posts to; TikTok waits for a person's yes on each post.
  */
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
@@ -21,8 +21,9 @@ import { z } from 'zod';
 
 import { db, FieldValue, Timestamp } from '../lib/firebase';
 import { requireAdmin, requireAuth } from '../lib/guards';
-import { connectVerifiedAccount } from './accounts';
+import { connectVerifiedAccount, loadCredentials } from './accounts';
 import { googleApp } from './googleAds';
+import { tiktokCreatorInfo } from './platforms';
 import { open, seal, tokenVaultReady, type SealedSecret } from './secrets';
 import { getSocialSettings, patchSettings } from './settings';
 import { TIKTOK_SECRET_PATH, tiktokAds, type TikTokAdsLink } from './videoAds';
@@ -132,10 +133,10 @@ async function exchange(url: string, form: Record<string, string>) {
   return (await res.json().catch(() => ({}))) as { refresh_token?: string; error?: string; error_description?: string };
 }
 
-/** Finishing a connect means the team posts there from now on. */
-async function postThereFromNowOn(platform: 'youtube' | 'tiktok') {
+/** Finishing a YouTube connect means the team posts there from now on. */
+async function postThereFromNowOn() {
   const { platforms } = await getSocialSettings();
-  if (!platforms.includes(platform)) await patchSettings({ platforms: [...platforms, platform] });
+  if (!platforms.includes('youtube')) await patchSettings({ platforms: [...platforms, 'youtube'] });
 }
 
 async function finishPosting(platform: 'youtube' | 'tiktok', app: App, code: string, uid: string): Promise<string> {
@@ -153,7 +154,7 @@ async function finishPosting(platform: 'youtube' | 'tiktok', app: App, code: str
     throw new HttpsError('failed-precondition', grant.error_description || grant.error || 'The sign-in gave no lasting access. Remove Velocity from the account’s connected apps and try again.');
   }
   const record = await connectVerifiedAccount(platform, { accessToken: grant.refresh_token, clientId: app.id, clientSecret: app.secret }, uid);
-  await postThereFromNowOn(platform);
+  if (platform === 'youtube') await postThereFromNowOn();
   return String(record.displayName ?? '');
 }
 
@@ -204,6 +205,7 @@ export const adminVideoConnect = deskCall('any', { timeoutSeconds: 60 }, async (
       z.object({ action: z.literal('finish'), code: z.string().min(6).max(3000), state: stateSchema }),
       z.object({ action: z.literal('choose'), state: stateSchema, advertiserId: z.string().min(3).max(40) }),
       z.object({ action: z.literal('disconnect') }),
+      z.object({ action: z.literal('creator') }),
     ])
     .safeParse(req.data);
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
@@ -244,6 +246,11 @@ export const adminVideoConnect = deskCall('any', { timeoutSeconds: 60 }, async (
       }
       case 'choose':
         return { connected: await keepAdvertiser(input.state, ctx.uid, input.advertiserId), choices: [] };
+      case 'creator': {
+        const credentials = await loadCredentials('tiktok');
+        if (!credentials) throw new HttpsError('failed-precondition', 'Connect TikTok first, on Connected accounts.');
+        return await tiktokCreatorInfo(credentials);
+      }
       case 'disconnect':
         await db.batch().set(sdb.doc(CONFIG_PATH), { tiktok: null }, { merge: true }).delete(sdb.doc(TIKTOK_SECRET_PATH)).commit();
         return { ok: true };

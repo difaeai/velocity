@@ -121,6 +121,8 @@ export interface PublishPayload {
   cover?: string | null;
   /** YouTube: `unlisted` for a video that exists only to run as an ad. Public otherwise. */
   privacy?: 'unlisted';
+  /** TikTok: what the person chose on the Post to TikTok screen. It will not post without it. */
+  tiktok?: TikTokChoices;
 }
 
 export interface RawComment {
@@ -695,15 +697,55 @@ async function tiktokPost<T>(token: string, path: string, json?: unknown): Promi
   return body.data;
 }
 
-interface TikTokCreator {
+export interface TikTokCreator {
   creator_username?: string;
+  creator_nickname?: string;
+  creator_avatar_url?: string;
   privacy_level_options?: string[];
   comment_disabled?: boolean;
   duet_disabled?: boolean;
   stitch_disabled?: boolean;
+  max_video_post_duration_sec?: number;
+}
+
+/** What a person picks on the Post to TikTok screen, one post at a time. */
+export interface TikTokChoices {
+  privacy: string;
+  allowComment: boolean;
+  allowDuet: boolean;
+  allowStitch: boolean;
+  yourBrand: boolean;
+  brandedContent: boolean;
 }
 
 const tiktokCreator = (token: string) => tiktokPost<TikTokCreator>(token, '/post/publish/creator_info/query/');
+
+/** The account as it stands now, for the screen: TikTok requires it fresh each time the screen opens. */
+export async function tiktokCreatorInfo(c: PlatformCredentials): Promise<TikTokCreator> {
+  return tiktokCreator(await tiktokAccessToken(c));
+}
+
+/**
+ * A person's choices as TikTok's `post_info`, or why they cannot go. Anything the
+ * creator has switched off at TikTok stays off whatever was ticked. Pure.
+ */
+export function tiktokPostInfo(choices: TikTokChoices, creator: TikTokCreator, title: string): Record<string, unknown> {
+  if (!creator.privacy_level_options?.includes(choices.privacy)) {
+    throw new PlatformError('tiktok', 'TikTok no longer offers that privacy choice for this account. Open the screen again and choose.');
+  }
+  if (choices.brandedContent && choices.privacy === 'SELF_ONLY') {
+    throw new PlatformError('tiktok', 'Branded content visibility cannot be set to private.');
+  }
+  return {
+    title: title.slice(0, 2200),
+    privacy_level: choices.privacy,
+    disable_comment: !choices.allowComment || creator.comment_disabled === true,
+    disable_duet: !choices.allowDuet || creator.duet_disabled === true,
+    disable_stitch: !choices.allowStitch || creator.stitch_disabled === true,
+    brand_organic_toggle: choices.yourBrand,
+    brand_content_toggle: choices.brandedContent,
+  };
+}
 
 async function verifyTikTok(c: PlatformCredentials): Promise<PlatformProfile> {
   const token = await tiktokAccessToken(c);
@@ -735,23 +777,22 @@ export function tiktokChunks(size: number): { chunkSize: number; count: number }
  * shortcut: FILE_UPLOAD, though TikTok prefers PULL_FROM_URL for hosted media; that needs a media URL on a verified velocityrides.app path, and our signed Storage URLs are not.
  */
 async function publishTikTok(c: PlatformCredentials, p: PublishPayload): Promise<{ id: string; url: string }> {
+  if (!p.tiktok) throw new PlatformError('tiktok', 'TikTok needs your own yes on each post. Open the piece and press Post to TikTok.');
   const video = firstVideo(p, 'tiktok');
   const token = await tiktokAccessToken(c);
   const creator = await tiktokCreator(token);
+  const post_info = tiktokPostInfo(p.tiktok, creator, p.caption);
+  const longest = creator.max_video_post_duration_sec;
+  if (longest && video.durationSec && video.durationSec > longest) {
+    throw new PlatformError('tiktok', `This account can post videos up to ${longest} seconds, and this one is longer.`);
+  }
   const bytes = await downloadAsset(video).catch(() => {
     throw new PlatformError('tiktok', 'Could not read the rendered video back from storage.');
   });
   const { chunkSize, count } = tiktokChunks(bytes.length);
 
   const init = await tiktokPost<{ publish_id: string; upload_url: string }>(token, '/post/publish/video/init/', {
-    post_info: {
-      title: p.caption.slice(0, 2200),
-      // Public when TikTok offers it. A private account, or an app not yet audited, is offered "Only me".
-      privacy_level: creator.privacy_level_options?.includes('PUBLIC_TO_EVERYONE') ? 'PUBLIC_TO_EVERYONE' : 'SELF_ONLY',
-      disable_comment: creator.comment_disabled === true,
-      disable_duet: creator.duet_disabled === true,
-      disable_stitch: creator.stitch_disabled === true,
-    },
+    post_info,
     source_info: { source: 'FILE_UPLOAD', video_size: bytes.length, chunk_size: chunkSize, total_chunk_count: count },
   });
 

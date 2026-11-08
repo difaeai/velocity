@@ -7,7 +7,8 @@
 import { describe, expect, it } from 'vitest';
 
 import type { AdPlanSpec } from '../adsExpert';
-import { tiktokChunks, tiktokErrorText } from '../platforms';
+import { tiktokChunks, tiktokErrorText, tiktokPostInfo } from '../platforms';
+import { postsOnItsOwn } from '../types';
 import { demandGenOperations, demandGenText, googleEnd, tiktokAdGroup, tiktokAges, tiktokTime, videoMetrics } from '../videoAds';
 import { consentUrl, providerOf } from '../videoConnect';
 
@@ -129,6 +130,40 @@ describe("TikTok's upload", () => {
   it('says what an unaudited app has to do', () => {
     expect(tiktokErrorText('unaudited_client_can_only_post_to_private_accounts', 'x')).toMatch(/audit/);
     expect(tiktokErrorText('rate_limit_exceeded', 'slow down')).toBe('rate_limit_exceeded: slow down');
+  });
+});
+
+describe('the Post to TikTok choices', () => {
+  const creator = { privacy_level_options: ['PUBLIC_TO_EVERYONE', 'SELF_ONLY'] };
+  const choices = { privacy: 'PUBLIC_TO_EVERYONE', allowComment: true, allowDuet: false, allowStitch: false, yourBrand: true, brandedContent: false };
+
+  it('sends what the person chose, and leaves off what they did not turn on', () => {
+    expect(tiktokPostInfo(choices, creator, 'A title')).toEqual({
+      title: 'A title',
+      privacy_level: 'PUBLIC_TO_EVERYONE',
+      disable_comment: false,
+      disable_duet: true,
+      disable_stitch: true,
+      brand_organic_toggle: true,
+      brand_content_toggle: false,
+    });
+  });
+
+  it('keeps off what the creator switched off at TikTok, whatever was ticked', () => {
+    expect(tiktokPostInfo(choices, { ...creator, comment_disabled: true }, 'x').disable_comment).toBe(true);
+  });
+
+  it('refuses a privacy TikTok no longer offers', () => {
+    expect(() => tiktokPostInfo({ ...choices, privacy: 'FOLLOWER_OF_CREATOR' }, creator, 'x')).toThrow(/no longer offers/);
+  });
+
+  it('refuses private branded content', () => {
+    expect(() => tiktokPostInfo({ ...choices, privacy: 'SELF_ONLY', brandedContent: true }, creator, 'x')).toThrow(/cannot be set to private/);
+  });
+
+  it('never lets TikTok be posted to by the team on its own', () => {
+    expect(postsOnItsOwn('tiktok')).toBe(false);
+    expect(postsOnItsOwn('youtube')).toBe(true);
   });
 });
 
