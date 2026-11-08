@@ -221,6 +221,112 @@ export async function answerReply(params: {
   return { intent, body: closed ? '' : String(data.body ?? '').trim().slice(0, 2000) };
 }
 
+// ── the email agent: the inbox, and one email per customer ──────────────────
+
+export type MailKind = 'question' | 'order' | 'complaint' | 'thanks' | 'sales_pitch' | 'unsubscribe' | 'other';
+const KINDS: MailKind[] = ['question', 'order', 'complaint', 'thanks', 'sales_pitch', 'unsubscribe', 'other'];
+
+const ANSWER_RULES = `HOW TO ANSWER:
+- First decide what it is: a question, an order, a complaint, a thank-you, someone selling something TO us, a request to stop emailing, or other.
+- Someone selling to us, or asking us to stop emailing: no answer — the body is empty.
+- Otherwise answer exactly what they wrote, in the language they wrote in, in 30 to 120 words. Use their name if you have it.
+- A complaint: say sorry once, plainly, and give ONE concrete next step.
+- State only facts from WHAT WE MAY TELL CUSTOMERS. Anything else — a price, a date, stock, a discount — say you will check and come back to them. Never invent.
+- Plain text, warm and direct. Do NOT add a signature — that is added for you.
+- "summary": one short line for the owner saying what they want.`;
+
+/**
+ * Read one email a person sent the business and draft the answer. The answer
+ * waits for the owner: it speaks for the business to a real customer.
+ */
+export async function answerCustomer(params: {
+  model: string;
+  seller: Seller;
+  knowledge: string;
+  mail: { name: string; from: string; subject: string; text: string };
+}): Promise<{ kind: MailKind; summary: string; body: string }> {
+  const { seller, mail } = params;
+  const { data } = await generateJson<{ kind?: string; summary?: string; body?: string }>({
+    model: params.model,
+    what: 'The answer to a customer email',
+    system: [
+      `You answer the email of ${seller.senderCompany}, for ${seller.senderName}.`,
+      `What ${seller.senderCompany} sells: ${seller.product}`,
+      `WHAT WE MAY TELL CUSTOMERS:\n${params.knowledge.trim() || '(nothing yet — do not state any price, date or policy)'}`,
+      ANSWER_RULES,
+      `Reply with one JSON object and nothing else: {"kind": ${KINDS.map((k) => `"${k}"`).join(' | ')}, "summary": "...", "body": "the answer, or empty"}`,
+    ].join('\n\n'),
+    prompt: `FROM: ${mail.name ? `${mail.name} <${mail.from}>` : mail.from}\nSUBJECT: ${mail.subject}\n\n${mail.text.slice(0, 3000)}`,
+  });
+  const kind = KINDS.includes(data.kind as MailKind) ? (data.kind as MailKind) : 'other';
+  const silent = kind === 'sales_pitch' || kind === 'unsubscribe';
+  return {
+    kind,
+    summary: String(data.summary ?? '').trim().slice(0, 200),
+    body: silent ? '' : String(data.body ?? '').trim().slice(0, 2000),
+  };
+}
+
+/** What is wrong with an email to an existing customer. Looser than a cold email: it may be longer and carry a link. Pure. */
+export function customerEmailProblems(d: Draft): string[] {
+  const all = `${d.subject} ${d.body}`;
+  const words = d.body.trim().split(/\s+/).filter(Boolean).length;
+  return [
+    !d.subject.trim() ? 'no subject' : '',
+    d.subject.length > 80 ? 'subject over 80 characters' : '',
+    words < 15 ? 'too short to say anything' : '',
+    words > 200 ? `${words} words — keep it under 180` : '',
+    /\{\{|\}\}|\[name\]|\[company\]/i.test(all) ? 'an unfilled placeholder' : '',
+    ...BANNED.filter((b) => all.toLowerCase().includes(b)).map((b) => `"${b}"`),
+  ].filter(Boolean);
+}
+
+const CUSTOMER_RULES = `HOW TO WRITE IT — every rule matters:
+- One email to ONE existing customer, about WHAT TO TELL THEM. Plain text, like a person who knows them.
+- Open with them: their name, and what we know about them (the note, what they last wrote to us) when it fits. Never invent a history.
+- Say what to tell them in plain words, then one easy next step.
+- 50 to 150 words. Subject: 2 to 7 words, no clickbait, no ALL CAPS.
+- Only the facts, prices, dates and links in WHAT TO TELL THEM. Never invent one.
+- Never use: ${BANNED.map((b) => `"${b}"`).join(', ')}.
+- Do NOT add a signature, address or unsubscribe line — that is added for you.`;
+
+/** One personal email to one customer about what the owner wants said; one rewrite if the checks fail. */
+export async function draftCustomerEmail(params: {
+  model: string;
+  seller: Seller;
+  brief: string;
+  customer: { name: string; note: string; lastText: string };
+}): Promise<Draft & { problems: string[] }> {
+  const { seller, customer } = params;
+  const system = [
+    `You write emails to the customers of ${seller.senderCompany}, for ${seller.senderName}.`,
+    `What ${seller.senderCompany} sells: ${seller.product}`,
+    `Write in ${seller.language || 'English'}.`,
+    `WHAT TO TELL THEM:\n${params.brief}`,
+    CUSTOMER_RULES,
+    'Reply with one JSON object and nothing else: {"subject": "...", "body": "..."}',
+  ].join('\n\n');
+  const about = [
+    `The customer: ${customer.name || '(name unknown — greet them without one)'}.`,
+    customer.note ? `What the owner noted about them: ${customer.note}` : '',
+    customer.lastText ? `What they last wrote to us:\n${customer.lastText.slice(0, 600)}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+  const ask = async (extra: string): Promise<Draft> => {
+    const { data } = await generateJson<{ subject?: string; body?: string }>({ model: params.model, what: 'The customer email', system, prompt: `${about}${extra}` });
+    return { subject: String(data.subject ?? '').trim().slice(0, 120), body: String(data.body ?? '').trim().slice(0, 2000) };
+  };
+  let draft = await ask('');
+  let problems = customerEmailProblems(draft);
+  if (problems.length) {
+    const second = await ask(`\n\nYour last draft had these problems: ${problems.join('; ')}. Write it again without them.`);
+    const again = customerEmailProblems(second);
+    if (again.length < problems.length) [draft, problems] = [second, again];
+  }
+  return { ...draft, problems };
+}
+
 /** Who a calling agent is and what the call is for — set up on the Sales page. */
 export interface Caller {
   name: string;

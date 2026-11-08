@@ -634,6 +634,11 @@ export {
   salesLeadAction,
   salesCallScript,
   salesSweep,
+  // the email agent: answers the inbox, and writes each customer their own email
+  mailInboxAction,
+  mailAddCustomers,
+  mailWriteCustomers,
+  mailCustomerAction,
 } from './sales';
 
 // What Velocity pays its vendors — pulled from Google Cloud, Anthropic and Meta

@@ -15,6 +15,11 @@
  * said no is the thing that gets a domain blacklisted. Won and lost are still
  * the owner's call.
  *
+ * The email agent shares the mailbox: turned on, the same inbox read takes what
+ * people write to the business and drafts each an answer for the owner to send
+ * (`mailInbox`); and "tell every customer this" writes each customer on the
+ * list (`mailCustomers`) their own email, sent within the same daily cap.
+ *
  * Everything lives in the caller's workspace (`sdb`), and every callable needs
  * the `sales` part of a plan (Social Media Manager + Meta & Google Ad Expert).
  */
@@ -32,16 +37,19 @@ import { getSocialSettings } from '../social/settings';
 import { open, seal, tokenVaultReady, type SealedSecret } from '../social/secrets';
 import { deskCall, forEachWorkspace, sdb, workspaceBrand } from '../social/workspace';
 import { findBySearch, findOnMap, type FoundBusiness } from './find';
-import { followUpDue, imapHostFor, readReplies, type LeadRef } from './inbox';
+import { followUpDue, imapHostFor, readReplies, type InboxMail, type LeadRef } from './inbox';
 import { readBusiness } from './site';
 import {
+  answerCustomer,
   answerReply,
+  draftCustomerEmail,
   draftEmail,
   draftFollowUp,
   withFooter,
   writeCallScript,
   type Caller,
   type Draft,
+  type MailKind,
   type Seller,
 } from './write';
 
@@ -50,6 +58,9 @@ const SETTINGS = 'system/sales';
 const SECRET = 'system/sales/secret/credentials';
 const LEADS = 'salesLeads';
 const SUPPRESS = 'salesSuppress';
+/** The email agent: what people wrote to the mailbox, and the customers it writes to. */
+const INBOX = 'mailInbox';
+const CUSTOMERS = 'mailCustomers';
 
 /** Per pass of the sweep: a few at a time reads as a person, not a blast. */
 const PER_PASS = 5;
@@ -86,6 +97,14 @@ interface SalesSettings {
   lastStatus: string | null;
   /** Calling agents: each writes the script for a call a person makes. At most five. */
   callAgents: CallAgent[];
+  /** The email agent reads every email a person sends the mailbox and drafts an answer. Off until the owner turns it on. */
+  inboxAgent: boolean;
+  /** Prices, timings, policies — the only facts its answers may state. */
+  mailKnowledge: string;
+  /** Arrival time up to which people's emails have been read. */
+  mailCheckedAtMs: number;
+  /** What the owner last asked to tell every customer; each customer is written to once per campaign. */
+  campaign: { brief: string; atMs: number } | null;
 }
 
 /** One calling agent as set up on the Sales page. */
@@ -127,6 +146,10 @@ const DEFAULTS: SalesSettings = {
   lastAutoDay: '',
   lastStatus: null,
   callAgents: [],
+  inboxAgent: false,
+  mailKnowledge: '',
+  mailCheckedAtMs: 0,
+  campaign: null,
 };
 
 /** A lead as stored, with the close: the thread we started and what came back. */
@@ -305,7 +328,8 @@ async function mailboxPassword(): Promise<string | null> {
 async function sendOne(
   s: SalesSettings,
   pass: string,
-  mail: { to: string; subject: string; body: string; inReplyTo?: string; references?: string[] },
+  /** `plain`: an answer to someone who wrote to us — a sign-off, not the opt-out footer. */
+  mail: { to: string; subject: string; body: string; inReplyTo?: string; references?: string[]; plain?: boolean },
 ): Promise<string> {
   const smtp = s.smtp!;
   const info = await nodemailer
@@ -314,8 +338,8 @@ async function sendOne(
       from: { name: s.senderName || s.senderCompany, address: smtp.from },
       to: mail.to,
       subject: mail.subject,
-      text: withFooter(mail.body, s),
-      headers: { 'List-Unsubscribe': `<mailto:${smtp.from}?subject=unsubscribe>` },
+      text: mail.plain ? `${mail.body.trim()}\n\n${s.senderName}, ${s.senderCompany}` : withFooter(mail.body, s),
+      ...(mail.plain ? {} : { headers: { 'List-Unsubscribe': `<mailto:${smtp.from}?subject=unsubscribe>` } }),
       ...(mail.inReplyTo ? { inReplyTo: mail.inReplyTo, references: mail.references ?? [mail.inReplyTo] } : {}),
     });
   return String(info.messageId ?? '');
@@ -379,41 +403,55 @@ async function sendApproved(): Promise<number> {
  * Read the mailbox for replies to the leads we wrote to. A reply stops
  * everything automatic for that lead and gets an answer drafted for the owner;
  * "no" and "stop" close it, and "stop" keeps the address off every list.
- * `ok` is what lets follow-ups go in the same pass.
+ * With the inbox agent on, the same read also takes what people wrote to the
+ * business (`answerInbox`). `ok` is what lets follow-ups go in the same pass.
  */
-async function checkInbox(s: SalesSettings): Promise<{ ok: boolean; replies: number }> {
-  if (s.mode !== 'mailbox' || !s.smtp) return { ok: false, replies: 0 };
+async function checkInbox(s: SalesSettings): Promise<{ ok: boolean; replies: number; mail: number }> {
+  if (s.mode !== 'mailbox' || !s.smtp) return { ok: false, replies: 0, mail: 0 };
   const pass = await mailboxPassword();
-  if (!pass) return { ok: false, replies: 0 };
+  if (!pass) return { ok: false, replies: 0, mail: 0 };
   const waiting = (await sdb.collection(LEADS).where('status', '==', 'sent').limit(300).get()).docs;
   const leads: LeadRef[] = waiting
     .map((d) => ({ id: d.id, ...(d.data() as LeadDoc) }))
     .filter((l) => l.email)
     .map((l) => ({ id: l.id, email: l.email!, threadIds: l.threadIds ?? (l.messageId ? [l.messageId] : []) }));
   const startedAtMs = Date.now();
-  if (!leads.length) {
+  if (!leads.length && !s.inboxAgent) {
     await sdb.doc(SETTINGS).set({ inboxCheckedAtMs: startedAtMs }, { merge: true });
-    return { ok: true, replies: 0 };
+    return { ok: true, replies: 0, mail: 0 };
   }
 
-  let replies;
+  // Ten minutes of overlap for a clock that drifts; on the first pass, the last two days only.
+  const mailAfterMs = Math.max(s.mailCheckedAtMs - 10 * 60_000, startedAtMs - 2 * 86_400_000);
+  // A day of overlap for lead replies, because IMAP's SINCE is a date, not a moment; two weeks at most.
+  const leadSinceMs = Math.max(s.inboxCheckedAtMs - 86_400_000, startedAtMs - 14 * 86_400_000);
+  let read;
   try {
-    replies = await readReplies({
+    read = await readReplies({
       host: s.imapHost || imapHostFor(s.smtp.host),
       user: s.smtp.user,
       pass,
-      // A day of overlap, because IMAP's SINCE is a date, not a moment; two weeks at most.
-      sinceMs: Math.max(s.inboxCheckedAtMs - 86_400_000, startedAtMs - 14 * 86_400_000),
+      sinceMs: leads.length ? Math.min(leadSinceMs, mailAfterMs) : mailAfterMs,
       leads,
+      ...(s.inboxAgent
+        ? {
+            mail: {
+              own: [s.smtp.user, s.smtp.from],
+              afterMs: mailAfterMs,
+              max: 10,
+              known: async (messageId: string) => (await sdb.doc(`${INBOX}/${mailKey(messageId)}`).get()).exists,
+            },
+          }
+        : {}),
     });
   } catch (e) {
     await sdb.doc(SETTINGS).set({ inboxStatus: `Could not read the inbox: ${(e as Error).message}`.slice(0, 300) }, { merge: true });
-    return { ok: false, replies: 0 };
+    return { ok: false, replies: 0, mail: 0 };
   }
 
   const settings = await getSocialSettings();
   let answered = 0;
-  for (const reply of replies) {
+  for (const reply of read.replies) {
     const ref = sdb.doc(`${LEADS}/${reply.leadId}`);
     const lead = (await ref.get()).data() as LeadDoc | undefined;
     if (!lead || lead.status !== 'sent') continue; // already handled, or closed by hand
@@ -436,8 +474,171 @@ async function checkInbox(s: SalesSettings): Promise<{ ok: boolean; replies: num
       error: closed ? (intent === 'unsubscribe' ? 'Asked not to be written to.' : 'Said no.') : null,
     });
   }
-  await sdb.doc(SETTINGS).set({ inboxCheckedAtMs: startedAtMs, inboxStatus: null }, { merge: true });
-  return { ok: true, replies: answered };
+  for (const mail of read.mail) await answerInbox(s, settings.textModel, mail);
+  await sdb.doc(SETTINGS).set(
+    { inboxCheckedAtMs: startedAtMs, inboxStatus: null, ...(s.inboxAgent ? { mailCheckedAtMs: read.cursorMs ?? startedAtMs } : {}) },
+    { merge: true },
+  );
+  return { ok: true, replies: answered, mail: read.mail.length };
+}
+
+const mailKey = (messageId: string) => createHash('sha1').update(messageId).digest('hex').slice(0, 24);
+
+/** An email a person sent, as kept at `mailInbox/{id}`, with the answer the agent drafted. */
+interface InboxDoc extends InboxMail {
+  kind: MailKind;
+  summary: string;
+  draft: Draft | null;
+  /** "open": waits for the owner. "answered": sent from here. "done": needs nothing (or the owner said so). */
+  status: 'open' | 'answered' | 'done';
+  answeredAtMs: number | null;
+  error: string | null;
+}
+
+/**
+ * One email a person sent the business: what they want, and the answer drafted
+ * for the owner to send. "Stop emailing me" puts them on the do-not-write list;
+ * a pitch to us is filed as needing nothing. Anyone else becomes (or stays) a
+ * customer, with what they last wrote, so a customer email can start from it.
+ */
+async function answerInbox(s: SalesSettings, model: string, mail: InboxMail): Promise<void> {
+  let out: { kind: MailKind; summary: string; body: string } = { kind: 'other', summary: '', body: '' };
+  let error: string | null = null;
+  try {
+    out = await answerCustomer({ model, seller: seller(s), knowledge: s.mailKnowledge, mail });
+  } catch (e) {
+    error = `Could not draft an answer: ${(e as Error).message}`.slice(0, 200);
+  }
+  const quiet = out.kind === 'sales_pitch' || out.kind === 'unsubscribe';
+  const doc: InboxDoc = {
+    ...mail,
+    kind: out.kind,
+    summary: out.summary,
+    draft: out.body ? { subject: (/^re:/i.test(mail.subject) ? mail.subject : `Re: ${mail.subject}`.trim()).slice(0, 120), body: out.body } : null,
+    status: quiet ? 'done' : 'open',
+    answeredAtMs: null,
+    error,
+  };
+  await sdb.doc(`${INBOX}/${mailKey(mail.messageId)}`).set(doc);
+  const key = emailKey(mail.from);
+  const ref = sdb.doc(`${CUSTOMERS}/${key}`);
+  if (out.kind === 'unsubscribe') {
+    await sdb.doc(`${SUPPRESS}/${key}`).set({ atMs: Date.now() });
+    if ((await ref.get()).exists) await ref.update({ status: 'unsubscribed' as CustomerStatus, draft: null });
+    return;
+  }
+  if (quiet) return;
+  const seen = { lastWroteAtMs: mail.atMs, lastText: mail.text.slice(0, 600) };
+  if ((await ref.get()).exists) await ref.update(seen);
+  else await ref.set(newCustomer({ email: mail.from, name: mail.name, note: '', source: 'inbox' }, seen));
+}
+
+// ── customers ───────────────────────────────────────────────────────────────
+
+type CustomerStatus = 'idle' | 'drafted' | 'approved' | 'sent' | 'failed' | 'skipped' | 'unsubscribed';
+
+/** A customer as kept at `mailCustomers/{emailKey}`, with this campaign's email to them. */
+interface CustomerDoc {
+  email: string;
+  name: string;
+  note: string;
+  source: 'inbox' | 'list';
+  createdAtMs: number;
+  lastWroteAtMs: number | null;
+  lastText: string;
+  status: CustomerStatus;
+  draft: Draft | null;
+  problems: string[];
+  /** The campaign this customer's email belongs to; below the current one means not written yet. */
+  campaignAtMs: number;
+  sentAtMs: number | null;
+  error: string | null;
+}
+
+function newCustomer(c: Pick<CustomerDoc, 'email' | 'name' | 'note' | 'source'>, seen: Partial<CustomerDoc> = {}): CustomerDoc {
+  return {
+    ...c,
+    createdAtMs: Date.now(),
+    lastWroteAtMs: null,
+    lastText: '',
+    status: 'idle',
+    draft: null,
+    problems: [],
+    campaignAtMs: 0,
+    sentAtMs: null,
+    error: null,
+    ...seen,
+  };
+}
+
+/**
+ * Write the current campaign's email to up to `max` customers who have none
+ * yet, each its own. "Send directly", chosen once on the Sales page, approves
+ * a draft that passed the checks. Returns how many were written, and whether
+ * more are waiting.
+ */
+async function writeCustomers(max: number): Promise<{ written: number; more: boolean }> {
+  const s = await getSales();
+  const c = s.campaign;
+  if (!c) return { written: 0, more: false };
+  const model = (await getSocialSettings()).textModel;
+  const docs = (await sdb.collection(CUSTOMERS).where('campaignAtMs', '<', c.atMs).limit(max).get()).docs;
+  let written = 0;
+  for (const doc of docs) {
+    const cu = doc.data() as CustomerDoc;
+    if (cu.status === 'unsubscribed' || (await sdb.doc(`${SUPPRESS}/${doc.id}`).get()).exists) {
+      await doc.ref.update({ campaignAtMs: c.atMs, status: 'unsubscribed' as CustomerStatus, draft: null });
+      continue;
+    }
+    try {
+      const d = await draftCustomerEmail({ model, seller: seller(s), brief: c.brief, customer: cu });
+      const direct = s.mode === 'mailbox' && s.sendMode === 'direct' && !d.problems.length;
+      await doc.ref.update({
+        draft: { subject: d.subject, body: d.body },
+        problems: d.problems,
+        status: (direct ? 'approved' : 'drafted') as CustomerStatus,
+        campaignAtMs: c.atMs,
+        error: null,
+      });
+      written++;
+    } catch (e) {
+      await doc.ref.update({ status: 'failed' as CustomerStatus, campaignAtMs: c.atMs, error: (e as Error).message.slice(0, 200) });
+    }
+  }
+  return { written, more: docs.length === max };
+}
+
+/** Send approved customer emails within today's cap — the same cap the sales emails keep. Returns how many went. */
+async function sendCustomers(): Promise<number> {
+  const s = await getSales();
+  if (s.mode !== 'mailbox' || !s.smtp) return 0;
+  const day = dayRoom(s);
+  const room = Math.min(PER_PASS, day.room);
+  if (room <= 0) return 0;
+  const pass = await mailboxPassword();
+  if (!pass) return 0;
+  const due = (await sdb.collection(CUSTOMERS).where('status', '==', 'approved').limit(room).get()).docs;
+  let sent = 0;
+  for (const doc of due) {
+    const cu = doc.data() as CustomerDoc;
+    if (!cu.draft) {
+      await doc.ref.update({ status: 'failed' as CustomerStatus, error: 'No email to send.' });
+      continue;
+    }
+    if ((await sdb.doc(`${SUPPRESS}/${doc.id}`).get()).exists) {
+      await doc.ref.update({ status: 'unsubscribed' as CustomerStatus });
+      continue;
+    }
+    try {
+      await sendOne(s, pass, { to: cu.email, subject: cu.draft.subject, body: cu.draft.body });
+      await doc.ref.update({ status: 'sent' as CustomerStatus, sentAtMs: Date.now(), error: null });
+      sent++;
+    } catch (e) {
+      await doc.ref.update({ status: 'failed' as CustomerStatus, error: `Sending failed: ${(e as Error).message}`.slice(0, 200) });
+    }
+  }
+  await day.record(sent);
+  return sent;
 }
 
 /** Two follow-ups at most to a lead that has not answered, within today's cap. Returns how many went. */
@@ -514,6 +715,8 @@ const settingsSchema = z.object({
   dailyCap: z.number().int().min(1).max(50).optional(),
   autoDaily: z.boolean().optional(),
   followUps: z.boolean().optional(),
+  inboxAgent: z.boolean().optional(),
+  mailKnowledge: z.string().trim().max(4000).optional(),
   imapHost: z.string().trim().max(120).regex(/^([a-z0-9.-]+)?$/i).optional(),
   smtp: z
     .object({
@@ -722,12 +925,165 @@ export const salesCallScript = deskCall('sales', { timeoutSeconds: 120 }, async 
   return { ok: true, script };
 });
 
-/** Whether salesSweep would do anything here now: the day's search, or leads to send to or hear back from. The sleeper asks. */
+// ── the email agent's callables ─────────────────────────────────────────────
+
+const docIdRe = /^[a-f0-9]{20,40}$/;
+
+/** The inbox: send the drafted answer (edited or not), file one as needing nothing, or read the mailbox now. */
+export const mailInboxAction = deskCall('sales', { timeoutSeconds: 300, memory: '512MiB' }, async (req) => {
+  const parsed = z
+    .object({
+      action: z.enum(['send', 'done', 'check']),
+      id: z.string().regex(docIdRe).optional(),
+      subject: z.string().trim().min(1).max(120).optional(),
+      body: z.string().trim().min(2).max(3000).optional(),
+    })
+    .safeParse(req.data ?? {});
+  if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
+  const { action, id, subject, body } = parsed.data;
+  const s = await getSales();
+  if (action === 'check') {
+    if (s.mode !== 'mailbox' || !s.smtp) throw new HttpsError('failed-precondition', 'Connect your mailbox on the Sales page first.');
+    if (!s.inboxAgent) throw new HttpsError('failed-precondition', 'Turn the inbox agent on first.');
+    const r = await checkInbox(s);
+    if (!r.ok) throw new HttpsError('unavailable', (await getSales()).inboxStatus ?? 'Could not read the inbox.');
+    return { ok: true, mail: r.mail, replies: r.replies };
+  }
+  if (!id) throw new HttpsError('invalid-argument', 'Which email?');
+  const ref = sdb.doc(`${INBOX}/${id}`);
+  const mail = (await ref.get()).data() as InboxDoc | undefined;
+  if (!mail) throw new HttpsError('not-found', 'No such email.');
+  if (action === 'done') {
+    await ref.update({ status: 'done' });
+    return { ok: true };
+  }
+  // The answer to a customer: always pressed by the owner, never sent by the sweep.
+  const draft = subject && body ? { subject, body } : mail.draft;
+  if (!draft) throw new HttpsError('invalid-argument', 'Write the answer first.');
+  const pass = await mailboxPassword();
+  if (s.mode !== 'mailbox' || !s.smtp || !pass) throw new HttpsError('failed-precondition', 'Connect your mailbox on the Sales page to send from here.');
+  try {
+    await sendOne(s, pass, { to: mail.from, ...draft, inReplyTo: mail.messageId, references: [mail.messageId], plain: true });
+  } catch (e) {
+    throw new HttpsError('unavailable', `The mailbox refused it: ${(e as Error).message}`);
+  }
+  await ref.update({ draft, status: 'answered', answeredAtMs: Date.now() });
+  return { ok: true };
+});
+
+/** Paste customers, one per line: name, email, and a note about them (what they bought, when, anything). */
+export const mailAddCustomers = deskCall('sales', async (req) => {
+  const parsed = z.object({ lines: z.string().max(100_000) }).safeParse(req.data ?? {});
+  if (!parsed.success) throw new HttpsError('invalid-argument', 'Paste one customer per line: name, email, note.');
+  let added = 0;
+  let updated = 0;
+  for (const c of parseCustomers(parsed.data.lines)) {
+    const ref = sdb.doc(`${CUSTOMERS}/${emailKey(c.email)}`);
+    if ((await ref.get()).exists) {
+      await ref.update({ ...(c.name ? { name: c.name } : {}), ...(c.note ? { note: c.note } : {}) });
+      updated++;
+    } else {
+      await ref.set(newCustomer({ ...c, source: 'list' }));
+      added++;
+    }
+  }
+  return { ok: true, added, updated };
+});
+
+/** Customers from pasted lines — the address wherever it sits, then the first other field as the name and the rest as the note; lines without an address are dropped. Pure. */
+export function parseCustomers(lines: string): { email: string; name: string; note: string }[] {
+  const seen = new Set<string>();
+  const out: { email: string; name: string; note: string }[] = [];
+  for (const line of lines.split('\n').slice(0, 2000)) {
+    const parts = line.split(/[,\t;]/).map((x) => x.trim());
+    const at = parts.findIndex((x) => /^[^@\s<>]+@[^@\s<>]+\.[a-z]{2,}$/i.test(x));
+    if (at < 0) continue;
+    const email = parts[at].toLowerCase();
+    if (seen.has(email)) continue;
+    seen.add(email);
+    const rest = parts.filter((_, i) => i !== at);
+    out.push({ email, name: (rest[0] ?? '').slice(0, 80), note: rest.slice(1).filter(Boolean).join(', ').slice(0, 300) });
+  }
+  return out;
+}
+
+/**
+ * "Tell every customer this": starts a campaign — one personal email per
+ * customer — and writes the first few now; the sweep writes the rest. With no
+ * brief it carries on the current one.
+ */
+export const mailWriteCustomers = deskCall('sales', { timeoutSeconds: 300 }, async (req) => {
+  const parsed = z.object({ brief: z.string().trim().min(5).max(2000).optional() }).safeParse(req.data ?? {});
+  if (!parsed.success) throw new HttpsError('invalid-argument', 'Say what to tell your customers, in a sentence or two.');
+  const s = await getSales();
+  if (!s.product || !s.senderCompany || !s.senderName) {
+    throw new HttpsError('failed-precondition', 'Fill in what you sell and who is writing on the Sales page first.');
+  }
+  if ((await sdb.collection(CUSTOMERS).limit(1).get()).empty) {
+    throw new HttpsError('failed-precondition', 'No customers yet — paste your customer list on the Email page, or turn the inbox agent on.');
+  }
+  if (parsed.data.brief) await sdb.doc(SETTINGS).set({ campaign: { brief: parsed.data.brief, atMs: Date.now() } }, { merge: true });
+  else if (!s.campaign) throw new HttpsError('invalid-argument', 'Say what to tell your customers.');
+  const r = await writeCustomers(8);
+  return { ok: true, ...r, direct: s.mode === 'mailbox' && Boolean(s.smtp) && s.sendMode === 'direct' };
+});
+
+/** One customer's email: approve, send now, skip, write again, edit, or stop writing to them. `approveAll` takes no id. */
+export const mailCustomerAction = deskCall('sales', { timeoutSeconds: 120 }, async (req) => {
+  const parsed = z
+    .object({
+      action: z.enum(['approve', 'send', 'skip', 'rewrite', 'edit', 'optout', 'approveAll']),
+      id: z.string().regex(docIdRe).optional(),
+      subject: z.string().trim().min(1).max(120).optional(),
+      body: z.string().trim().min(10).max(3000).optional(),
+    })
+    .safeParse(req.data ?? {});
+  if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
+  const { action, id, subject, body } = parsed.data;
+  if (action === 'approveAll') {
+    const drafted = (await sdb.collection(CUSTOMERS).where('status', '==', 'drafted').limit(500).get()).docs;
+    for (const d of drafted) await d.ref.update({ status: 'approved' as CustomerStatus });
+    return { ok: true, approved: drafted.length };
+  }
+  if (!id) throw new HttpsError('invalid-argument', 'Which customer?');
+  const ref = sdb.doc(`${CUSTOMERS}/${id}`);
+  const cu = (await ref.get()).data() as CustomerDoc | undefined;
+  if (!cu) throw new HttpsError('not-found', 'No such customer.');
+  if (action === 'edit') {
+    if (!subject || !body) throw new HttpsError('invalid-argument', 'A subject and a body are both needed.');
+    await ref.update({ draft: { subject, body }, problems: [] });
+    return { ok: true };
+  }
+  if (action === 'optout') {
+    await sdb.doc(`${SUPPRESS}/${id}`).set({ atMs: Date.now() });
+    await ref.update({ status: 'unsubscribed' as CustomerStatus, draft: null });
+    return { ok: true };
+  }
+  if (action === 'skip') {
+    await ref.update({ status: 'skipped' as CustomerStatus });
+    return { ok: true };
+  }
+  if (action === 'rewrite') {
+    await ref.update({ campaignAtMs: 0 });
+    return { ok: true, ...(await writeCustomers(1)) };
+  }
+  if (!cu.draft) throw new HttpsError('failed-precondition', 'There is no email written for them yet.');
+  if (cu.status === 'unsubscribed') throw new HttpsError('failed-precondition', 'They asked not to be written to.');
+  await ref.update({ status: 'approved' as CustomerStatus });
+  // "Send now" goes out in this call, inside the same daily cap the sweep keeps.
+  return action === 'send' ? { ok: true, sent: await sendCustomers() } : { ok: true };
+});
+
+/** Whether salesSweep would do anything here now: the day's search, leads or customers to write to or send to, or an inbox to read. The sleeper asks. */
 export async function salesHasWork(): Promise<boolean> {
   const s = await getSales();
   if (!s.product || !s.senderCompany) return false;
   if (s.autoDaily && s.kinds.length && s.city && s.lastAutoDay !== pktDay()) return true;
+  if (s.campaign && !(await sdb.collection(CUSTOMERS).where('campaignAtMs', '<', s.campaign.atMs).limit(1).get()).empty) return true;
   if (s.mode !== 'mailbox' || !s.smtp) return false;
+  // shortcut: an inbox agent keeps the sweep awake every 15 minutes; if that costs too much, poll it on a slower schedule of its own.
+  if (s.inboxAgent) return true;
+  if (!(await sdb.collection(CUSTOMERS).where('status', '==', 'approved').limit(1).get()).empty) return true;
   return !(await sdb.collection(LEADS).where('status', 'in', ['approved', 'sent']).limit(1).get()).empty;
 }
 
@@ -755,14 +1111,25 @@ export const salesSweep = onSchedule(
       // Replies first: whoever answered must be off the follow-up list before it is read.
       const inbox = await checkInbox(s).catch((e) => {
         logger.warn('sales: the inbox check failed', { error: (e as Error).message });
-        return { ok: false, replies: 0 };
+        return { ok: false, replies: 0, mail: 0 };
       });
       if (inbox.replies) notes.push(`${inbox.replies} replied — answers drafted.`);
+      if (inbox.mail) notes.push(`${inbox.mail} new email${inbox.mail === 1 ? '' : 's'} in the inbox — answers drafted.`);
       const sent = await sendApproved().catch((e) => {
         logger.warn('sales: sending failed', { error: (e as Error).message });
         return 0;
       });
       if (sent) notes.push(`Sent ${sent}.`);
+      const wrote = await writeCustomers(10).catch((e) => {
+        logger.warn('sales: customer emails failed', { error: (e as Error).message });
+        return { written: 0, more: false };
+      });
+      if (wrote.written) notes.push(`Wrote ${wrote.written} customer email${wrote.written === 1 ? '' : 's'}.`);
+      const toCustomers = await sendCustomers().catch((e) => {
+        logger.warn('sales: sending to customers failed', { error: (e as Error).message });
+        return 0;
+      });
+      if (toCustomers) notes.push(`Sent ${toCustomers} to customers.`);
       if (inbox.ok) {
         const followed = await sendFollowUps(await getSales()).catch((e) => {
           logger.warn('sales: follow-ups failed', { error: (e as Error).message });

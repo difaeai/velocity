@@ -790,6 +790,19 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ----- mailInbox/{id}, mailCustomers/{emailHash} ------------------------
+    // The email agent: what people wrote to the connected mailbox with the
+    // answer it drafted, and the customers it writes to. Backend writes only;
+    // an answer leaves through a callable the owner presses.
+    match /mailInbox/{mailId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+    match /mailCustomers/{customerId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // ----- aiUsage/{month_wid}, agentUsage/{month_wid} ----------------------
     // The AI meter (Gemini spend) and the AI agents' month (calls, minutes,
     // WhatsApp), one row per workspace per month. Written only by the backend.
