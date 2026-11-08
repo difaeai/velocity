@@ -3,6 +3,7 @@ import Link from 'next/link';
 
 import { VelocityMark } from '@/components/BrandMark';
 import { ArrowRight, Clock, Handshake, Megaphone, Mic, Sparkle, TrendingUp } from '@/components/site/Icons';
+import { Vexa } from '@/components/site/Assistant';
 import { StudioFaq, StudioPricing } from '@/components/site/StudioSections';
 import { STUDIO_FROM_USD, STUDIO_TRIAL_HOURS } from '@/lib/studio';
 import site from '@/components/site/site.module.css';
@@ -225,6 +226,7 @@ export default function StudioPage() {
           </span>
         </div>
       </footer>
+      <Vexa />
     </main>
   );
 }

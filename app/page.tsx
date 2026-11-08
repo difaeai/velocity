@@ -3,6 +3,7 @@ import Link from 'next/link';
 
 import { VelocityMark } from '@/components/BrandMark';
 import { HeroSlider, type HeroSlide } from '@/components/site/HeroSlider';
+import { Vexa } from '@/components/site/Assistant';
 import { Reveal } from '@/components/site/Reveal';
 import { SiteNav } from '@/components/site/SiteNav';
 import { StudioScrub } from '@/components/site/StudioScrub';
@@ -274,6 +275,8 @@ export default function Home() {
           </div>
         </section>
       </main>
+
+      <Vexa />
 
       <footer className={styles.footer}>
         <div className={styles.wrap}>
