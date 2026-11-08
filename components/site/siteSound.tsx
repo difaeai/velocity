@@ -143,8 +143,8 @@ export function toggleMute(at: number) {
   else if (audio?.src && state.owner) audio.play().then(started, () => undefined);
 }
 
-/** How far into its current line the voice is, in seconds. */
-export const voiceAt = (): number => audio?.currentTime ?? 0;
+/** The line the voice is on (its file), and how far into it, in seconds — for Vexa's subtitles. */
+export const voiceNow = () => ({ src: audio?.src ?? '', at: audio?.currentTime ?? 0, length: audio?.duration || 0 });
 
 /** A running audio context for the small sound effects, or null while muted or not yet allowed. */
 export const effects = (): AudioContext | null => (!state.muted && ctx?.state === 'running' ? ctx : null);

@@ -1,6 +1,136 @@
-/* A plan card's "Hear Vexa" button, in the corner of its film, with a ring that
-   keeps asking for the first tap and a wave while she talks. */
+/* Vexa at the bottom right of every page: waist up, her open hand towards the
+   page, cut off by the bottom of the screen like a presenter in frame (the
+   picture ends at her waist, and sits a little below the edge so her float
+   never shows the cut). Her subtitles run in a bubble to her left. */
 
+.guide {
+  position: fixed;
+  /* Under the header (90) and the rides page's install bar (80). */
+  z-index: 79;
+  right: max(6px, env(safe-area-inset-right));
+  bottom: -14px;
+  width: clamp(118px, 15vw, 230px);
+  pointer-events: none;
+}
+
+.vexa {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.vexa:focus-visible {
+  outline: 2px solid var(--lime);
+  outline-offset: -4px;
+  border-radius: 24px;
+}
+
+.vexa img {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+  filter: drop-shadow(0 0 16px rgba(18, 161, 94, 0.35)) drop-shadow(0 10px 22px rgba(4, 18, 12, 0.35));
+  transform-origin: 60% 100%;
+  animation: float 5s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -6px;
+  }
+}
+
+/* Talking: a small sway and nod. */
+.talking img {
+  animation:
+    float 5s ease-in-out infinite,
+    talk 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes talk {
+  from {
+    rotate: -0.8deg;
+    scale: 1;
+  }
+  to {
+    rotate: 0.8deg;
+    scale: 1.012;
+  }
+}
+
+/* Her subtitles — or, before she speaks, an invitation to tap her. */
+.caption {
+  position: absolute;
+  right: 70%;
+  bottom: 56%;
+  width: max-content;
+  max-width: min(340px, 60vw);
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid rgba(204, 255, 0, 0.55);
+  border-radius: 16px 16px 4px 16px;
+  background: rgba(4, 18, 12, 0.88);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 14px 30px -14px rgba(4, 18, 12, 0.6);
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #fff;
+}
+
+.caption b {
+  color: var(--lime);
+}
+
+.talking .caption {
+  border-color: var(--lime);
+}
+
+.short {
+  display: none;
+  white-space: nowrap;
+}
+
+/* The rides page's install bar (≤ 1080px) covers the bottom: she stands behind it, its top hiding her cut. */
+@media (max-width: 1080px) {
+  .aboveBar {
+    bottom: 26px;
+  }
+}
+
+/* Phones: a smaller Vexa; before she speaks, just "Tap me". */
+@media (max-width: 640px) {
+  .caption {
+    font-size: 13px;
+  }
+
+  .guide:not(.talking) .caption {
+    padding: 6px 11px;
+  }
+
+  .long {
+    display: none;
+  }
+
+  .short {
+    display: inline;
+  }
+}
+
+/* A plan card's "Hear Vexa", in the corner of its film. */
 .ask {
   position: absolute;
   z-index: 2;
@@ -95,6 +225,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .vexa img,
+  .talking img,
   .ask::before,
   .wave i {
     animation: none;
