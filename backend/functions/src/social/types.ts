@@ -64,9 +64,11 @@ export interface PlatformCredentials {
   accessToken: string;
   /** Page id / IG user id / channel id. Optional where the API can discover it. */
   externalId?: string;
-  /** YouTube only — a refresh token is useless without the app that issued it. */
+  /** YouTube and TikTok — a refresh token is useless without the app that issued it. */
   clientId?: string;
   clientSecret?: string;
+  /** Keeps a refresh token the network has just replaced (TikTok kills the old one on every refresh). */
+  rotate?: (refreshToken: string) => Promise<void>;
 }
 
 export type AccountStatus = 'connected' | 'error' | 'disconnected';

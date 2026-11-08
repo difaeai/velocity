@@ -85,7 +85,7 @@ import {
   type CostRead,
   type RankingRow,
 } from './adsCost';
-import { downloadAsset, refreshAssetUrls, storeFile } from './assets';
+import { downloadAsset, refreshAssetUrls, storeFile, type StoredFile } from './assets';
 import { competitorAdsBlock } from './competitorAds';
 import { brandBlock, brandName, briefBlock, hardRules, marketName, researchBlock, standingInstructions, wordmark } from './crew';
 import { activeTeam, employeeIntro } from './employees';
@@ -97,12 +97,15 @@ import { latestPageRead } from './insights';
 import { pictureFor } from './picture';
 import { planReel, renderReel, stockQuery } from './reel';
 import { googleAdsSpend } from './googleAds';
+import { loadCredentials } from './accounts';
+import { publishTo, youtubeProcessed } from './platforms';
+import { createOnTikTok, createOnYouTube, setVideoAdStatus, syncVideoCampaigns, tiktokAdsSpend, type VideoNetwork } from './videoAds';
 import { getSocialSettings } from './settings';
 import { planRef, type MonthPlan } from './strategy';
 import { open, tokenVaultReady, type SealedSecret } from './secrets';
 import { UTM_TAGS, storeSales, withStoreSales } from './store';
 import { accentFor, planStill, renderStill } from './still';
-import { postMedia, type Employee, type SocialPost } from './types';
+import { postMedia, type Employee, type MediaAsset, type SocialPost } from './types';
 
 const REGION = 'asia-south1';
 const GRAPH = 'https://graph.facebook.com/v24.0';
@@ -312,6 +315,53 @@ interface BuiltCreative {
   previewUrl: string | null;
 }
 
+/** A reel of the plan's words over real footage, with its cover: the same as the organic reels. */
+async function renderAdReel(plan: AdPlanSpec, stamp: string, dir: string, accent: ReturnType<typeof accentFor>): Promise<{ video: StoredFile; still: Buffer }> {
+  const scene = plan.picture?.trim() || `${plan.headline}. ${plan.lines.join('. ')}`;
+  const reel = planReel({
+    format: 'reel',
+    script: {
+      hook: plan.lines[0],
+      hookVariants: [],
+      frames: plan.lines.slice(1).map((overlay) => ({ scene: overlay, overlay })),
+      voiceover: '',
+      cta: plan.headline,
+      rationale: '',
+      viralHook: '',
+    },
+  });
+  // Real footage, a track and a voice under the words — the same as the organic reels.
+  const under = await underlay({
+    postId: `ad-${stamp}`,
+    scenes: reel.beats.map((b) => b.scene),
+    orientation: 'portrait',
+    footage: true,
+    voiceover: [plan.lines.join('. '), plan.headline].join('. '),
+  });
+  const pic = await pictureFor({ scene, query: stockQuery(scene), aspect: '9:16', layout: 'top', out: path.join(dir, 'picture.jpg') });
+  try {
+    const video = await storeFile({
+      path: wsPath(`socialAds/${stamp}/video.mp4`),
+      bytes: await renderReel(reel, {
+        wordmark: wordmark(),
+        localClips: under.clips,
+        localImages: under.clips.length || !pic ? [] : [pic.path],
+        music: under.music,
+        voice: under.voice,
+      }),
+      contentType: 'video/mp4',
+    });
+    const still = await renderStill(planStill({ headline: plan.lines[0], body: plan.headline, aspect: '9:16', layout: 'top' }), {
+      wordmark: wordmark(),
+      photo: pic?.path,
+      accent,
+    });
+    return { video, still };
+  } finally {
+    await under.cleanup();
+  }
+}
+
 /**
  * Make the ad's creative and register it with Meta.
  *
@@ -365,48 +415,9 @@ async function buildCreative(
         ? await downloadAsset(image)
         : await renderStill(planStill({ headline: post.script?.hook || plan.lines[0], aspect: '9:16', layout: 'top' }), { wordmark: wordmark(), accent });
     } else if (plan.format === 'video') {
-      const reel = planReel({
-        format: 'reel',
-        script: {
-          hook: plan.lines[0],
-          hookVariants: [],
-          frames: plan.lines.slice(1).map((overlay) => ({ scene: overlay, overlay })),
-          voiceover: '',
-          cta: plan.headline,
-          rationale: '',
-          viralHook: '',
-        },
-      });
-      // Real footage, a track and a voice under the words — the same as the organic reels.
-      const under = await underlay({
-        postId: `ad-${stamp}`,
-        scenes: reel.beats.map((b) => b.scene),
-        orientation: 'portrait',
-        footage: true,
-        voiceover: [plan.lines.join('. '), plan.headline].join('. '),
-      });
-      const pic = await pictureFor({ scene, query: stockQuery(scene), aspect: '9:16', layout: 'top', out: path.join(dir, 'picture.jpg') });
-      try {
-        const stored = await storeFile({
-          path: wsPath(`socialAds/${stamp}/video.mp4`),
-          bytes: await renderReel(reel, {
-            wordmark: wordmark(),
-            localClips: under.clips,
-            localImages: under.clips.length || !pic ? [] : [pic.path],
-            music: under.music,
-            voice: under.voice,
-          }),
-          contentType: 'video/mp4',
-        });
-        videoUrl = stored.url;
-      } finally {
-        await under.cleanup();
-      }
-      still = await renderStill(planStill({ headline: plan.lines[0], body: plan.headline, aspect: '9:16', layout: 'top' }), {
-        wordmark: wordmark(),
-        photo: pic?.path,
-        accent,
-      });
+      const made = await renderAdReel(plan, stamp, dir, accent);
+      videoUrl = made.video.url;
+      still = made.still;
     } else {
       const body = plan.lines.slice(1).join(' ') || (plan.headline !== plan.lines[0] ? plan.headline : null);
       const pic = await pictureFor({ scene, query: stockQuery(scene), aspect: '4:5', out: path.join(dir, 'picture.jpg') });
@@ -917,6 +928,51 @@ async function createAtMeta(params: {
   }
 }
 
+/**
+ * The same plan and limit as Meta's, on YouTube or TikTok: render the reel, put
+ * it where that network needs it, and make the campaign. Always a new reel.
+ */
+async function createVideoCampaign(params: { network: VideoNetwork; cfg: AdsConfig; plan: AdPlanSpec; budget: number; launch: boolean; stamp: string }) {
+  const { network, cfg, plan, stamp } = params;
+  const accent = accentFor(isHouse() ? null : currentWorkspace());
+  const dir = await mkdtemp(path.join(tmpdir(), 'velocity-ad-'));
+  try {
+    const { video, still } = await renderAdReel(plan, stamp, dir, accent);
+    const preview = await storeFile({ path: wsPath(`socialAds/${stamp}/preview.jpg`), bytes: still, contentType: 'image/jpeg' });
+    // Square, with the brand's name on it: what both networks show as who the ad is from.
+    const { default: sharp } = await import('sharp');
+    const card = await renderStill(planStill({ headline: brandName(), aspect: '4:5', layout: 'top' }), { accent });
+    const badge = await sharp(card).extract({ left: 0, top: 0, width: 1080, height: 1080 }).resize(512, 512).jpeg().toBuffer();
+    const input = {
+      plan,
+      budget: params.budget,
+      currency: cfg.currency,
+      link: cfg.link,
+      brand: brandName(),
+      market: marketName(),
+      launch: params.launch,
+      stamp,
+      endMs: Date.now() + plan.days * 86_400_000,
+    };
+
+    let campaignId: string;
+    if (network === 'youtube') {
+      const channel = await loadCredentials('youtube');
+      if (!channel) throw new HttpsError('failed-precondition', 'Connect your YouTube channel first: the ad has to be a video on it.');
+      const media = [{ kind: 'video', provider: 'desk', model: null, jobId: null, storagePath: video.path, url: video.url, slide: 0 }] as unknown as MediaAsset[];
+      const uploaded = await publishTo('youtube', channel, { format: 'reel', media, caption: plan.primaryText, title: plan.headline, tags: [], privacy: 'unlisted' });
+      await youtubeProcessed(channel, uploaded.id);
+      campaignId = await createOnYouTube({ ...input, youtubeId: uploaded.id, logo: badge });
+    } else {
+      const avatar = await storeFile({ path: wsPath(`socialAds/${stamp}/avatar.jpg`), bytes: badge, contentType: 'image/jpeg' });
+      campaignId = await createOnTikTok({ ...input, videoUrl: video.url, coverUrl: preview.url, avatarUrl: avatar.url });
+    }
+    return { campaignId, adsetId: '', adId: '', video: true, previewUrl: preview.url, cities: plan.audience.cities, interests: [] as string[] };
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 // ── a fresh creative for a tired campaign ───────────────────────────────────
 
 /** What the desk keeps on a campaign it made, beyond what Meta reports. */
@@ -1314,11 +1370,12 @@ async function syncAds(): Promise<string> {
         logger.warn('ads: could not read our own rides for cost per order', { error: (e as Error).message });
         return null;
       });
-  // Blended means every ad rupee: Google's spend over the same seven days, when an account is connected.
+  // Blended means every ad rupee: Google's and TikTok's spend over the same seven days, when connected.
   const google = rides ? await googleAdsSpend(cfg.currency) : null;
+  const tiktok = rides ? await tiktokAdsSpend(cfg.currency) : null;
   const returns = rides
     ? blended({
-        spend: totals.spend + (google ?? 0),
+        spend: totals.spend + (google ?? 0) + (tiktok ?? 0),
         currency: cfg.currency,
         orders: rides.reduce((n, d) => n + d.tripsCompleted, 0),
         commission: rides.reduce((n, d) => n + d.commission, 0),
@@ -1498,6 +1555,7 @@ export const socialAdsSync = onSchedule(
   () =>
     forEachWorkspace('ads', async () => {
       const cfg = await adsConfig();
+      await syncVideoCampaigns(cfg.currency);
       if (!cfg.adAccountId) return;
       await syncAndRecord().catch((e) => logger.error('ads: sync failed', { error: (e as Error).message }));
     }),
@@ -1505,6 +1563,9 @@ export const socialAdsSync = onSchedule(
 
 export const adminSyncAds = deskCall('ads', { timeoutSeconds: 540, memory: '2GiB' }, async () => {
   try {
+    const cfg = await adsConfig();
+    await syncVideoCampaigns(cfg.currency);
+    if (!cfg.adAccountId) return { ok: true, status: 'YouTube and TikTok numbers read.' };
     return { ok: true, status: await syncAndRecord() };
   } catch (e) {
     if (e instanceof HttpsError) throw e;
@@ -1545,6 +1606,7 @@ export const adminCreateAd = deskCall('ads', { timeoutSeconds: 540, memory: '2Gi
       days: z.number().int().min(1).max(30).optional(),
       source: sourceSchema.optional(),
       launch: z.boolean().optional(),
+      network: z.enum(['meta', 'youtube', 'tiktok']).optional(),
       /** The plan the owner designed with the expert; every field is clamped again here. */
       plan: z.record(z.unknown()).optional(),
     })
@@ -1606,13 +1668,18 @@ export async function launchCampaign(params: {
   days?: number;
   source?: CreativeSource;
   launch?: boolean;
+  /** Where it runs. Meta unless said: YouTube and TikTok check their own connection when the campaign is made. */
+  network?: 'meta' | VideoNetwork;
   /** Designed with the owner: used as it is (clamped), not planned again. */
   plan?: Record<string, unknown>;
 }) {
-  const { cfg, token } = await ready();
-  if (!cfg.pageId) throw new HttpsError('failed-precondition', 'The ad account has no Facebook Page attached. Connect the Page on Connected accounts.');
+  const network = params.network ?? 'meta';
+  const { cfg, token } = network === 'meta' ? await ready() : { cfg: await adsConfig(), token: '' };
+  if (network === 'meta' && !cfg.pageId) throw new HttpsError('failed-precondition', 'The ad account has no Facebook Page attached. Connect the Page on Connected accounts.');
   if (!cfg.link) throw new HttpsError('failed-precondition', 'Say where the ads should send people — your website or WhatsApp link — on the Ads page.');
-  const source: CreativeSource = params.source ?? { kind: 'make' };
+  // YouTube and TikTok always get a new reel of the plan.
+  const source: CreativeSource = network === 'meta' ? (params.source ?? { kind: 'make' }) : { kind: 'make' };
+  const label = network === 'meta' ? 'Meta' : network === 'youtube' ? 'YouTube' : 'TikTok';
   const bench = await benchmarksNow(cfg);
 
   const { plan, engine } = params.plan
@@ -1621,7 +1688,7 @@ export async function launchCampaign(params: {
         engine: 'designed with the owner',
       }
     : await planAd({
-        brief: params.brief,
+        brief: network === 'meta' ? params.brief : `${params.brief}\n\nThis ad runs on ${label} as a short vertical video, sending people to a link.`,
         cfg,
         bench,
         requestedBudget: params.dailyBudget,
@@ -1641,6 +1708,7 @@ export async function launchCampaign(params: {
   if (!budget) throw new HttpsError('failed-precondition', note ?? 'There is no room in the daily limit.');
   plan.dailyBudget = budget;
   if (params.days) plan.days = Math.min(params.days, cfg.maxDays);
+  if (network !== 'meta') Object.assign(plan, { format: 'video', objective: 'traffic' });
 
   // Before Meta sees it: the test audience, and one rewrite if it is weak. A boost keeps the live post's own words.
   const pretest = source.kind === 'boost' ? null : await pretestAd(plan);
@@ -1649,16 +1717,20 @@ export async function launchCampaign(params: {
   const stamp = `${Date.now()}`;
   let made: Awaited<ReturnType<typeof createAtMeta>>;
   try {
-    made = await createAtMeta({ token, cfg, plan, budget, source, launch, stamp });
+    made =
+      network === 'meta'
+        ? await createAtMeta({ token, cfg, plan, budget, source, launch, stamp })
+        : await createVideoCampaign({ network, cfg, plan, budget, launch, stamp });
   } catch (e) {
     if (e instanceof HttpsError) throw e;
-    throw new HttpsError('failed-precondition', `Meta refused the campaign: ${(e as Error).message}`);
+    throw new HttpsError('failed-precondition', `${label} refused the campaign: ${(e as Error).message}`);
   }
 
   const expected = bench ? forecast({ objective: plan.objective, dailyBudget: budget, days: plan.days, bench }) : null;
   const person = await adsPerson();
   await campaignRef(made.campaignId).set({
     id: made.campaignId,
+    ...(network === 'meta' ? {} : { network }),
     name: plan.name,
     objective: META_OBJECTIVE[plan.objective].objective,
     objectiveKind: plan.objective,
@@ -1711,6 +1783,44 @@ export async function launchCampaign(params: {
 }
 
 /**
+ * The buttons on a YouTube or TikTok row. Going live is refused, never shrunk,
+ * when the limit has no room: these budgets are set once, when the ad is made.
+ */
+async function videoAdAction(campaignId: string, action: string, uid: string) {
+  const ref = campaignRef(campaignId);
+  const doc = (await ref.get()).data() as CampaignDoc | undefined;
+  if (!doc) throw new HttpsError('not-found', 'That campaign has not been read yet. Press Refresh.');
+  if (action !== 'launch' && action !== 'resume' && action !== 'pause' && action !== 'end') {
+    throw new HttpsError('failed-precondition', 'On YouTube and TikTok a campaign can be started, paused or ended from here.');
+  }
+  if (action === 'launch' || action === 'resume') {
+    const cfg = await adsConfig();
+    const asked = doc.dailyBudget ?? 0;
+    const { budget } = clampBudget({ requested: asked, cap: cfg.dailyCap, committed: await committedDaily(campaignId), minDaily: minDailyFor(cfg.currency), currency: cfg.currency });
+    if (!budget || budget < asked) throw new HttpsError('failed-precondition', 'That would go past your daily limit. End another campaign or raise the limit first.');
+  }
+  try {
+    await setVideoAdStatus(campaignId, action === 'pause' ? 'pause' : action === 'end' ? 'end' : 'run');
+  } catch (e) {
+    if (e instanceof HttpsError) throw e;
+    throw new HttpsError('failed-precondition', (e as Error).message);
+  }
+  const status = action === 'pause' ? 'PAUSED' : action === 'end' ? 'ARCHIVED' : 'ACTIVE';
+  const message = action === 'pause' ? 'Paused.' : action === 'end' ? 'Ended. Its numbers stay here.' : action === 'launch' ? 'Launched.' : 'Running again.';
+  await ref.set(
+    {
+      status,
+      effectiveStatus: status,
+      ...(status === 'ACTIVE' ? { approval: 'approved' } : {}),
+      manualActions: FieldValue.arrayUnion({ atMs: Date.now(), by: uid, action, detail: message }),
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+  return { ok: true, message };
+}
+
+/**
  * One button on a campaign row. Pause and end are always allowed; anything
  * that raises what the desk spends is held to the daily limit first.
  */
@@ -1719,13 +1829,14 @@ export const adminAdAction = deskCall('ads', { timeoutSeconds: 540, memory: '2Gi
   const ctx = requireAuth(req);
   const parsed = z
     .object({
-      campaignId: z.string().regex(/^\d{5,40}$/),
+      campaignId: z.string().regex(/^((yt|tt)-)?\d{5,40}$/),
       action: z.enum(['launch', 'pause', 'resume', 'budget', 'apply', 'end', 'trim']),
       dailyBudget: z.number().positive().max(10_000_000).optional(),
     })
     .safeParse(req.data);
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
   const { campaignId, action } = parsed.data;
+  if (/^(yt|tt)-/.test(campaignId)) return videoAdAction(campaignId, action, ctx.uid);
 
   const { cfg, token } = await ready();
   const ref = campaignRef(campaignId);

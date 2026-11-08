@@ -25,6 +25,15 @@ import type { StudioPlanId } from '@/lib/studio';
 export const planVoice = (plan: StudioPlanId) => `plan-${plan}`;
 /** Her own line, the full pitch — also the hero's. */
 const VEXA = 'vexa';
+/** The arc over her head, left to right: the file in /site/logos and where it sits (degrees, -180 = her left, 0 = her right). */
+const PLATFORMS = [
+  ['facebook', -165],
+  ['instagram', -135],
+  ['meta', -105],
+  ['google', -75],
+  ['google-ads', -45],
+  ['youtube', -15],
+] as const;
 
 /** A plan line: which one is playing, and a tap that starts or stops one. */
 export function useVexa() {
@@ -96,6 +105,14 @@ export function Vexa({ aboveBar = false }: { aboveBar?: boolean }) {
 
   return (
     <div className={`${styles.guide} ${aboveBar ? styles.aboveBar : ''} ${talking ? styles.talking : ''}`}>
+      <div className={styles.arc} role="img" aria-label="Vexa manages Facebook, Instagram, Meta, Google, Google Ads and YouTube">
+        {PLATFORMS.map(([file, angle], i) => (
+          <span key={file} className={styles.mark} style={{ ['--a' as string]: `${angle}deg`, ['--i' as string]: i }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={`/site/logos/${file}.svg`} alt="" width={40} height={40} draggable={false} />
+          </span>
+        ))}
+      </div>
       {/* The voice already says it; the words are for the eye. */}
       <p className={styles.caption} aria-hidden>
         {caption ?? (

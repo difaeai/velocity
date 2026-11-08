@@ -112,7 +112,7 @@ export default function AdsPage() {
   // The ad account is connected on Connected accounts; with none, that is where this page sends you.
   const router = useRouter();
   useEffect(() => {
-    if (loaded && !cfg?.adAccountId) router.replace('/dashboard/social/accounts#meta-ads');
+    if (loaded && !cfg?.adAccountId && !cfg?.google && !cfg?.tiktok) router.replace('/dashboard/social/accounts#meta-ads');
   }, [loaded, cfg, router]);
 
   useEffect(
@@ -139,7 +139,8 @@ export default function AdsPage() {
     };
   }, []);
 
-  const connected = Boolean(cfg?.adAccountId);
+  // Any one ad account is enough to set a limit and see campaigns; Meta's own tools ask for Meta when pressed.
+  const connected = Boolean(cfg?.adAccountId || cfg?.google?.customerId || cfg?.tiktok?.advertiserId);
   const setUp = connected && cfg!.mode != null && cfg!.dailyCap > 0;
   const daysLeft =
     cfg?.tokenExpiresAtMs && nowMs ? Math.floor((cfg.tokenExpiresAtMs - nowMs) / DAY_MS) : null;
@@ -587,7 +588,7 @@ function CampaignRow({
       onDone(`${c.name}: ${res.message}`);
       setBudget('');
     } catch (e) {
-      onError(e instanceof Error ? e.message : 'Meta refused that.');
+      onError(e instanceof Error ? e.message : 'The network refused that.');
     } finally {
       setBusy(null);
     }
@@ -605,6 +606,7 @@ function CampaignRow({
             <strong style={{ fontSize: 14.5 }}>{c.name}</strong>
             <Pill text={state.label} colour={state.colour} />
             {grade && c.verdict?.grade !== 'idle' ? <Pill text={grade.label} colour={grade.colour} /> : null}
+            {c.network ? <Pill text={c.network === 'youtube' ? 'YouTube' : 'TikTok'} colour={c.network === 'youtube' ? '#ff0000' : '#010101'} /> : null}
             {c.managed ? <Pill text={`by ${c.plannedBy ?? 'the desk'}`} colour={colors.secondary} /> : null}
           </div>
           <div style={{ fontSize: 12.5, color: colors.muted }}>
@@ -622,7 +624,7 @@ function CampaignRow({
           ) : null}
           {c.pretest ? (
             <div style={{ fontSize: 12.5, marginTop: 4, color: c.pretest.verdict === 'not_yet' ? colors.warn : colors.muted }}>
-              Test audience (simulated, before Meta): {Math.round(c.pretest.score * 100)}% would act
+              Test audience (simulated, before it ran): {Math.round(c.pretest.score * 100)}% would act
               {c.pretest.rewritten && c.pretest.firstScore != null
                 ? `, after one rewrite (was ${Math.round(c.pretest.firstScore * 100)}%)`
                 : ''}
@@ -686,7 +688,7 @@ function CampaignRow({
           </Button>
         ) : null}
 
-        {c.dailyBudget && c.status !== 'ARCHIVED' ? (
+        {c.dailyBudget && c.status !== 'ARCHIVED' && !c.network ? (
           <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <input
               inputMode="numeric"

@@ -6,7 +6,7 @@
  * Say what you want in your own words. The brain reads it (`readIntent`, plain
  * word rules, shown before anything runs) and lights the agent it will send it
  * to — the AI team for posts and reels, the Meta Ad Expert to plan a campaign
- * with you, a new campaign made at once, or the email agent to write to every
+ * with you, a new campaign made at once on Meta, YouTube or TikTok, or the email agent to write to every
  * customer. Tap another agent to overrule it.
  * Its wires run on into the Approval box, which decides how the work goes out.
  *
@@ -26,6 +26,7 @@ import {
   adsApi,
   mailApi,
   socialApi,
+  type AdNetwork,
   type AdsConfigDoc,
   type SalesSettingsDoc,
   type SocialAccountDoc,
@@ -40,7 +41,7 @@ export type Agent = 'team' | 'expert' | 'campaign' | 'email';
 const AGENTS: Record<Agent, { icon: string; name: string; does: string }> = {
   team: { icon: '🎬', name: 'Content team', does: 'Reels, posts, stories, carousels' },
   expert: { icon: '📣', name: 'Meta Ad Expert', does: 'Plans a campaign with you' },
-  campaign: { icon: '🚀', name: 'New campaign', does: 'Makes the ad at Meta now' },
+  campaign: { icon: '🚀', name: 'New campaign', does: 'Meta, YouTube or TikTok, now' },
   email: { icon: '✉️', name: 'Email agent', does: 'Gmail inbox + customers' },
 };
 /** Where each of `n` agents sits on the 760×380 stage: one in the middle, more spread from 70 to 310. */
@@ -48,11 +49,15 @@ const agentYs = (n: number) => (n === 1 ? [190] : Array.from({ length: n }, (_, 
 
 const FORMATS: SocialFormat[] = ['reel', 'post', 'story', 'carousel'];
 
+/** Where the New campaign agent can run an ad. */
+const NETWORKS: Record<AdNetwork, string> = { meta: 'Facebook & Instagram', youtube: 'YouTube', tiktok: 'TikTok' };
+
 const EXAMPLES = [
   'a reel for riders in Lahore: you name your own fare, no surge at night',
   'email every customer: Eid sale, 20% off until Sunday',
   'run an ad for new drivers in Karachi, Rs 1,500 a day for a week',
   'ask the Meta Ad Expert to plan a campaign for students in Islamabad',
+  'run a YouTube ad for riders in Karachi, Rs 2,000 a day for 5 days',
   'five carousel slides on how a shared ride splits the fare per seat',
   'a story telling drivers the weekend is the busiest time',
 ];
@@ -77,13 +82,14 @@ const FORMAT_WORDS: [SocialFormat, RegExp][] = [
  * a new campaign otherwise; the rest is the AI team's, with the kind of piece
  * if the sentence names one.
  */
-export function readIntent(text: string): { agent: Agent; format: SocialFormat | null } {
+export function readIntent(text: string): { agent: Agent; format: SocialFormat | null; network: AdNetwork | null } {
   const t = text.toLowerCase();
   const format = FORMAT_WORDS.find(([, re]) => re.test(t))?.[0] ?? null;
-  if (EMAIL.test(t)) return { agent: 'email', format };
-  if (/\bexpert\b/.test(t) || (AD.test(t) && PLAN.test(t))) return { agent: 'expert', format };
-  if (AD.test(t)) return { agent: 'campaign', format };
-  return { agent: 'team', format };
+  const network: AdNetwork | null = /\byou\s?tube\b/.test(t) ? 'youtube' : /\btik\s?tok\b/.test(t) ? 'tiktok' : /\b(meta|facebook|instagram)\b/.test(t) ? 'meta' : null;
+  if (EMAIL.test(t)) return { agent: 'email', format, network };
+  if (/\bexpert\b/.test(t) || (AD.test(t) && PLAN.test(t))) return { agent: 'expert', format, network };
+  if (AD.test(t)) return { agent: 'campaign', format, network };
+  return { agent: 'team', format, network };
 }
 
 
@@ -284,8 +290,8 @@ interface RingNode {
 }
 
 /**
- * The connections the work runs through — Instagram, Facebook, the sales
- * mailbox, Meta Ads, Google Ads — each from its own real state, each linking to
+ * The connections the work runs through — Instagram, Facebook, YouTube, TikTok,
+ * the sales mailbox, Meta Ads, Google Ads — each from its own real state, each linking to
  * where it is connected. A plan without ads or sales does not show those. Pure.
  */
 export function ringNodes(p: {
@@ -294,12 +300,13 @@ export function ringNodes(p: {
   sales: SalesSettingsDoc | null;
   adsPaid: boolean;
   salesPaid: boolean;
+  contentPaid: boolean;
   nowMs: number;
 }): RingNode[] {
-  const social = (platform: 'instagram' | 'facebook'): RingNode => {
+  const social = (platform: 'instagram' | 'facebook' | 'youtube' | 'tiktok'): RingNode => {
     const a = p.accounts.find((x) => x.platform === platform);
     const who = a?.handle ? `@${a.handle.replace(/^@/, '')}` : a?.displayName;
-    const name = platform === 'instagram' ? 'Instagram' : 'Facebook';
+    const name = platform === 'facebook' ? 'Facebook' : PLATFORM_META[platform].label;
     return {
       key: platform,
       name,
@@ -312,7 +319,7 @@ export function ringNodes(p: {
           : a?.status === 'error'
             ? `${name}: needs reconnecting${a.lastError ? ` — ${a.lastError}` : ''}`
             : `${name}: not connected`,
-      href: '/dashboard/social/accounts',
+      href: `/dashboard/social/accounts${platform === 'youtube' || platform === 'tiktok' ? `#${platform}` : ''}`,
     };
   };
   const smtp = p.sales?.mode === 'mailbox' ? p.sales.smtp : null;
@@ -323,6 +330,7 @@ export function ringNodes(p: {
   return [
     social('instagram'),
     social('facebook'),
+    ...(p.contentPaid ? [social('youtube'), social('tiktok')] : []),
     ...(p.salesPaid
       ? [
           {
@@ -362,7 +370,7 @@ export function ringNodes(p: {
             title: google
               ? google.lastError
                 ? `Google Ads: ${google.lastError}`
-                : `Google Ads: ${google.name} (read only — spend counts in blended ROAS)`
+                : `Google Ads: ${google.name} — reads your ads and runs your YouTube ads`
               : 'Google Ads: not connected',
             href: '/dashboard/social/accounts#google-ads',
           },
@@ -475,6 +483,7 @@ export function Brain({
   const [direct, setDirect] = useState<boolean | null>(null);
   const [budget, setBudget] = useState('');
   const [days, setDays] = useState('');
+  const [network, setNetwork] = useState<AdNetwork>('meta');
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
   const [example, setExample] = useState(0);
@@ -487,7 +496,10 @@ export function Brain({
   }, [brief, examples.length]);
 
   const postDirect = direct ?? settings.autoPublish;
-  const adsReady = Boolean(ads?.adAccountId) && (ads?.dailyCap ?? 0) > 0 && ads?.mode != null;
+  const channelLive = accounts.some((a) => a.platform === 'youtube' && a.status === 'connected');
+  const networkReady =
+    network === 'meta' ? Boolean(ads?.adAccountId) : network === 'youtube' ? Boolean(ads?.google?.customerId) && channelLive : Boolean(ads?.tiktok?.advertiserId);
+  const adsReady = networkReady && (ads?.dailyCap ?? 0) > 0 && ads?.mode != null;
   // Folded away until wanted: most pieces need only the kind and a sentence.
   const showRef = refAsked || Boolean(refLink.trim()) || Boolean(refFile);
   const said = brief.trim();
@@ -500,6 +512,7 @@ export function Brain({
     onBrief(text);
     if (now.agent !== was.agent && order.includes(now.agent)) setAgent(now.agent);
     if (now.format && now.format !== was.format) onWant(now.format);
+    if (now.network && now.network !== was.network) setNetwork(now.network);
   }
 
   async function go() {
@@ -524,11 +537,12 @@ export function Brain({
           brief: said,
           dailyBudget: Number(budget) > 0 ? Number(budget) : undefined,
           days: Number(days) > 0 ? Math.round(Number(days)) : undefined,
+          network,
         });
         const t = res.pretest;
         onDone(
           `${res.launched ? 'Launched' : 'Made and waiting for your Approve on the Ads page'}: "${res.plan.name}", ` +
-            `${adMoney(res.budget, ads?.currency ?? 'PKR')} a day for ${res.plan.days} days.${res.note ? ` ${res.note}` : ''}` +
+            `${adMoney(res.budget, ads?.currency ?? 'PKR')} a day for ${res.plan.days} days on ${NETWORKS[network]}.${res.note ? ` ${res.note}` : ''}` +
             (t ? ` Test audience first: ${Math.round(t.score * 100)}% would act${t.rewritten ? ', after one rewrite' : ''}.` : ''),
         );
       } else {
@@ -631,7 +645,7 @@ export function Brain({
           </svg>
           <div className="bn-brainbox ringed">
             <ConnectionRing
-              nodes={ringNodes({ accounts, ads, sales, adsPaid, salesPaid, nowMs })}
+              nodes={ringNodes({ accounts, ads, sales, adsPaid, salesPaid, contentPaid: includes('content'), nowMs })}
             />
             <BrainArt />
           </div>
@@ -781,6 +795,16 @@ export function Brain({
       ) : null}
 
       {agent === 'campaign' ? (
+        <div className="bn-chips" role="radiogroup" aria-label="Where it runs" style={{ marginTop: 12 }}>
+          {(Object.keys(NETWORKS) as AdNetwork[]).map((n) => (
+            <button key={n} type="button" role="radio" aria-checked={n === network} onClick={() => setNetwork(n)}>
+              {NETWORKS[n]}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {agent === 'campaign' ? (
         adsReady ? (
           <div className="bn-panel" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'end' }}>
             <label className="bn-label">
@@ -807,9 +831,20 @@ export function Brain({
           </div>
         ) : (
           <p className="bn-panel bn-warn">
-            The ads desk needs the ad account connected and a daily limit first.{' '}
-            <Link href="/dashboard/social/ads">Set it up</Link> — or tap <strong>Meta Ad Expert</strong> and plan the
-            campaign first.
+            {network === 'youtube'
+              ? 'YouTube ads need your YouTube channel and your Google Ads account connected, and a daily limit.'
+              : network === 'tiktok'
+                ? 'TikTok ads need your TikTok ad account connected, and a daily limit.'
+                : 'The ads desk needs the ad account connected and a daily limit first.'}{' '}
+            <Link href={networkReady ? '/dashboard/social/ads' : '/dashboard/social/accounts'}>Set it up</Link>
+            {network === 'meta' ? (
+              <>
+                {' '}
+                — or tap <strong>Meta Ad Expert</strong> and plan the campaign first.
+              </>
+            ) : (
+              '.'
+            )}
           </p>
         )
       ) : null}

@@ -14,7 +14,14 @@ export type StudioNeeds = StudioNeed | readonly StudioNeed[];
 
 export const STUDIO_PLANS: Record<
   StudioPlanId,
-  { name: string; usd: number; can: Exclude<StudioNeed, 'any'>[]; tagline: string; includes: string[] }
+  {
+    name: string;
+    usd: number;
+    can: Exclude<StudioNeed, 'any'>[];
+    tagline: string;
+    /** On a plan on sale: Vexa's own words from the plan's line in siteVoice.json, in her order (PlanJobs lights each as she says it). */
+    includes: string[];
+  }
 > = {
   research: {
     name: 'Research Assistant for Social Media',
@@ -22,11 +29,10 @@ export const STUDIO_PLANS: Record<
     can: ['research'],
     tagline: 'Researches your market and tests every campaign for free, before you spend.',
     includes: [
-      'Reads your market and your competitors — plus your own notes and links',
-      'Analyses your Instagram and Facebook: what travelled, and how your profile looks to a stranger',
-      'Runs a dummy campaign before any real one: a simulated audience reacts, nothing is spent',
-      'Shows what the money would buy, what put people off, and a better version of the ad',
-      'Hands every result to the Social Media Manager — ours on the full team, or your own',
+      'I read your market and your competitors',
+      'I study your Instagram and Facebook',
+      'I test every campaign on a simulated audience',
+      'You see what works before you spend',
     ],
   },
   content: {
@@ -35,11 +41,10 @@ export const STUDIO_PLANS: Record<
     can: ['content'],
     tagline: 'Your social media team, posting every day.',
     includes: [
-      'A market analysis of your business on day one — plus your own notes and links',
-      '30 days of content made ahead on a calendar you can change',
-      'Reels with voice-over and music, posts, stories, carousels',
-      'Posts at your time to Instagram and Facebook, answers comments',
-      'Learns from your own best posts',
+      'I plan thirty days ahead',
+      'I make your reels, posts and stories',
+      'I post them at your time every day',
+      'I answer your comments',
     ],
   },
   all: {
@@ -48,11 +53,15 @@ export const STUDIO_PLANS: Record<
     can: ['research', 'content', 'ads', 'sales'],
     tagline: 'The whole team: research, content, Meta & Google ads, and sales by email and phone.',
     includes: [
-      'Everything in the Research Assistant and Content',
-      'Social Media Manager: plans every campaign from the Research Assistant’s free dummy runs',
-      'Meta & Google Ad Expert: runs Facebook & Instagram ads inside your daily limit, reads Google Ads beside them',
-      'Sales agents and email marketing: finds buyers, writes from your own mailbox, follows up twice',
-      'Calling & WhatsApp agents for your leads — a package on top of the plan',
+      'I analyse your product',
+      'I study your competition',
+      'I plan your campaigns',
+      'I make your content and videos, and post them every day',
+      'I run your Facebook and Instagram ads inside your daily limit',
+      'I read your Google ads beside them',
+      'I reply to the comments on your posts',
+      'I find new buyers, email each one from your own mailbox, and follow up',
+      'All on my own, with no human intervention',
     ],
   },
   // No longer sold: kept so a workspace already on one keeps working.

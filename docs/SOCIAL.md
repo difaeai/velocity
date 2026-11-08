@@ -880,16 +880,15 @@ error — `(#200) requires pages_manage_posts` tells you what to fix in a way
 "connection failed" never would.
 
 An OAuth button per network needs a reviewed app per network before it can
-request publishing scopes, which is why only Meta's has been built. The stored
-shape is identical either way, so the rest can follow without touching the data
-model.
+request publishing scopes, which is why Meta, YouTube and TikTok have buttons
+and the rest are still a paste. The stored shape is identical either way.
 
 | Network | Paste | Scopes worth double-checking |
 |---|---|---|
 | Facebook Page | long-lived Page token + Page ID | `pages_manage_posts`, `pages_read_engagement` |
 | Instagram | *(use the button above)* — or the same Page token + IG Business account ID | `instagram_content_publish`, `instagram_manage_comments` |
-| YouTube | OAuth **refresh** token + client ID + secret | `youtube.upload`, `youtube.force-ssl` (for replies) |
-| TikTok | access token | `video.publish` |
+| YouTube | *(Continue with Google, below)* | `youtube.upload`, `youtube.force-ssl` (for replies) |
+| TikTok | *(Continue with TikTok, below)* | `user.info.basic`, `video.publish` |
 | Threads | Threads access token | `threads_content_publish`, `threads_manage_replies` |
 | X | OAuth 2.0 user token | `tweet.write`, `media.write` |
 | LinkedIn | access token (+ optional organization URN) | `w_member_social` |
@@ -899,6 +898,38 @@ stored is a refresh token and the OAuth client that issued it; and it is one of
 three networks that will not fetch a file itself, so the video is streamed
 through the backend on a resumable upload. X and LinkedIn want the image bytes
 for the same reason.
+
+### YouTube, TikTok and TikTok Ads: a button
+
+`videoConnect.ts` + `components/social/videoConnect.tsx`. All three come back to
+one public page, `https://velocityrides.app/connect/video`, and the mark on the
+front of the state (`yt.` `tt.` `ta.`) says whose sign-in it was. Finishing a
+YouTube or TikTok connect also adds that network to the ones the team posts to.
+
+| Connection | App it signs in with | Set up once |
+|---|---|---|
+| YouTube | the Google OAuth client saved for Google Ads | YouTube Data API v3 on in that Cloud project; the address above added to the client's redirect URIs; consent screen **In production** (in Testing, Google kills refresh tokens after 7 days) |
+| TikTok | developers.tiktok.com app, Login Kit + Content Posting API | the address above under Login Kit; Client key and secret pasted on the TikTok card |
+| TikTok Ads | business-api.tiktok.com Marketing API app | the address above as the Advertiser redirect URL; App ID and Secret pasted on the TikTok Ads card |
+
+**TikTok rules that shape this.** Each refresh replaces the refresh token and
+kills the old one, so `rotate` stores the new one immediately. Until TikTok has
+audited the app it can post only as `SELF_ONLY`, only to private accounts, for at
+most 5 users a day. The audit is at
+<https://developers.tiktok.com/application/content-posting-api>; TikTok's
+guidelines refuse tools only for your own accounts, and require, per post, the
+creator's name, a privacy choice with no default, interaction switches that start
+off, the commercial-content switch, the music declaration and the user's express
+consent. That screen is not built yet: the adapter posts automatically at the most
+public level TikTok offers.
+
+**Ads.** The Brain's New campaign agent runs on Facebook & Instagram, YouTube or
+TikTok (`videoAds.ts`), under the same `dailyCap`, `maxDays` and `ask`/`direct`
+mode as Meta, with a new reel every time. YouTube is a Demand Gen campaign with
+only the YouTube channels on, and needs both Google Ads and the channel connected;
+the reel goes up unlisted first. TikTok is Pakistan-wide. Neither has run against a
+live account. Both can be launched, paused and ended, and their numbers are read
+every three hours, but unlike Meta they are not steered on their own.
 
 ### Where the tokens live
 

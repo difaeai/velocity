@@ -370,7 +370,8 @@
   margin: 0 0 8px;
   padding: 0;
   display: grid;
-  align-content: start;
+  /* Plans say different amounts: the shorter lists spread to the height of the longest. */
+  align-content: space-evenly;
   gap: 4px;
   flex: 1;
 }
@@ -391,19 +392,6 @@
 .list li:hover {
   background: rgba(18, 161, 94, 0.07);
   color: var(--ink);
-}
-
-.list svg {
-  flex: none;
-  width: 20px;
-  height: 20px;
-  padding: 3px;
-  margin-top: 1px;
-  border-radius: 50%;
-  background: var(--lime);
-  color: #0b1400;
-  stroke-width: 3;
-  box-shadow: 0 0 0 4px rgba(204, 255, 0, 0.2);
 }
 
 .cta {
@@ -560,10 +548,6 @@
     transform: translateX(calc(100% + 22px)) scale(0.92);
   }
 
-  .slot:hover .list svg {
-    animation: hop 520ms var(--ease-out);
-    animation-delay: calc(var(--j) * 60ms);
-  }
 }
 
 @keyframes rise {

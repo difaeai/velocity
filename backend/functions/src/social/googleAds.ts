@@ -61,7 +61,7 @@ const CONFIG_PATH = 'system/socialAds';
 /** Beside Meta's `secret/credentials`, never in it: Meta's connect overwrites that document. */
 const SECRET_PATH = 'system/socialAds/secret/google';
 
-interface GoogleApp {
+export interface GoogleApp {
   clientId: string;
   clientSecret: string;
   /** A manager account the client accounts are reached through, digits only. */
@@ -80,7 +80,7 @@ export interface GoogleAdsLink {
   lastError: string | null;
 }
 
-class GoogleAdsError extends Error {
+export class GoogleAdsError extends Error {
   constructor(
     message: string,
     readonly revoked = false,
@@ -121,7 +121,7 @@ export function inCurrency(amount: number, from: string, to: string): number | n
   return null;
 }
 
-async function googleApp(): Promise<GoogleApp | null> {
+export async function googleApp(): Promise<GoogleApp | null> {
   if (!tokenVaultReady()) return null;
   const [pub, sec] = await Promise.all([appRef.get(), appSecretRef.get()]);
   const clientId = (pub.get('clientId') as string | undefined)?.trim();
@@ -173,7 +173,7 @@ async function accessToken(app: GoogleApp, refreshToken: string): Promise<string
 }
 
 /** One Google Ads REST call; Google's sentence on failure. */
-async function gads<T>(app: GoogleApp, token: string, path: string, body?: unknown): Promise<T> {
+export async function gads<T>(app: GoogleApp, token: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = {
     authorization: `Bearer ${token}`,
     'content-type': 'application/json',
@@ -196,13 +196,13 @@ async function gads<T>(app: GoogleApp, token: string, path: string, body?: unkno
   return json as T;
 }
 
-interface SearchRow {
+export interface SearchRow {
   customer?: { id?: string; descriptiveName?: string; currencyCode?: string; manager?: boolean; testAccount?: boolean };
   campaign?: { id?: string; name?: string; status?: string; advertisingChannelType?: string };
   metrics?: { costMicros?: string; clicks?: string; impressions?: string; conversions?: number; conversionsValue?: number };
 }
 
-const search = (app: GoogleApp, token: string, customerId: string, query: string) =>
+export const search = (app: GoogleApp, token: string, customerId: string, query: string) =>
   gads<{ results?: SearchRow[] }>(app, token, `customers/${customerId}/googleAds:search`, { query }).then((r) => r.results ?? []);
 
 /** Metrics rows summed, money out of micros. Pure. */
@@ -221,7 +221,7 @@ export function sumMetrics(rows: SearchRow[]): { spend: number; clicks: number; 
 }
 
 /** The connected account and a working access token, or why not. */
-async function linked(): Promise<{ app: GoogleApp; token: string; link: GoogleAdsLink }> {
+export async function linked(): Promise<{ app: GoogleApp; token: string; link: GoogleAdsLink }> {
   const [app, cfg, sec] = await Promise.all([googleApp(), sdb.doc(CONFIG_PATH).get(), sdb.doc(SECRET_PATH).get()]);
   const link = cfg.get('google') as GoogleAdsLink | null | undefined;
   const sealed = sec.get('refreshToken') as SealedSecret | undefined;

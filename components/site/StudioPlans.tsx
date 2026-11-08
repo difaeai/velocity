@@ -28,7 +28,8 @@ import {
   type StudioPlanId,
 } from '@/lib/studio';
 import { PlanAsk, planVoice, useVexa } from './Assistant';
-import { ArrowRight, Check } from './Icons';
+import { ArrowRight } from './Icons';
+import { PlanJobs } from './PlanJobs';
 import { hush } from './siteSound';
 import { useReducedMotion, useSaveData } from './useReducedMotion';
 import site from './site.module.css';
@@ -209,14 +210,7 @@ export function StudioPlans() {
                     </p>
                   </div>
                   <p className={styles.tagline}>{p.tagline}</p>
-                  <ul className={styles.list}>
-                    {p.includes.map((line, j) => (
-                      <li key={line} style={{ ['--j' as string]: j }}>
-                        <Check />
-                        {line}
-                      </li>
-                    ))}
-                  </ul>
+                  <PlanJobs plan={id} lines={p.includes} className={styles.list} />
                   <Link
                     href={`/studio/signup?plan=${id}${billing === 'year' ? '&billing=year' : ''}`}
                     className={`${site.btn} ${best ? site.btnLime : site.btnGhost} ${styles.cta}`}

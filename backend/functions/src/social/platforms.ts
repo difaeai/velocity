@@ -119,6 +119,8 @@ export interface PublishPayload {
   youtube?: { title: string; description: string; tags: string[] } | null;
   /** A reel's cover image URL — what Instagram's grid and Reels tab show instead of frame one. */
   cover?: string | null;
+  /** YouTube: `unlisted` for a video that exists only to run as an ad. Public otherwise. */
+  privacy?: 'unlisted';
 }
 
 export interface RawComment {
@@ -638,48 +640,153 @@ async function threadsReply(c: PlatformCredentials, commentId: string, text: str
 
 // ── TikTok ──────────────────────────────────────────────────────────────────
 
-async function verifyTikTok(c: PlatformCredentials): Promise<PlatformProfile> {
-  const res = await call<{
-    data: { user: { open_id: string; display_name: string; follower_count?: number; avatar_url?: string } };
-  }>(
+const TIKTOK = 'https://open.tiktokapis.com/v2';
+const MB = 1024 * 1024;
+/** How long a publish waits for TikTok's verdict before trusting that it went through. */
+const TIKTOK_STATUS_MS = 90_000;
+
+/**
+ * TikTok's access tokens are short-lived, so what is stored is the refresh token
+ * and the app that issued it. Each refresh replaces the refresh token and kills
+ * the old one, so the new one is kept before anything else happens.
+ * shortcut: two refreshes in the same instant and the slower one's call fails (healAccounts brings it back); cache the access token if that ever shows up.
+ */
+async function tiktokAccessToken(c: PlatformCredentials): Promise<string> {
+  if (!c.clientId || !c.clientSecret) throw new PlatformError('tiktok', 'That token cannot be renewed. Press Continue with TikTok again.');
+  const res = await call<{ access_token?: string; refresh_token?: string; error?: string; error_description?: string }>(
     'tiktok',
-    'https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name,follower_count,avatar_url',
-    { headers: { authorization: `Bearer ${c.accessToken}` } },
+    `${TIKTOK}/oauth/token/`,
+    { form: { client_key: c.clientId, client_secret: c.clientSecret, grant_type: 'refresh_token', refresh_token: c.accessToken } },
+  );
+  if (!res.access_token) {
+    throw new PlatformError('tiktok', `TikTok refused the stored token: ${res.error_description ?? res.error ?? 'no reason given'}`);
+  }
+  if (res.refresh_token && res.refresh_token !== c.accessToken) {
+    c.accessToken = res.refresh_token;
+    await c.rotate?.(res.refresh_token);
+  }
+  return res.access_token;
+}
+
+/** TikTok's error code in words the owner can act on. Pure. */
+export function tiktokErrorText(code: string, message: string): string {
+  if (code === 'unaudited_client_can_only_post_to_private_accounts') {
+    return 'TikTok has not audited this app yet, so it can only post as "Only me" to a private account. Make the TikTok account private to test, or finish TikTok\'s audit to post publicly.';
+  }
+  return `${code}: ${message}`;
+}
+
+/** One Content Posting call. TikTok says `ok` in the body even when the HTTP status does not tell the story. */
+async function tiktokPost<T>(token: string, path: string, json?: unknown): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${TIKTOK}${path}`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json; charset=UTF-8' },
+      body: json === undefined ? undefined : JSON.stringify(json),
+    });
+  } catch (e) {
+    throw new PlatformError('tiktok', `Network error talking to tiktok: ${(e as Error).message}`);
+  }
+  const body = (await res.json().catch(() => null)) as { data?: T; error?: { code?: string; message?: string } } | null;
+  if (body?.error?.code !== 'ok' || !body.data) {
+    throw new PlatformError('tiktok', tiktokErrorText(body?.error?.code ?? `HTTP ${res.status}`, body?.error?.message ?? 'TikTok gave no reason.'));
+  }
+  return body.data;
+}
+
+interface TikTokCreator {
+  creator_username?: string;
+  privacy_level_options?: string[];
+  comment_disabled?: boolean;
+  duet_disabled?: boolean;
+  stitch_disabled?: boolean;
+}
+
+const tiktokCreator = (token: string) => tiktokPost<TikTokCreator>(token, '/post/publish/creator_info/query/');
+
+async function verifyTikTok(c: PlatformCredentials): Promise<PlatformProfile> {
+  const token = await tiktokAccessToken(c);
+  const res = await call<{ data: { user: { open_id: string; display_name: string; avatar_url?: string } } }>(
+    'tiktok',
+    `${TIKTOK}/user/info/?fields=open_id,display_name,avatar_url`,
+    { headers: { authorization: `Bearer ${token}` } },
   );
   const u = res.data.user;
+  // Only for the @name on the console: a creator TikTok has told to wait can still be connected.
+  const creator = await tiktokCreator(token).catch(() => null);
   return {
     displayName: u.display_name,
-    handle: null,
+    handle: creator?.creator_username ? `@${creator.creator_username}` : null,
     externalId: u.open_id,
-    followers: u.follower_count ?? null,
+    followers: null,
     avatarUrl: u.avatar_url ?? null,
   };
 }
 
+/** TikTok's chunk rule: one chunk up to 64 MB; above that 32 MB chunks, the last one taking the remainder. Pure. */
+export function tiktokChunks(size: number): { chunkSize: number; count: number } {
+  if (size <= 64 * MB) return { chunkSize: size, count: 1 };
+  return { chunkSize: 32 * MB, count: Math.floor(size / (32 * MB)) };
+}
+
 /**
- * TikTok pulls the file from our signed URL. The URL's host must be on the
- * app's verified-domain list in the TikTok developer portal, or init returns
- * `url_ownership_unverified` — that is a portal setting, not a bug here.
+ * Send the bytes rather than a link.
+ * shortcut: FILE_UPLOAD, though TikTok prefers PULL_FROM_URL for hosted media; that needs a media URL on a verified velocityrides.app path, and our signed Storage URLs are not.
  */
 async function publishTikTok(c: PlatformCredentials, p: PublishPayload): Promise<{ id: string; url: string }> {
   const video = firstVideo(p, 'tiktok');
-  const res = await call<{ data: { publish_id: string }; error?: { code: string; message: string } }>(
-    'tiktok',
-    'https://open.tiktokapis.com/v2/post/publish/video/init/',
-    {
-      headers: { authorization: `Bearer ${c.accessToken}` },
-      json: {
-        post_info: { title: p.caption.slice(0, 2200), privacy_level: 'PUBLIC_TO_EVERYONE' },
-        source_info: { source: 'PULL_FROM_URL', video_url: video.url! },
-      },
+  const token = await tiktokAccessToken(c);
+  const creator = await tiktokCreator(token);
+  const bytes = await downloadAsset(video).catch(() => {
+    throw new PlatformError('tiktok', 'Could not read the rendered video back from storage.');
+  });
+  const { chunkSize, count } = tiktokChunks(bytes.length);
+
+  const init = await tiktokPost<{ publish_id: string; upload_url: string }>(token, '/post/publish/video/init/', {
+    post_info: {
+      title: p.caption.slice(0, 2200),
+      // Public when TikTok offers it. A private account, or an app not yet audited, is offered "Only me".
+      privacy_level: creator.privacy_level_options?.includes('PUBLIC_TO_EVERYONE') ? 'PUBLIC_TO_EVERYONE' : 'SELF_ONLY',
+      disable_comment: creator.comment_disabled === true,
+      disable_duet: creator.duet_disabled === true,
+      disable_stitch: creator.stitch_disabled === true,
     },
-  );
-  if (res.error && res.error.code !== 'ok') {
-    throw new PlatformError('tiktok', `${res.error.code}: ${res.error.message}`);
+    source_info: { source: 'FILE_UPLOAD', video_size: bytes.length, chunk_size: chunkSize, total_chunk_count: count },
+  });
+
+  for (let i = 0; i < count; i++) {
+    const from = i * chunkSize;
+    const to = i === count - 1 ? bytes.length : from + chunkSize;
+    const put = await fetch(init.upload_url, {
+      method: 'PUT',
+      headers: { 'content-type': 'video/mp4', 'content-range': `bytes ${from}-${to - 1}/${bytes.length}` },
+      body: new Uint8Array(bytes.subarray(from, to)),
+    });
+    if (put.status !== 201 && put.status !== 206) {
+      throw new PlatformError('tiktok', `Upload failed: HTTP ${put.status} ${(await put.text()).slice(0, 200)}`);
+    }
   }
-  // TikTok finishes the upload asynchronously and gives no public URL until the
-  // video is live, so the publish id is what we keep.
-  return { id: res.data.publish_id, url: 'https://www.tiktok.com/' };
+
+  // TikTok finishes on its own time. A verdict inside the wait is reported; past it, the upload stands.
+  const deadline = Date.now() + TIKTOK_STATUS_MS;
+  while (Date.now() < deadline) {
+    await sleep(POLL_INTERVAL_MS);
+    const state = await tiktokPost<{ status?: string; fail_reason?: string; publicaly_available_post_id?: (string | number)[] }>(
+      token,
+      '/post/publish/status/fetch/',
+      { publish_id: init.publish_id },
+    );
+    if (state.status === 'FAILED') throw new PlatformError('tiktok', `TikTok would not post it: ${state.fail_reason ?? 'no reason given'}`);
+    if (state.status === 'PUBLISH_COMPLETE') {
+      const postId = state.publicaly_available_post_id?.[0];
+      return {
+        id: init.publish_id,
+        url: postId && creator.creator_username ? `https://www.tiktok.com/@${creator.creator_username}/video/${postId}` : 'https://www.tiktok.com/',
+      };
+    }
+  }
+  return { id: init.publish_id, url: 'https://www.tiktok.com/' };
 }
 
 // ── YouTube ─────────────────────────────────────────────────────────────────
@@ -746,7 +853,7 @@ async function publishYouTube(c: PlatformCredentials, p: PublishPayload): Promis
           description: (p.youtube?.description || p.caption).slice(0, 5000),
           tags: (p.youtube?.tags.length ? p.youtube.tags : p.tags).slice(0, 20),
         },
-        status: { privacyStatus: 'public', selfDeclaredMadeForKids: false },
+        status: { privacyStatus: p.privacy ?? 'public', selfDeclaredMadeForKids: false },
       }),
     },
   );
@@ -805,6 +912,26 @@ async function youtubeReply(c: PlatformCredentials, commentId: string, text: str
     json: { snippet: { parentId: commentId, textOriginal: text } },
   });
   return res.id;
+}
+
+/** Wait until YouTube has finished with an upload: Google Ads cannot use a video still being processed. */
+export async function youtubeProcessed(c: PlatformCredentials, videoId: string): Promise<void> {
+  const token = await youtubeAccessToken(c);
+  const deadline = Date.now() + INGEST_TIMEOUT_MS;
+  for (;;) {
+    const res = await call<{ items?: { status?: { uploadStatus?: string; rejectionReason?: string; failureReason?: string } }[] }>(
+      'youtube',
+      `https://www.googleapis.com/youtube/v3/videos?part=status&id=${encodeURIComponent(videoId)}`,
+      { headers: { authorization: `Bearer ${token}` } },
+    );
+    const status = res.items?.[0]?.status;
+    if (status?.uploadStatus === 'processed') return;
+    if (status?.uploadStatus === 'failed' || status?.uploadStatus === 'rejected') {
+      throw new PlatformError('youtube', `YouTube would not take the video: ${status.rejectionReason ?? status.failureReason ?? status.uploadStatus}`);
+    }
+    if (Date.now() > deadline) throw new PlatformError('youtube', 'YouTube is still processing the video after 5 minutes.');
+    await sleep(POLL_INTERVAL_MS);
+  }
 }
 
 // ── X ───────────────────────────────────────────────────────────────────────

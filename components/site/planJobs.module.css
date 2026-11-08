@@ -1,0 +1,418 @@
+/* A plan card's list (PlanJobs.tsx). The row's lit state is a tint that wipes in
+   from the left; its picture plays only while lit. Every keyframe starts and ends
+   on the drawing's resting state, so a picture paused between beats looks whole. */
+
+.job {
+  position: relative;
+  align-items: center;
+  isolation: isolate;
+}
+
+.job::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(204, 255, 0, 0.3), rgba(18, 161, 94, 0.09));
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+  opacity: 0;
+  transition:
+    transform 420ms var(--ease-out),
+    opacity 300ms ease;
+}
+
+.on::before {
+  transform: scaleX(1);
+  opacity: 1;
+}
+
+.tile {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: rgba(18, 161, 94, 0.1);
+  color: #0f7a49;
+  transition:
+    background 300ms ease,
+    color 300ms ease,
+    transform 420ms var(--ease-out),
+    box-shadow 300ms ease;
+}
+
+.tile svg {
+  width: 22px;
+  height: 22px;
+  overflow: visible;
+}
+
+.tile img {
+  display: block;
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+}
+
+.on .tile {
+  background: #04120c;
+  color: var(--lime);
+  transform: scale(1.14) rotate(-4deg);
+  box-shadow: 0 8px 18px -8px rgba(4, 18, 12, 0.7);
+}
+
+/* A logo needs a light ground, in every state. */
+.tile:has(img),
+.on .tile:has(img) {
+  background: #fff;
+  box-shadow:
+    0 0 0 1px rgba(4, 18, 12, 0.08),
+    0 6px 14px -8px rgba(4, 18, 12, 0.4);
+}
+
+.on .tile:has(img) {
+  box-shadow:
+    0 0 0 2px var(--lime),
+    0 8px 18px -8px rgba(4, 18, 12, 0.7);
+}
+
+.words {
+  transition:
+    color 300ms ease,
+    transform 420ms var(--ease-out);
+}
+
+.on .words {
+  color: var(--ink);
+  transform: translateX(3px);
+}
+
+/* Two logos, side by side. */
+.pair {
+  position: relative;
+  width: 30px;
+  height: 24px;
+}
+
+.pair img {
+  position: absolute;
+  top: 3px;
+  width: 18px;
+  height: 18px;
+}
+
+.pair img:first-child {
+  left: 0;
+}
+
+.pair img:last-child {
+  right: 0;
+}
+
+/* ── the pictures: only a lit row's run ─────────────────────────────── */
+
+.bar,
+.person,
+.day,
+.dot,
+.scan,
+.blink,
+.pupil,
+.draw,
+.arrive,
+.star,
+.sweep,
+.hand,
+.blip,
+.play,
+.strip,
+.tile > img,
+.pair img {
+  animation-play-state: paused;
+  animation-duration: 1500ms;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-delay: calc(var(--d, 0) * 130ms);
+}
+
+.on .bar,
+.on .person,
+.on .day,
+.on .dot,
+.on .scan,
+.on .blink,
+.on .pupil,
+.on .draw,
+.on .arrive,
+.on .star,
+.on .sweep,
+.on .hand,
+.on .blip,
+.on .play,
+.on .strip,
+.on .tile > img,
+.on .pair img {
+  animation-play-state: running;
+}
+
+.bar,
+.person,
+.day,
+.dot,
+.blink,
+.arrive,
+.play,
+.blip,
+.star {
+  transform-box: fill-box;
+}
+
+.bar {
+  transform-origin: 50% 100%;
+  animation-name: grow;
+}
+
+.person {
+  transform-origin: 50% 100%;
+  animation-name: pop;
+}
+
+.day {
+  transform-origin: 50% 50%;
+  animation-name: tick;
+}
+
+.dot {
+  animation-name: typing;
+  animation-duration: 900ms;
+}
+
+.scan {
+  animation-name: scan;
+  opacity: 0;
+}
+
+.blink {
+  transform-origin: 50% 50%;
+  animation-name: blink;
+  animation-duration: 1700ms;
+}
+
+.pupil {
+  animation-name: look;
+  animation-duration: 1700ms;
+}
+
+.draw {
+  stroke-dasharray: 100;
+  animation-name: draw;
+}
+
+.arrive {
+  transform-origin: 50% 50%;
+  animation-name: arrive;
+}
+
+.star {
+  transform-origin: 50% 50%;
+  animation-name: twinkle;
+}
+
+.sweep,
+.hand {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  animation-name: turn;
+  animation-timing-function: linear;
+}
+
+.blip {
+  transform-origin: 50% 50%;
+  animation-name: blip;
+}
+
+.play {
+  transform-origin: 50% 50%;
+  animation-name: beat;
+  animation-duration: 800ms;
+}
+
+.strip {
+  animation-name: roll;
+  animation-duration: 700ms;
+  animation-timing-function: linear;
+}
+
+.tile > img {
+  animation-name: bob;
+}
+
+.pair img:first-child {
+  animation-name: swapLeft;
+}
+
+.pair img:last-child {
+  animation-name: swapRight;
+}
+
+@keyframes grow {
+  50% {
+    transform: scaleY(0.4);
+  }
+}
+
+@keyframes pop {
+  50% {
+    transform: scale(0.7) translateY(2px);
+    opacity: 0.45;
+  }
+}
+
+@keyframes tick {
+  40% {
+    transform: scale(1.7);
+    opacity: 1;
+  }
+  0%,
+  100% {
+    transform: scale(0.8);
+    opacity: 0.45;
+  }
+}
+
+@keyframes typing {
+  35% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes scan {
+  0% {
+    transform: translateY(-11px);
+    opacity: 0;
+  }
+  20%,
+  80% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(11px);
+    opacity: 0;
+  }
+}
+
+@keyframes blink {
+  44%,
+  56% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(0.08);
+  }
+}
+
+@keyframes look {
+  20%,
+  40% {
+    transform: translateX(-3.5px);
+  }
+  65%,
+  85% {
+    transform: translateX(3.5px);
+  }
+}
+
+@keyframes draw {
+  0% {
+    stroke-dashoffset: 100;
+  }
+  70%,
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes arrive {
+  0%,
+  60% {
+    transform: scale(0.3);
+  }
+  75% {
+    transform: scale(1.5);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes twinkle {
+  50% {
+    transform: rotate(90deg) scale(0.72);
+  }
+  100% {
+    transform: rotate(180deg);
+  }
+}
+
+@keyframes turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes blip {
+  50% {
+    transform: scale(1.7);
+    opacity: 0.4;
+  }
+}
+
+@keyframes beat {
+  50% {
+    transform: scale(1.25);
+  }
+}
+
+@keyframes roll {
+  to {
+    stroke-dashoffset: -5.5;
+  }
+}
+
+@keyframes bob {
+  30% {
+    transform: translateY(-3px) scale(1.12);
+  }
+  60% {
+    transform: translateY(1px) scale(0.97);
+  }
+}
+
+@keyframes swapLeft {
+  50% {
+    transform: translateX(11px) scale(1.15);
+  }
+}
+
+@keyframes swapRight {
+  50% {
+    transform: translateX(-11px) scale(0.85);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .job::before,
+  .tile,
+  .words {
+    transition: none;
+  }
+
+  .tile svg *,
+  .tile img {
+    animation: none;
+  }
+}
