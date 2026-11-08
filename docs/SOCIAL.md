@@ -773,6 +773,29 @@ thread, and only in a pass whose inbox read worked. `imapflow` is pinned at
 2.3.0 (its releases were weeks apart before a burst of six in three days).
 Written from the RFCs and imapflow's docs; not yet run against a live mailbox.
 
+### The email agent (2026-11-07)
+
+Same mailbox, page `/dashboard/social/email`, the Brain's fourth agent, and the
+Gmail node on its ring. Two jobs:
+
+- **Inbox** — opt-in (`inboxAgent`, off by default, because the inbox read used
+  to promise it opened nothing but lead replies). On, the same read also takes
+  mail a person wrote (`fromPerson`: not our own address, not no-reply/system
+  senders, no List-*/Precedence/Auto-Submitted headers; Reply-To wins, for
+  contact forms), ten a pass, oldest first, from two days back on the first
+  pass. Each gets a kind, a one-line summary and a drafted answer stating only
+  `mailKnowledge` as fact (`mailInbox/{sha1(Message-ID)}`). Answers go only on
+  the owner's Send, in the thread, with a sign-off rather than the opt-out
+  footer. "Stop emailing me" suppresses the address; a pitch to us is filed as
+  needing nothing; anyone else joins the customer list.
+- **Every customer** — `mailCustomers/{emailHash}`, from the inbox and from a
+  pasted list. "Tell every customer this" (`campaign`) writes each their own
+  email (name, note, what they last wrote), eight at once and ten a sweep
+  after; `sendMode: 'direct'` approves drafts that passed the checks. Sent
+  within the sales agent's daily cap, with its footer and suppression list.
+
+An inbox agent that is on keeps `salesSweep` awake (`salesHasWork`).
+
 ---
 
 ## 7. Connecting an account

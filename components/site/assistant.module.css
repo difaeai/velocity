@@ -1,222 +1,28 @@
-/* The Social Media Virtual Assistant on his stage.
+/* The Social Media Virtual Assistant inside a plan card's film: standing at
+   the right, cut off by the film's bottom edge like a presenter in frame, with
+   a "Tap me" button in the top-left corner. The film's chip (z-index 1, later
+   in the DOM) stays readable over his legs. */
 
-   One CSS 3D scene: the stage turns a few degrees toward a mouse pointer
-   (--rx/--ry, set from JS), and its parts sit at different depths — the halo
-   behind him, the jobs and the speech bubble in front — so he reads as standing
-   in space. Drift and bob use the individual `translate`/`rotate` properties,
-   so they never fight the depth `transform`. */
-
-.assistant {
-  overflow: hidden;
-}
-
-.assistant::before {
-  content: '';
+.agent {
   position: absolute;
-  inset: 20% 10% 0;
-  background: radial-gradient(ellipse at 50% 55%, rgba(18, 161, 94, 0.22), transparent 62%);
-  pointer-events: none;
-}
-
-.stage {
-  --rx: 0deg;
-  --ry: 0deg;
-  display: grid;
-  grid-template-columns: 1fr minmax(300px, 430px) 1fr;
-  align-items: center;
-  gap: clamp(16px, 3vw, 44px);
-  transform: perspective(1400px) rotateX(var(--rx)) rotateY(var(--ry));
-  transform-style: preserve-3d;
-  transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-/* ── the jobs ─────────────────────────────────────────────────────────── */
-
-.jobs {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 14px;
-  transform: translateZ(70px);
-  transform-style: preserve-3d;
-}
-
-.left {
-  justify-items: end;
-}
-
-.right {
-  justify-items: start;
-}
-
-/* The two lists curve round him: the middle jobs sit closer than the ends. */
-.left .job:nth-child(1),
-.left .job:nth-child(4) {
-  margin-right: 34px;
-}
-
-.right .job:nth-child(1),
-.right .job:nth-child(4) {
-  margin-left: 34px;
-}
-
-.job {
-  display: inline-flex;
-  align-items: center;
-  gap: 11px;
-  padding: 10px 18px 10px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--line-hi);
-  background: var(--glass-sheen), rgba(4, 18, 12, 0.6);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  box-shadow: var(--glass-rim), 0 14px 34px rgba(0, 0, 0, 0.35);
-  font-family: var(--font-display), system-ui, sans-serif;
-  font-size: 15.5px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--text);
-  animation: drift 6s ease-in-out infinite;
-  animation-delay: calc(var(--i) * -0.75s);
-  transition:
-    border-color 0.3s,
-    box-shadow 0.3s,
-    background-color 0.3s,
-    scale 0.3s;
-}
-
-.icon {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
-  font-size: 17px;
-  transition: background-color 0.3s;
-}
-
-.lit {
-  border-color: rgba(204, 255, 0, 0.55);
-  box-shadow: var(--glass-rim), 0 0 0 1px rgba(204, 255, 0, 0.2), 0 14px 34px rgba(0, 0, 0, 0.35);
-}
-
-.lit .icon {
-  background: rgba(204, 255, 0, 0.18);
-}
-
-/* The job he is saying right now. */
-.now {
-  scale: 1.07;
-  border-color: var(--lime);
-  box-shadow: var(--glass-rim), 0 0 28px rgba(204, 255, 0, 0.45), 0 14px 34px rgba(0, 0, 0, 0.35);
-}
-
-/* The last one is the point of all the others. */
-.own {
-  border-color: rgba(204, 255, 0, 0.5);
-  color: var(--lime);
-}
-
-@keyframes drift {
-  0%,
-  100% {
-    translate: 0 0;
-  }
-  50% {
-    translate: 0 -7px;
-  }
-}
-
-/* ── him ──────────────────────────────────────────────────────────────── */
-
-.center {
-  display: grid;
-  justify-items: center;
-  transform-style: preserve-3d;
-}
-
-.bubble {
-  position: relative;
-  z-index: 2;
-  max-width: 310px;
-  margin: 0 0 -8px;
-  padding: 14px 18px;
-  border-radius: 20px;
-  border: 1px solid var(--line-hi);
-  background: var(--glass-sheen), rgba(4, 18, 12, 0.66);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  box-shadow: var(--glass-rim), 0 16px 40px rgba(0, 0, 0, 0.4);
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.45;
-  text-align: center;
-  color: var(--text);
-  transform: translateZ(90px);
-}
-
-.bubble::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  bottom: -7px;
-  width: 14px;
-  height: 14px;
-  translate: -50% 0;
-  rotate: 45deg;
-  background: rgba(10, 30, 22, 0.95);
-  border-right: 1px solid var(--line-hi);
-  border-bottom: 1px solid var(--line-hi);
-}
-
-.figure {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 100%;
-  padding: 0 0 54px;
-  border: 0;
-  background: none;
-  color: inherit;
+  z-index: 1;
+  right: 3%;
+  bottom: -34%;
+  height: 114%;
+  aspect-ratio: 806 / 1240;
   cursor: pointer;
-  transform-style: preserve-3d;
   -webkit-tap-highlight-color: transparent;
 }
 
-.figure:focus-visible {
-  outline: none;
-}
-
-.figure:focus-visible .cue {
-  outline: 2px solid var(--lime);
-  outline-offset: 3px;
-}
-
-.halo {
-  position: absolute;
-  inset: 6% 4% 22%;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(204, 255, 0, 0.26), rgba(18, 161, 94, 0.2) 42%, transparent 70%);
-  filter: blur(12px);
-  transform: translateZ(-80px);
-}
-
-.person {
-  position: relative;
-  z-index: 1;
-  height: clamp(400px, 44vw, 560px);
-  width: auto;
-  max-width: 100%;
-  object-fit: contain;
+.agent img {
+  display: block;
+  width: 100%;
+  height: 100%;
   user-select: none;
-  /* The source stops at his shins; fade them into the light on the floor. */
-  -webkit-mask-image: linear-gradient(to bottom, #000 80%, transparent 99%);
-  mask-image: linear-gradient(to bottom, #000 80%, transparent 99%);
-  filter: drop-shadow(0 24px 36px rgba(0, 0, 0, 0.55));
-  transform: translateZ(24px);
+  /* The source render looks to its right, out of the card; mirrored, he turns in towards the reader.
+     shortcut: a turned head, not a camera look — swap in a front-facing render when one is generated. */
+  transform: scaleX(-1);
+  filter: drop-shadow(0 0 14px rgba(204, 255, 0, 0.3)) drop-shadow(0 12px 18px rgba(0, 0, 0, 0.55));
   transform-origin: 50% 100%;
   animation: float 5s ease-in-out infinite;
 }
@@ -227,111 +33,81 @@
     translate: 0 0;
   }
   50% {
-    translate: 0 -9px;
+    translate: 0 -5px;
   }
 }
 
-/* Talking: a small sway and nod from the hips, and the halo breathes with it. */
-.talking .person {
+/* Talking: a small sway and nod. */
+.talking img {
   animation:
     float 5s ease-in-out infinite,
     talk 0.9s ease-in-out infinite alternate;
 }
 
-.talking .halo {
-  animation: pulse 1.2s ease-in-out infinite alternate;
-}
-
 @keyframes talk {
   from {
-    rotate: -0.8deg;
+    rotate: -1deg;
     scale: 1;
   }
   to {
-    rotate: 0.8deg;
-    scale: 1.012;
+    rotate: 1deg;
+    scale: 1.015;
   }
 }
 
-@keyframes pulse {
-  from {
-    opacity: 0.7;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.floor {
-  position: absolute;
-  bottom: 62px;
-  left: 50%;
-  width: 78%;
-  height: 70px;
-  translate: -50% 0;
-  border-radius: 50%;
-  border: 1.5px solid rgba(204, 255, 0, 0.55);
-  background: radial-gradient(ellipse, rgba(204, 255, 0, 0.3), rgba(204, 255, 0, 0.06) 55%, transparent 72%);
-  box-shadow:
-    0 0 30px rgba(204, 255, 0, 0.3),
-    inset 0 0 24px rgba(204, 255, 0, 0.25);
-}
-
-/* ── the tap cue ──────────────────────────────────────────────────────── */
-
-.cue {
+.ask {
   position: absolute;
   z-index: 2;
-  bottom: 14px;
-  left: 50%;
+  top: 10px;
+  left: 10px;
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 18px;
-  translate: -50% 0;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 13px;
+  border: 1px solid rgba(204, 255, 0, 0.55);
   border-radius: 999px;
-  border: 1px solid rgba(204, 255, 0, 0.6);
-  background: var(--glass-sheen), rgba(4, 18, 12, 0.72);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  box-shadow: var(--glass-rim), 0 10px 26px rgba(0, 0, 0, 0.4);
-  font-size: 14px;
+  background: rgba(4, 18, 12, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: 13px;
   font-weight: 700;
   white-space: nowrap;
   color: var(--lime);
-  transform: translateZ(100px);
+  cursor: pointer;
 }
 
 /* A ring that keeps asking for the first tap. */
-.cue::before {
+.ask::before {
   content: '';
   position: absolute;
   inset: -1px;
   border-radius: inherit;
-  border: 1px solid var(--lime);
+  border: 1.5px solid var(--lime);
   animation: ring 2.2s ease-out infinite;
   pointer-events: none;
 }
 
-.talking .cue::before {
+.ask[aria-pressed='true']::before {
   animation: none;
   opacity: 0;
 }
 
 @keyframes ring {
   from {
-    opacity: 0.8;
+    opacity: 0.85;
     scale: 1;
   }
   to {
     opacity: 0;
-    scale: 1.25 1.6;
+    scale: 1.2 1.6;
   }
 }
 
 .play {
-  width: 10px;
-  height: 12px;
+  width: 9px;
+  height: 11px;
   background: var(--lime);
   clip-path: polygon(0 0, 100% 50%, 0 100%);
 }
@@ -340,7 +116,7 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  height: 14px;
+  height: 13px;
 }
 
 .wave i {
@@ -372,78 +148,10 @@
   }
 }
 
-/* ── narrower screens: him first, then the jobs in two columns ────────── */
-
-@media (max-width: 960px) {
-  .stage {
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    transform: none;
-  }
-
-  .center {
-    grid-column: 1 / -1;
-    order: -1;
-    margin-bottom: 8px;
-  }
-
-  .jobs {
-    transform: none;
-    gap: 10px;
-    align-content: start;
-  }
-
-  .left,
-  .right {
-    justify-items: stretch;
-  }
-
-  .left .job:nth-child(n),
-  .right .job:nth-child(n) {
-    margin: 0;
-  }
-
-  .job {
-    border-radius: 16px;
-    padding: 9px 12px 9px 9px;
-    font-size: 14px;
-    line-height: 1.25;
-    animation: none;
-  }
-
-  .icon {
-    width: 30px;
-    height: 30px;
-    font-size: 15px;
-  }
-
-  .person {
-    height: clamp(320px, 88vw, 440px);
-  }
-}
-
-@media (max-width: 420px) {
-  .job {
-    font-size: 13px;
-    gap: 8px;
-  }
-
-  .bubble {
-    font-size: 14px;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .stage {
-    transform: none;
-    transition: none;
-  }
-
-  .job,
-  .person,
-  .talking .person,
-  .talking .halo,
-  .cue::before,
+  .agent img,
+  .talking img,
+  .ask::before,
   .wave i {
     animation: none;
   }

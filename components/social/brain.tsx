@@ -6,7 +6,8 @@
  * Say what you want in your own words. The brain reads it (`readIntent`, plain
  * word rules, shown before anything runs) and lights the agent it will send it
  * to — the AI team for posts and reels, the Meta Ad Expert to plan a campaign
- * with you, or a new campaign made at once. Tap another agent to overrule it.
+ * with you, a new campaign made at once, or the email agent to write to every
+ * customer. Tap another agent to overrule it.
  * Its wires run on into the Approval box, which decides how the work goes out.
  *
  * The drawing is inline SVG built once from fixed numbers (the same on the
@@ -23,6 +24,7 @@ import { storage } from '@/lib/firebase';
 import { useWorkspace } from '@/lib/workspace';
 import {
   adsApi,
+  mailApi,
   socialApi,
   type AdsConfigDoc,
   type SalesSettingsDoc,
@@ -33,21 +35,22 @@ import {
 import { FORMAT_META, PLATFORM_META } from './shared';
 import { adMoney } from './ads';
 
-export type Agent = 'team' | 'expert' | 'campaign';
+export type Agent = 'team' | 'expert' | 'campaign' | 'email';
 
 const AGENTS: Record<Agent, { icon: string; name: string; does: string }> = {
   team: { icon: '🎬', name: 'AI team', does: 'Reels, posts, stories, carousels' },
   expert: { icon: '📣', name: 'Meta Ad Expert', does: 'Plans a campaign with you' },
   campaign: { icon: '🚀', name: 'New campaign', does: 'Makes the ad at Meta now' },
+  email: { icon: '✉️', name: 'Email agent', does: 'Gmail inbox + customers' },
 };
-const ORDER: Agent[] = ['team', 'expert', 'campaign'];
-/** Where each agent sits on the 760×380 stage. */
-const AGENT_Y = [70, 190, 310];
+/** Where each of `n` agents sits on the 760×380 stage: one in the middle, more spread from 70 to 310. */
+const agentYs = (n: number) => (n === 1 ? [190] : Array.from({ length: n }, (_, i) => 70 + (240 * i) / (n - 1)));
 
 const FORMATS: SocialFormat[] = ['reel', 'post', 'story', 'carousel'];
 
 const EXAMPLES = [
   'a reel for riders in Lahore: you name your own fare, no surge at night',
+  'email every customer: Eid sale, 20% off until Sunday',
   'run an ad for new drivers in Karachi, Rs 1,500 a day for a week',
   'ask the Meta Ad Expert to plan a campaign for students in Islamabad',
   'five carousel slides on how a shared ride splits the fare per seat',
@@ -56,6 +59,9 @@ const EXAMPLES = [
 
 // ── what the brain hears ────────────────────────────────────────────────────
 
+const EMAIL = /\b(e-?mails?|gmail|inbox|newsletters?)\b/;
+/** The email agent asked about the inbox rather than given something to tell customers. */
+const INBOX_ASK = /\b(inbox|repl(y|ies)|answer\w*|unread)\b/i;
 const AD = /\b(ads?|adverts?|advertis\w*|campaigns?|boost\w*|sponsor\w*|ishtihar)\b|\b(rs\.?|pkr|rupees?)\s*[\d,]+|[\d,]+\s*(rs|pkr|rupees?)\b|per day|a day for/;
 const PLAN = /\b(plan\w*|strateg\w*|advi[cs]e|suggest\w*|expert|ideas?|review|analy[sz]\w*|discuss|mashwar\w*|how much)\b/;
 const FORMAT_WORDS: [SocialFormat, RegExp][] = [
@@ -66,20 +72,20 @@ const FORMAT_WORDS: [SocialFormat, RegExp][] = [
 ];
 
 /**
- * Who a sentence is for. Ad words go to the ads desk — to the expert when it
- * also asks for a plan or advice, straight to a new campaign otherwise; the
- * rest is the AI team's, with the kind of piece if the sentence names one.
+ * Who a sentence is for. Email words go to the email agent. Ad words go to the
+ * ads desk — to the expert when it also asks for a plan or advice, straight to
+ * a new campaign otherwise; the rest is the AI team's, with the kind of piece
+ * if the sentence names one.
  */
 export function readIntent(text: string): { agent: Agent; format: SocialFormat | null } {
   const t = text.toLowerCase();
   const format = FORMAT_WORDS.find(([, re]) => re.test(t))?.[0] ?? null;
+  if (EMAIL.test(t)) return { agent: 'email', format };
   if (/\bexpert\b/.test(t) || (AD.test(t) && PLAN.test(t))) return { agent: 'expert', format };
   if (AD.test(t)) return { agent: 'campaign', format };
   return { agent: 'team', format };
 }
 
-/** The suggestions a plan without ads is shown. */
-const TEAM_EXAMPLES = EXAMPLES.filter((e) => readIntent(e).agent === 'team');
 
 // ── the drawing ─────────────────────────────────────────────────────────────
 
@@ -325,8 +331,10 @@ export function ringNodes(p: {
             glyph: '✉',
             brand: '#ea4335',
             state: (smtp ? 'live' : 'off') as Link4,
-            title: smtp ? `Mailbox: sending as ${smtp.from || smtp.user}` : 'Mailbox: not connected — the sales agent only writes',
-            href: '/dashboard/social/sales',
+            title: smtp
+              ? `Mailbox: sending as ${smtp.from || smtp.user}${p.sales?.inboxAgent ? ' — the email agent answers the inbox' : ''}`
+              : 'Mailbox: not connected — the sales and email agents only write',
+            href: '/dashboard/social/email',
           },
         ]
       : []),
@@ -454,11 +462,12 @@ export function Brain({
   children: React.ReactNode;
 }) {
   const { path, includes } = useWorkspace();
-  // A plan without the Meta Ad Expert gets only the team: no ad agents to tap, no ad examples.
+  // Each plan sees only its own agents: no ad agents without the Ad Expert, no email agent without sales.
   const adsPaid = includes('ads');
-  const order: Agent[] = adsPaid ? ORDER : ['team'];
-  const ys = adsPaid ? AGENT_Y : [190];
-  const examples = adsPaid ? EXAMPLES : TEAM_EXAMPLES;
+  const salesPaid = includes('sales');
+  const order: Agent[] = ['team', ...(adsPaid ? (['expert', 'campaign'] as const) : []), ...(salesPaid ? (['email'] as const) : [])];
+  const ys = agentYs(order.length);
+  const examples = EXAMPLES.filter((e) => order.includes(readIntent(e).agent));
   const router = useRouter();
   const [agent, setAgent] = useState<Agent>('team');
   const [refFile, setRefFile] = useState<File | null>(null);
@@ -482,13 +491,14 @@ export function Brain({
   // Folded away until wanted: most pieces need only the kind and a sentence.
   const showRef = refAsked || Boolean(refLink.trim()) || Boolean(refFile);
   const said = brief.trim();
+  const toInbox = said.length < 5 || INBOX_ASK.test(said);
 
   /** Typing re-reads the sentence; a pick of yours holds until the words point somewhere else. */
   function hear(text: string) {
     const was = readIntent(brief);
     const now = readIntent(text);
     onBrief(text);
-    if (now.agent !== was.agent && adsPaid) setAgent(now.agent);
+    if (now.agent !== was.agent && order.includes(now.agent)) setAgent(now.agent);
     if (now.format && now.format !== was.format) onWant(now.format);
   }
 
@@ -497,9 +507,19 @@ export function Brain({
       router.push(`/dashboard/social/ads?brief=${encodeURIComponent(said)}#design`);
       return;
     }
+    if (agent === 'email' && toInbox) {
+      router.push('/dashboard/social/email');
+      return;
+    }
     setBusy(true);
     try {
-      if (agent === 'campaign') {
+      if (agent === 'email') {
+        const res = await mailApi.writeCustomers({ brief: said });
+        onDone(
+          `The email agent wrote ${res.written} personal email${res.written === 1 ? '' : 's'}${res.more ? ' and writes the rest every 15 minutes' : ''}. ` +
+            (res.direct ? 'They go out within your daily limit.' : 'Approve them on the Email agent page.'),
+        );
+      } else if (agent === 'campaign') {
         const res = await adsApi.create({
           brief: said,
           dailyBudget: Number(budget) > 0 ? Number(budget) : undefined,
@@ -554,7 +574,9 @@ export function Brain({
       ? said.length < 3
       : agent === 'campaign'
         ? disabled || !adsReady || said.length < 5
-        : disabled;
+        : agent === 'email'
+          ? false
+          : disabled;
   const status = busy ? 'Thinking…' : sent ? 'Sent ✓' : said ? `Listening · ${AGENTS[agent].name}` : 'Ready';
   // The team's pieces show their own approve switch below; the ads desk keeps its own.
   const gate =
@@ -562,7 +584,11 @@ export function Brain({
       ? ads?.mode === 'direct'
         ? '⚡ Launches straight away'
         : '🛡️ Waits for your Approve on the Ads page'
-      : '💬 Nothing is spent until you press Create';
+      : agent === 'email'
+        ? sales?.sendMode === 'direct' && sales.smtp
+          ? '⚡ One email per customer, sent within your daily limit'
+          : '🛡️ One email per customer, each waits for your Approve'
+        : '💬 Nothing is spent until you press Create';
 
   return (
     <section
@@ -605,7 +631,7 @@ export function Brain({
           </svg>
           <div className="bn-brainbox ringed">
             <ConnectionRing
-              nodes={ringNodes({ accounts, ads, sales, adsPaid, salesPaid: includes('sales'), nowMs })}
+              nodes={ringNodes({ accounts, ads, sales, adsPaid, salesPaid, nowMs })}
             />
             <BrainArt />
           </div>
@@ -660,7 +686,9 @@ export function Brain({
             <span aria-hidden>⚡</span>
           )}
           {busy
-            ? agent === 'campaign'
+            ? agent === 'email'
+              ? 'Writing to each customer…'
+              : agent === 'campaign'
               ? 'The expert is building it…'
               : refFile || refLink.trim()
                 ? 'The team is watching the video…'
@@ -669,7 +697,11 @@ export function Brain({
               ? 'Plan it with the expert'
               : agent === 'campaign'
                 ? 'Make the campaign'
-                : 'Make it'}
+                : agent === 'email'
+                  ? toInbox
+                    ? 'Open the inbox'
+                    : 'Write to every customer'
+                  : 'Make it'}
         </button>
       </div>
 

@@ -271,7 +271,7 @@ function AuthForm({ mode }: { mode: AuthMode }) {
         </div>
       </section>
 
-      <Showcase title={signup ? 'Make your own Social Media Virtual Assistant.' : 'Your team kept working while you were away.'} />
+      <Showcase title={signup ? 'Give all your social media work to your Social Media Virtual Assistant.' : 'Your team kept working while you were away.'} />
     </main>
   );
 }
