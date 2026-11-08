@@ -562,6 +562,8 @@ export {
   adminChooseGoogleAdsAccount,
   adminDisconnectGoogleAds,
   adminGoogleAdsSummary,
+  adminVideoConnect,
+  adminSetVideoApp,
   adminGetSocialRoles,
   adminHireSocialEmployee,
   adminUpdateSocialEmployee,

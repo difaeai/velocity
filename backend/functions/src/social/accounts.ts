@@ -63,6 +63,9 @@ export async function loadCredentials(platform: Platform): Promise<PlatformCrede
       externalId: data.externalId,
       clientId: data.clientId,
       clientSecret: data.clientSecret ? open(data.clientSecret) : undefined,
+      rotate: async (refreshToken) => {
+        await credentialRef(platform).set({ accessToken: seal(refreshToken), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      },
     };
   } catch (e) {
     logger.error('social: could not decrypt credentials — has SOCIAL_TOKEN_KEY been rotated?', {

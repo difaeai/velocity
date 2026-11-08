@@ -41,6 +41,7 @@ import { Button, Card } from '@/components/ui';
 import { PlatformBadge, PLATFORM_META, StatusPill } from '@/components/social/shared';
 import { InstagramConnect } from '@/components/social/instagramConnect';
 import { GoogleAdsConnect } from '@/components/social/googleAdsConnect';
+import { VideoConnect } from '@/components/social/videoConnect';
 import { StoreConnect } from '@/components/social/storeConnect';
 import { SkeletonRows } from '@/components/states';
 
@@ -114,6 +115,7 @@ export default function AccountsPage() {
       ) : null}
       {showAds ? <AdsAccount cfg={ads} postingPageId={accounts.facebook?.externalId ?? null} /> : null}
       {showAds ? <GoogleAdsConnect link={ads?.google} /> : null}
+      {showAds ? <VideoConnect provider="tiktok-ads" link={ads?.tiktok} /> : null}
       {showAds ? <StoreConnect /> : null}
 
       {schema && !schema.vaultReady ? (
@@ -132,10 +134,12 @@ export default function AccountsPage() {
           need a token pasted into it. Everything below is still the manual
           route, which stays for the networks Meta does not own. */}
       {showContent ? <InstagramConnect account={accounts.instagram} /> : null}
+      {includes('content') ? <VideoConnect provider="youtube" account={accounts.youtube} /> : null}
+      {includes('content') ? <VideoConnect provider="tiktok" account={accounts.tiktok} /> : null}
 
       {showContent ? (
         <div style={{ display: 'grid', gap: 14 }}>
-          {schema?.platforms.map((p) => (
+          {schema?.platforms.filter((p) => p.platform !== 'youtube' && p.platform !== 'tiktok').map((p) => (
             <AccountCard
               key={p.platform}
               meta={p}

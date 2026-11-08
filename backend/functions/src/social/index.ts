@@ -36,6 +36,9 @@ export {
   adminGoogleAdsSummary,
 } from './googleAds';
 
+/** YouTube, TikTok and TikTok Ads: Continue with the network, no pasted tokens. */
+export { adminVideoConnect, adminSetVideoApp } from './videoConnect';
+
 export {
   adminGetSocialRoles,
   adminHireSocialEmployee,

@@ -2587,9 +2587,61 @@ export const googleAdsApi = {
   >('adminGoogleAdsSummary'),
 };
 
+/** A TikTok ad account, connected with "Continue with TikTok for Business". */
+export interface TikTokAdsLink {
+  advertiserId: string;
+  name: string;
+  currency: string;
+  connectedBy: string | null;
+  connectedAtMs: number;
+  lastError: string | null;
+}
+
+export type VideoProvider = 'youtube' | 'tiktok' | 'tiktok-ads';
+
+/** Where /connect/video leaves its result when it could not postMessage it. */
+export const VIDEO_CONNECT_HANDOFF_KEY = 'velocity.social.videoConnect';
+export const VIDEO_CONNECT_RETURN_KEY = 'velocity.social.videoConnect.return';
+
+export interface VideoConnectHandoff {
+  kind: 'velocity:video-connect';
+  code: string | null;
+  state: string | null;
+  error: string | null;
+  atMs: number;
+}
+
+export interface TikTokAdvertiserChoice {
+  advertiserId: string;
+  name: string;
+  currency: string;
+}
+
+const videoConnect = callable<
+  | { action: 'state' | 'start'; provider: VideoProvider }
+  | { action: 'finish'; code: string; state: string }
+  | { action: 'choose'; state: string; advertiserId: string }
+  | { action: 'disconnect' },
+  never
+>('adminVideoConnect') as unknown as <R>(data: unknown) => Promise<R>;
+
+/** YouTube, TikTok and TikTok Ads: Continue with the network, on one callable. */
+export const videoConnectApi = {
+  state: (provider: VideoProvider) => videoConnect<{ ready: boolean; vaultReady: boolean; redirectUri: string }>({ action: 'state', provider }),
+  start: (provider: VideoProvider) => videoConnect<{ url: string; state: string }>({ action: 'start', provider }),
+  finish: (code: string, state: string) =>
+    videoConnect<{ connected: string | null; choices: TikTokAdvertiserChoice[] }>({ action: 'finish', code, state }),
+  choose: (state: string, advertiserId: string) =>
+    videoConnect<{ connected: string | null; choices: TikTokAdvertiserChoice[] }>({ action: 'choose', state, advertiserId }),
+  disconnect: () => videoConnect<{ ok: boolean }>({ action: 'disconnect' }),
+  setApp: callable<{ provider: 'tiktok' | 'tiktok-ads'; id: string; secret: string }, { ok: boolean; redirectUri: string }>('adminSetVideoApp'),
+};
+
 export interface AdsConfigDoc {
   /** Absent or null until a Google Ads account is connected. */
   google?: GoogleAdsLink | null;
+  /** Absent or null until a TikTok ad account is connected. */
+  tiktok?: TikTokAdsLink | null;
   adAccountId: string | null;
   accountName: string | null;
   currency: string;
@@ -2659,8 +2711,12 @@ export interface AdCostRead {
 }
 
 /** socialAds/{campaignId} — one campaign, as the desk last read and judged it. */
+/** Where a campaign runs. Meta is the default and is not written on its rows. */
+export type AdNetwork = 'meta' | 'youtube' | 'tiktok';
+
 export interface AdCampaignDoc {
   id: string;
+  network?: 'youtube' | 'tiktok';
   name: string;
   objective: string;
   objectiveKind: AdObjectiveKind;
@@ -2718,7 +2774,7 @@ export const adsApi = {
   >('adminSetAdsSettings'),
   /** The brief in, a campaign at Meta out — launched or waiting, by the owner's choice. `plan`: the one designed together. */
   create: callable<
-    { brief: string; dailyBudget?: number; days?: number; source?: AdSource; launch?: boolean; plan?: AdPlan },
+    { brief: string; dailyBudget?: number; days?: number; source?: AdSource; launch?: boolean; plan?: AdPlan; network?: AdNetwork },
     {
       ok: boolean;
       campaignId: string;
