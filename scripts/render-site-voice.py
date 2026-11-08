@@ -6,6 +6,8 @@ no bill; voice af_heart unless a line names its own (`"voice"`). Run from the re
 
     uv run --python 3.13 --with kokoro==0.9.4 --with soundfile python scripts/render-site-voice.py
 
+Then run scripts/voice-mouth.py, so Vexa's lip-sync knows the new line.
+
 Only lines with no file yet are rendered; pass --all after changing a line's
 text. ffmpeg must be on PATH: it turns each line into a 64 kbps mono MP3 with
 a short fade, so a voice never clicks in or out.
