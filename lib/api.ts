@@ -2617,11 +2617,33 @@ export interface TikTokAdvertiserChoice {
   currency: string;
 }
 
+export interface TikTokCreatorInfo {
+  creator_username?: string;
+  creator_nickname?: string;
+  creator_avatar_url?: string;
+  privacy_level_options?: string[];
+  comment_disabled?: boolean;
+  duet_disabled?: boolean;
+  stitch_disabled?: boolean;
+  max_video_post_duration_sec?: number;
+}
+
+export interface TikTokPostRequest {
+  postId: string;
+  title: string;
+  privacy: string;
+  allowComment: boolean;
+  allowDuet: boolean;
+  allowStitch: boolean;
+  yourBrand: boolean;
+  brandedContent: boolean;
+}
+
 const videoConnect = callable<
   | { action: 'state' | 'start'; provider: VideoProvider }
   | { action: 'finish'; code: string; state: string }
   | { action: 'choose'; state: string; advertiserId: string }
-  | { action: 'disconnect' },
+  | { action: 'disconnect' | 'creator' },
   never
 >('adminVideoConnect') as unknown as <R>(data: unknown) => Promise<R>;
 
@@ -2634,6 +2656,9 @@ export const videoConnectApi = {
   choose: (state: string, advertiserId: string) =>
     videoConnect<{ connected: string | null; choices: TikTokAdvertiserChoice[] }>({ action: 'choose', state, advertiserId }),
   disconnect: () => videoConnect<{ ok: boolean }>({ action: 'disconnect' }),
+  /** The TikTok account as it stands now: the Post to TikTok screen reads it each time it opens. */
+  creator: () => videoConnect<TikTokCreatorInfo>({ action: 'creator' }),
+  postToTikTok: callable<TikTokPostRequest, { ok: boolean; url: string }>('adminPostToTikTok', 5 * 60_000),
   setApp: callable<{ provider: 'tiktok' | 'tiktok-ads'; id: string; secret: string }, { ok: boolean; redirectUri: string }>('adminSetVideoApp'),
 };
 

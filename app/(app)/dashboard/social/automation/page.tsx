@@ -365,7 +365,7 @@ export default function AutomationPage() {
           ticked here.
         </p>
         <div style={{ display: 'grid', gap: 10 }}>
-          {SOCIAL_PLATFORMS.map((platform) => {
+          {SOCIAL_PLATFORMS.filter((p) => p !== 'tiktok').map((platform) => {
             const on = settings.platforms.includes(platform);
             const takes = SOCIAL_FORMATS.filter((f) => platformTakes(platform, f));
             return (

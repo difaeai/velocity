@@ -56,7 +56,7 @@ import { design, DesignError } from './designer';
 import { activeTeam, assign, creditWork, teamRefs } from './employees';
 import { activeEngine, modelReady, type Engine } from './engine';
 import { captionFor, planDistribution } from './manager';
-import { PlatformError, publishTo } from './platforms';
+import { PlatformError, publishTo, type TikTokChoices } from './platforms';
 import { latestPageRead, pageReadBlock } from './insights';
 import { underlay } from './footage';
 import { IMAGE_MODEL, geminiReady } from './gemini';
@@ -80,6 +80,7 @@ import {
   REVISION_SCOPES,
   STAGE_COVER,
   postMedia,
+  postsOnItsOwn,
   supports,
   WORKING_STATUSES,
   type ContentFormat,
@@ -649,7 +650,7 @@ async function runTeam(params: {
       try {
         const connected = await publishableAccounts(params.format);
         const candidates = (params.targets ?? existing?.targets ?? settings.platforms).filter(
-          (p) => supports(p, params.format) && (connected.length === 0 || connected.includes(p)),
+          (p) => postsOnItsOwn(p) && supports(p, params.format) && (connected.length === 0 || connected.includes(p)),
         );
         const distribution = await planDistribution({
           employee: manager,
@@ -1052,7 +1053,7 @@ async function createPost(opts: {
   const id = opts.id ?? postIdFor(opts.date, opts.format);
 
   const targets = (opts.targets ?? settings.platforms).filter(
-    (p) => PLATFORMS.includes(p) && supports(p, opts.format),
+    (p) => PLATFORMS.includes(p) && postsOnItsOwn(p) && supports(p, opts.format),
   );
 
   await postRef(id).set({
@@ -1159,7 +1160,7 @@ export async function claimForPublish(id: string, only?: Platform[]): Promise<{ 
 
     const format = post.format ?? 'reel';
     const live = (p: Platform) => post.results?.[p]?.ok === true;
-    const targets = (only ?? post.targets ?? []).filter((p) => supports(p, format) && !live(p));
+    const targets = (only ?? post.targets ?? []).filter((p) => postsOnItsOwn(p) && supports(p, format) && !live(p));
     if (!targets.length) {
       throw new HttpsError(
         'failed-precondition',
@@ -1251,7 +1252,7 @@ async function publishPost(id: string, only?: Platform[]): Promise<{ published: 
   // Judged over every network the piece was meant for, counting the ones an
   // earlier attempt already got it onto.
   const merged = { ...post.results, ...results } as SocialPost['results'];
-  const meant = (post.targets ?? []).filter((p) => supports(p, format));
+  const meant = (post.targets ?? []).filter((p) => postsOnItsOwn(p) && supports(p, format));
   const liveNow = meant.filter((p) => merged[p]?.ok).length;
   const status: PostStatus = liveNow === 0 ? 'failed' : liveNow < meant.length ? 'partial' : 'published';
   await patch(id, {
@@ -1943,6 +1944,69 @@ export const adminPublishSocialPost = deskCall('content',
     return { ok: published > 0, published, failed };
   },
 );
+
+/**
+ * "Post to TikTok": one piece, on one person's own choices from the screen.
+ *
+ * Apart from every other network because TikTok's rules require that person's
+ * consent per post, so nothing automatic may reach it. Its result sits beside the
+ * others, but it never counts towards whether the piece is finished elsewhere.
+ * The claim is a transaction for the same reason `claimForPublish` is one.
+ */
+export const adminPostToTikTok = deskCall('content', { timeoutSeconds: 300, memory: '1GiB' }, async (req) => {
+  requireAuth(req);
+  const parsed = z
+    .object({
+      postId: z.string().min(1).max(64),
+      title: z.string().trim().min(1).max(2200),
+      privacy: z.enum(['PUBLIC_TO_EVERYONE', 'MUTUAL_FOLLOW_FRIENDS', 'FOLLOWER_OF_CREATOR', 'SELF_ONLY']),
+      allowComment: z.boolean(),
+      allowDuet: z.boolean(),
+      allowStitch: z.boolean(),
+      yourBrand: z.boolean(),
+      brandedContent: z.boolean(),
+    })
+    .safeParse(req.data);
+  if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
+  const { postId, title, ...choices } = parsed.data;
+
+  const post = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(postRef(postId));
+    const doc = snap.data() as (SocialPost & { tiktokClaimMs?: number }) | undefined;
+    if (!doc) throw new HttpsError('not-found', 'No such post.');
+    if (doc.results?.tiktok?.ok) throw new HttpsError('failed-precondition', 'It is already on TikTok.');
+    if (Date.now() - (doc.tiktokClaimMs ?? 0) < STALE_PUBLISH_MS) throw new HttpsError('already-exists', 'It is already going to TikTok.');
+    tx.set(postRef(postId), { tiktokClaimMs: Date.now() }, { merge: true });
+    return doc;
+  });
+
+  const finish = (result: { ok: boolean; id: string | null; url: string | null; error: string | null }) =>
+    postRef(postId).set({ results: { tiktok: { ...result, atMs: Date.now() } }, tiktokClaimMs: null, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+
+  const credentials = await loadCredentials('tiktok');
+  if (!credentials) {
+    await postRef(postId).set({ tiktokClaimMs: null }, { merge: true });
+    throw new HttpsError('failed-precondition', 'Connect TikTok first, on Connected accounts.');
+  }
+  try {
+    const out = await publishTo('tiktok', credentials, {
+      format: post.format ?? 'reel',
+      media: await refreshAssetUrls(postMedia(post)),
+      caption: title,
+      title,
+      tags: [],
+      tiktok: choices satisfies TikTokChoices,
+    });
+    await finish({ ok: true, id: out.id, url: out.url, error: null });
+    return { ok: true, url: out.url };
+  } catch (e) {
+    const message = e instanceof PlatformError ? e.message : (e as Error).message;
+    logger.error('social: TikTok post failed', { postId, message });
+    await finish({ ok: false, id: null, url: null, error: message.slice(0, 500) });
+    await flagIfDead('tiktok', credentials, message);
+    throw new HttpsError('failed-precondition', message);
+  }
+});
 
 /**
  * "Render it" — make the pictures or the reel now, for a piece that has none.

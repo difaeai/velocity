@@ -904,7 +904,8 @@ for the same reason.
 `videoConnect.ts` + `components/social/videoConnect.tsx`. All three come back to
 one public page, `https://velocityrides.app/connect/video`, and the mark on the
 front of the state (`yt.` `tt.` `ta.`) says whose sign-in it was. Finishing a
-YouTube or TikTok connect also adds that network to the ones the team posts to.
+YouTube connect also adds it to the networks the team posts to. TikTok never joins
+that list: each post goes through the Post to TikTok screen.
 
 | Connection | App it signs in with | Set up once |
 |---|---|---|
@@ -920,8 +921,8 @@ most 5 users a day. The audit is at
 guidelines refuse tools only for your own accounts, and require, per post, the
 creator's name, a privacy choice with no default, interaction switches that start
 off, the commercial-content switch, the music declaration and the user's express
-consent. That screen is not built yet: the adapter posts automatically at the most
-public level TikTok offers.
+consent. All of that is `components/social/tiktokPost.tsx`, on each piece in Content &
+calendar, posting through `adminPostToTikTok`. Do not default a choice to save a tap.
 
 **Ads.** The Brain's New campaign agent runs on Facebook & Instagram, YouTube or
 TikTok (`videoAds.ts`), under the same `dailyCap`, `maxDays` and `ask`/`direct`

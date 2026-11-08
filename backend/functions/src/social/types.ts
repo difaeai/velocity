@@ -377,6 +377,9 @@ export function platformsForFormat(format: ContentFormat): Platform[] {
   return PLATFORMS.filter((p) => PLATFORM_FORMATS[p].includes(format));
 }
 
+/** TikTok's rules need a person's own yes on each post, so the team never posts there by itself: `adminPostToTikTok` does. */
+export const postsOnItsOwn = (platform: Platform): boolean => platform !== 'tiktok';
+
 export function supports(platform: Platform, format: ContentFormat): boolean {
   return PLATFORM_FORMATS[platform].includes(format);
 }

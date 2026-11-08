@@ -27,12 +27,12 @@ export const planVoice = (plan: StudioPlanId) => `plan-${plan}`;
 const VEXA = 'vexa';
 /** The arc over her head, left to right: the file in /site/logos and where it sits (degrees, -180 = her left, 0 = her right). */
 const PLATFORMS = [
-  ['facebook', -165],
-  ['instagram', -135],
-  ['meta', -105],
-  ['google', -75],
-  ['google-ads', -45],
-  ['youtube', -15],
+  ['facebook', -160],
+  ['instagram', -132],
+  ['meta', -104],
+  ['google', -76],
+  ['google-ads', -48],
+  ['youtube', -20],
 ] as const;
 
 /** A plan line: which one is playing, and a tap that starts or stops one. */
