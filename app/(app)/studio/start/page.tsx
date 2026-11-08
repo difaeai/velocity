@@ -24,6 +24,7 @@ import {
   STUDIO_PLANS,
   STUDIO_TRIAL_HOURS,
   studioPriceUsd,
+  studioUsd,
   type StudioBilling,
   type StudioPlanId,
 } from '@/lib/studio';
@@ -354,7 +355,7 @@ function BusinessCard({
         </button>
         <p className={s.fine}>
           No card needed. After {STUDIO_TRIAL_HOURS} hours, pick a plan —{' '}
-          {billing === 'year' ? `$${studioPriceUsd(plan, 'year')} a year` : `$${STUDIO_PLANS[plan].usd} a month`} for{' '}
+          {billing === 'year' ? `${studioUsd(studioPriceUsd(plan, 'year'))} a year` : `$${STUDIO_PLANS[plan].usd} a month`} for{' '}
           {STUDIO_PLANS[plan].name} — or add credits at $1 a day. Pay by bank transfer, EasyPaisa or JazzCash.
         </p>
       </form>

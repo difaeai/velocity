@@ -18,6 +18,7 @@ import {
   STUDIO_PLANS,
   STUDIO_YEAR_DISCOUNT_PCT,
   studioPriceUsd,
+  studioUsd,
   type StudioBilling,
   type StudioPlanId,
 } from '@/lib/studio';
@@ -78,11 +79,11 @@ export default function UpgradePage() {
                   <p className={a.planTag}>{p.tagline}</p>
                 </div>
                 <div className={a.price}>
-                  <span className={a.priceNum}>${price}</span>
+                  <span className={a.priceNum}>{studioUsd(price)}</span>
                   <span className={a.priceUnit}>
                     USD / {billing}
                     <br />
-                    {billing === 'year' ? `save $${p.usd * 12 - price} on 12 months` : 'billed monthly'}
+                    {billing === 'year' ? `save ${studioUsd(p.usd * 12 - price)} on 12 months` : 'billed monthly'}
                   </span>
                 </div>
                 <Link

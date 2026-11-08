@@ -240,7 +240,7 @@ export default function Home() {
 
         <StudioStory />
 
-        <StudioPricing heading="One team. Three ways to hire it." />
+        <StudioPricing heading="One Vexa. Three ways to hire her." />
         <StudioFaq />
 
         {/* ── the two products, and the way in to each ───────────────────── */}

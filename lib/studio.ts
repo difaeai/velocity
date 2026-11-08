@@ -92,13 +92,19 @@ export const STUDIO_FROM_USD = Math.min(...STUDIO_PLAN_IDS.map((id) => STUDIO_PL
 
 /** Paid a month at a time, or a year up front for less. */
 export type StudioBilling = 'month' | 'year';
-export const STUDIO_YEAR_DISCOUNT_PCT = 13;
+export const STUDIO_YEAR_DISCOUNT_PCT = 3;
 
-/** A year is twelve months less 13%, rounded down so the saving is never under 13%. */
+/** A year is twelve months less exactly 3%, to the cent — never more (owner); a month is never discounted. Mirrors backend priceUsd. */
 export const studioPriceUsd = (plan: StudioPlanId, billing: StudioBilling): number =>
   billing === 'year'
-    ? Math.floor((STUDIO_PLANS[plan].usd * 12 * (100 - STUDIO_YEAR_DISCOUNT_PCT)) / 100)
+    ? Math.round(STUDIO_PLANS[plan].usd * 12 * (100 - STUDIO_YEAR_DISCOUNT_PCT)) / 100
     : STUDIO_PLANS[plan].usd;
+
+/** The rupees to send for `usd`: whole rupees, rounded up so a year's saving never passes 3%. Mirrors backend pricePkr. */
+export const studioPkr = (usd: number): number => Math.ceil((Math.round(usd * 100) * PKR_PER_USD) / 100);
+
+/** "$232.80", or "$20" for whole dollars. */
+export const studioUsd = (usd: number): string => `$${Number.isInteger(usd) ? usd : usd.toFixed(2)}`;
 
 export const STUDIO_TRIAL_HOURS = 24;
 

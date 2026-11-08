@@ -61,17 +61,19 @@ export const PLAN_IDS: PlanId[] = ['research', 'content', 'all'];
 
 /** Paid a month at a time, or a year up front for less. */
 export type Billing = 'month' | 'year';
-export const YEAR_DISCOUNT_PCT = 13;
+export const YEAR_DISCOUNT_PCT = 3;
 
-/** A year is twelve months less 13%, rounded down so the saving is never under 13%. */
+/** A year is twelve months less exactly 3%, to the cent — never more (owner); a month is never discounted. Mirrors lib/studio.ts. */
 export const priceUsd = (plan: PlanId, billing: Billing): number =>
-  billing === 'year' ? Math.floor((PLANS[plan].usd * 12 * (100 - YEAR_DISCOUNT_PCT)) / 100) : PLANS[plan].usd;
+  billing === 'year' ? Math.round(PLANS[plan].usd * 12 * (100 - YEAR_DISCOUNT_PCT)) / 100 : PLANS[plan].usd;
 
 // shortcut: one fixed rate for the PKR a customer is asked to send; mirrored in lib/studio.ts. Read it from config when the rupee moves.
 export const PKR_PER_USD = 280;
 
 /** What this plan costs in rupees, the figure the Billing page asks for. */
-export const pricePkr = (plan: PlanId, billing: Billing): number => priceUsd(plan, billing) * PKR_PER_USD;
+/** Whole rupees, rounded up so a year's saving never passes 3%. Mirrors lib/studio.ts studioPkr. */
+export const pricePkr = (plan: PlanId, billing: Billing): number =>
+  Math.ceil((Math.round(priceUsd(plan, billing) * 100) * PKR_PER_USD) / 100);
 
 /** One free day, then a plan has to be paid for. */
 export const TRIAL_MS = 24 * 3600_000;
