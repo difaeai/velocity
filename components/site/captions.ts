@@ -24,6 +24,18 @@ export function cues(text: string, max = 90): string[] {
 const BY_FILE = new Map(LINES.map((l) => [`${l.key}.mp3`, cues(l.text)]));
 
 /**
+ * How far through line `key` (0 to 1) she starts saying each bullet, -1 if she never does.
+ * A plan's bullets are her own words, less the "I " a list repeats.
+ */
+export function bulletMarks(key: string, bullets: string[]): number[] {
+  const text = LINES.find((l) => l.key === key)?.text.toLowerCase() ?? '';
+  return bullets.map((b) => {
+    const at = text.indexOf(b.replace(/^I /, '').toLowerCase());
+    return at < 0 ? -1 : at / text.length;
+  });
+}
+
+/**
  * The cue `at` seconds into the line playing from `src`, `length` seconds long.
  * shortcut: a cue's time is its share of the line's letters, not the voice's real timings — close for an
  * even TTS voice; render Kokoro's per-chunk timings into siteVoice.json if cues ever drift.
