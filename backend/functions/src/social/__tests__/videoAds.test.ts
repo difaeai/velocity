@@ -178,7 +178,8 @@ describe('the sign-in', () => {
   it('asks Google for a refresh token, and only for what posting needs', () => {
     const u = new URL(consentUrl('youtube', 'id', 'yt.s', 'https://velocityrides.app/connect/video'));
     expect(u.searchParams.get('access_type')).toBe('offline');
-    expect(u.searchParams.get('prompt')).toBe('consent');
+    // select_account is what makes Google show its channel picker to someone already signed in.
+    expect(u.searchParams.get('prompt')).toBe('select_account consent');
     expect(u.searchParams.get('scope')).toContain('youtube.upload');
     expect(u.searchParams.get('state')).toBe('yt.s');
   });

@@ -23,7 +23,7 @@ import { db, FieldValue, Timestamp } from '../lib/firebase';
 import { requireAdmin, requireAuth } from '../lib/guards';
 import { connectVerifiedAccount, loadCredentials } from './accounts';
 import { googleApp } from './googleAds';
-import { tiktokCreatorInfo } from './platforms';
+import { tiktokCreatorInfo, youtubeChannels, type YouTubeChannel } from './platforms';
 import { open, seal, tokenVaultReady, type SealedSecret } from './secrets';
 import { getSocialSettings, patchSettings } from './settings';
 import { TIKTOK_SECRET_PATH, tiktokAds, type TikTokAdsLink } from './videoAds';
@@ -86,9 +86,10 @@ export function consentUrl(provider: VideoProvider, appId: string, state: string
       client_id: appId,
       redirect_uri: redirect,
       response_type: 'code',
-      // Both are needed for a refresh token from someone who has granted access before.
+      // consent: needed for a refresh token from someone who has granted access before.
+      // select_account: always show Google's account and channel pickers, or a signed-in person skips them.
       access_type: 'offline',
-      prompt: 'consent',
+      prompt: 'select_account consent',
       scope: 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.force-ssl',
       state,
     })}`;
@@ -139,22 +140,42 @@ async function postThereFromNowOn() {
   if (!platforms.includes('youtube')) await patchSettings({ platforms: [...platforms, 'youtube'] });
 }
 
-async function finishPosting(platform: 'youtube' | 'tiktok', app: App, code: string, uid: string): Promise<string> {
-  const grant =
-    platform === 'youtube'
-      ? await exchange(GOOGLE_TOKEN, { grant_type: 'authorization_code', code, client_id: app.id, client_secret: app.secret, redirect_uri: redirectUri() })
-      : await exchange('https://open.tiktokapis.com/v2/oauth/token/', {
-          grant_type: 'authorization_code',
-          code,
-          client_key: app.id,
-          client_secret: app.secret,
-          redirect_uri: redirectUri(),
-        });
-  if (!grant.refresh_token) {
-    throw new HttpsError('failed-precondition', grant.error_description || grant.error || 'The sign-in gave no lasting access. Remove Velocity from the account’s connected apps and try again.');
+const NO_LASTING_ACCESS = 'The sign-in gave no lasting access. Remove Velocity from the account’s connected apps and try again.';
+
+async function finishTikTok(app: App, code: string, uid: string): Promise<string> {
+  const grant = await exchange('https://open.tiktokapis.com/v2/oauth/token/', {
+    grant_type: 'authorization_code',
+    code,
+    client_key: app.id,
+    client_secret: app.secret,
+    redirect_uri: redirectUri(),
+  });
+  if (!grant.refresh_token) throw new HttpsError('failed-precondition', grant.error_description || grant.error || NO_LASTING_ACCESS);
+  const record = await connectVerifiedAccount('tiktok', { accessToken: grant.refresh_token, clientId: app.id, clientSecret: app.secret }, uid);
+  return String(record.displayName ?? '');
+}
+
+/** Spend a Google code and hold the access until the person says which channel: nothing connects by itself. */
+async function finishYouTube(app: App, code: string, state: string): Promise<YouTubeChannel[]> {
+  const grant = await exchange(GOOGLE_TOKEN, { grant_type: 'authorization_code', code, client_id: app.id, client_secret: app.secret, redirect_uri: redirectUri() });
+  if (!grant.refresh_token) throw new HttpsError('failed-precondition', grant.error_description || grant.error || NO_LASTING_ACCESS);
+  const channels = await youtubeChannels({ accessToken: grant.refresh_token, clientId: app.id, clientSecret: app.secret });
+  if (!channels.length) throw new HttpsError('failed-precondition', 'That Google account has no YouTube channel. Choose the account that owns it.');
+  // shortcut: a pick nobody finishes leaves this sealed token behind, as Meta and TikTok Ads do; add a TTL on socialOAuthStates if these pile up.
+  await stateRef(state).set({ token: seal(grant.refresh_token), channels }, { merge: true });
+  return channels;
+}
+
+async function keepChannel(state: string, uid: string, channelId: string): Promise<string> {
+  const s = await ownState(state, uid);
+  const app = await appFor('youtube');
+  if (!app) throw new HttpsError('failed-precondition', 'This connection is not set up yet.');
+  if (!s.token || !(s.channels as YouTubeChannel[] | undefined)?.some((c) => c.channelId === channelId)) {
+    throw new HttpsError('failed-precondition', 'Pick one of the channels that sign-in reached.');
   }
-  const record = await connectVerifiedAccount(platform, { accessToken: grant.refresh_token, clientId: app.id, clientSecret: app.secret }, uid);
-  if (platform === 'youtube') await postThereFromNowOn();
+  const record = await connectVerifiedAccount('youtube', { accessToken: open(s.token as SealedSecret), clientId: app.id, clientSecret: app.secret, externalId: channelId }, uid);
+  await postThereFromNowOn();
+  await stateRef(state).delete();
   return String(record.displayName ?? '');
 }
 
@@ -204,6 +225,7 @@ export const adminVideoConnect = deskCall('any', { timeoutSeconds: 60 }, async (
       z.object({ action: z.literal('start'), provider: providerSchema }),
       z.object({ action: z.literal('finish'), code: z.string().min(6).max(3000), state: stateSchema }),
       z.object({ action: z.literal('choose'), state: stateSchema, advertiserId: z.string().min(3).max(40) }),
+      z.object({ action: z.literal('channel'), state: stateSchema, channelId: z.string().min(3).max(60) }),
       z.object({ action: z.literal('disconnect') }),
       z.object({ action: z.literal('creator') }),
     ])
@@ -240,12 +262,15 @@ export const adminVideoConnect = deskCall('any', { timeoutSeconds: 60 }, async (
           if (choices.length === 1) return { connected: await keepAdvertiser(input.state, ctx.uid, choices[0].advertiserId), choices: [] };
           return { connected: null, choices };
         }
-        const connected = await finishPosting(provider, app, input.code, ctx.uid);
+        if (provider === 'youtube') return { connected: null, choices: [], channels: await finishYouTube(app, input.code, input.state) };
+        const connected = await finishTikTok(app, input.code, ctx.uid);
         await stateRef(input.state).delete();
         return { connected, choices: [] };
       }
       case 'choose':
         return { connected: await keepAdvertiser(input.state, ctx.uid, input.advertiserId), choices: [] };
+      case 'channel':
+        return { connected: await keepChannel(input.state, ctx.uid, input.channelId), choices: [] };
       case 'creator': {
         const credentials = await loadCredentials('tiktok');
         if (!credentials) throw new HttpsError('failed-precondition', 'Connect TikTok first, on Connected accounts.');
