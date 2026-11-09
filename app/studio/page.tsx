@@ -206,6 +206,50 @@ export default function StudioPage() {
       <StudioPricing />
       <StudioFaq />
 
+      {/* What TikTok's app reviewer reads from outside the login. Every line is what the Post to TikTok screen does. */}
+      <section id="about" className={`${site.section} ${site.light}`}>
+        <div className={site.wrap}>
+          <div className={site.sectionHead}>
+            <span className={site.eyebrow}>About Vexa</span>
+            <h2 className={site.h2}>Vexa is a product of Velocity Rides.</h2>
+            <p className={site.lead}>
+              Vexa is the social media virtual assistant for businesses. It is made by the team behind the Velocity Rides app and operated by Berreto (Private) Limited.
+            </p>
+          </div>
+          <div className={site.sectionHead}>
+            <span className={site.eyebrow}>How Vexa works with TikTok</span>
+          </div>
+          <div className={s.steps}>
+            <div className={s.step}>
+              <span className={s.stepN}>01</span>
+              <h3>You connect your account</h3>
+              <p>You sign in on TikTok’s own page and allow two things: your basic profile, and posting videos. Vexa never sees your password.</p>
+            </div>
+            <div className={s.step}>
+              <span className={s.stepN}>02</span>
+              <h3>You check each video</h3>
+              <p>You watch it, edit the title, choose who can view it, set comments, Duet and Stitch, and label commercial content.</p>
+            </div>
+            <div className={s.step}>
+              <span className={s.stepN}>03</span>
+              <h3>You press Post to TikTok</h3>
+              <p>Nothing goes to TikTok until you press it. You can disconnect at any time, which deletes the stored access.</p>
+            </div>
+          </div>
+          <p className={`${site.lead} ${site.center}`} style={{ marginTop: 28 }}>
+            Read our{' '}
+            <a href="/privacy" style={{ textDecoration: 'underline' }}>
+              Privacy Policy
+            </a>{' '}
+            and{' '}
+            <a href="/terms" style={{ textDecoration: 'underline' }}>
+              Terms of Service
+            </a>
+            .
+          </p>
+        </div>
+      </section>
+
       <section className={`${s.closing} ${site.deep}`}>
         <div className={site.wrap}>
           <h2 className={site.h2}>Connect your account. Watch the magic.</h2>
@@ -220,7 +264,7 @@ export default function StudioPage() {
 
       <footer className={site.wrap}>
         <div className={s.footer}>
-          <span>Vexa — Your Social Media Virtual Assistant, by Berreto (Private) Limited</span>
+          <span>Vexa — Your Social Media Virtual Assistant. A product of Velocity Rides, by Berreto (Private) Limited</span>
           <span>
             <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a> · <a href="mailto:business@velocityrides.app">business@velocityrides.app</a>
           </span>

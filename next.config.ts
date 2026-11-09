@@ -62,6 +62,8 @@ const nextConfig: NextConfig = {
       { source: '/terms', destination: '/legal/terms.html' },
       { source: '/terms-of-service', destination: '/legal/terms.html' },
       { source: '/terms.html', destination: '/legal/terms.html' },
+      // The short address for Vexa: what TikTok's app form and its reviewer are given.
+      { source: '/vexa', destination: '/studio' },
     ];
   },
 };
