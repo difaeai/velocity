@@ -625,6 +625,7 @@ export { studioCreditSweep, studioUsage } from './studio/credits';
 // Velocity Studio sign-up: the emailed code and the mailbox it comes from.
 export { studioTouch, studioSendEmailCode, studioVerifyEmailCode } from './studio/emailCode';
 export { adminSetStudioMailer } from './studio/mailer';
+export { studioPriceClock } from './studio/priceClock';
 
 // The sales agent — find businesses, write to each, follow up twice, and draft an answer to every reply;
 // its calling agents write a call script per business for the person who dials

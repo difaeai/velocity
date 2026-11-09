@@ -30,6 +30,7 @@ import {
 import { PlanAsk, planVoice, useVexa } from './Assistant';
 import { ArrowRight } from './Icons';
 import { PlanJobs } from './PlanJobs';
+import { usePriceRaised } from './priceClock';
 import { hush } from './siteSound';
 import { useReducedMotion, useSaveData } from './useReducedMotion';
 import site from './site.module.css';
@@ -102,6 +103,7 @@ export function StudioPlans() {
   const saveData = useSaveData();
   const still = reduced || saveData;
   const [billing, setBilling] = useState<StudioBilling>('month');
+  const raised = usePriceRaised();
   const [seen, setSeen] = useState(() => STUDIO_PLAN_IDS.map(() => false));
   const cards = useRef<(HTMLElement | null)[]>([]);
   const films = useRef<(HTMLVideoElement | null)[]>([]);
@@ -144,8 +146,9 @@ export function StudioPlans() {
         {STUDIO_PLAN_IDS.map((id, i) => {
           const p = STUDIO_PLANS[id];
           const best = id === 'all';
-          const year = studioPriceUsd(id, 'year');
-          const twelve = p.usd * 12;
+          const month = studioPriceUsd(id, 'month', raised);
+          const year = studioPriceUsd(id, 'year', raised);
+          const twelve = month * 12;
           return (
             <div key={id} className={styles.slot}>
               <article
@@ -190,14 +193,14 @@ export function StudioPlans() {
                     <span key={`sheen-${billing}`} className={styles.sheen} aria-hidden />
                     <div className={styles.price}>
                       <strong>
-                        <Count to={studioPriceUsd(id, billing)} />
+                        <Count to={studioPriceUsd(id, billing, raised)} />
                       </strong>
                       <small key={billing}>/{billing}</small>
                     </div>
                     <p key={`save-${billing}`} className={styles.save}>
                       {billing === 'year' ? (
                         <>
-                          <s>${twelve}</s> <Count from={p.usd} to={year / 12} /> a month ·{' '}
+                          <s>${twelve}</s> <Count from={month} to={year / 12} /> a month ·{' '}
                           <mark>
                             you save <Count from={0} to={twelve - year} />
                           </mark>

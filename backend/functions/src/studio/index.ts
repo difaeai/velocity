@@ -35,6 +35,7 @@ import { EMPTY_BRIEF } from '../social/types';
 import { inWorkspace, sdb, workspaceRef } from '../social/workspace';
 import { signInMethod, touchStudioUser } from './emailCode';
 import { checkStudioPayment } from './paymentCheck';
+import { customerPriceRaised } from './priceClock';
 import { quote, type AgentPackage, type AgentPlan } from '../agents/billing';
 import { packageSchema, planFrom } from '../agents';
 import { rateCard } from '../agents/store';
@@ -50,6 +51,7 @@ import {
   YEAR_MS,
   extendPaid,
   paidAfter,
+  pricePkr,
   priceUsd,
   type Billing,
   type PlanId,
@@ -207,6 +209,7 @@ export const studioSubmitPayment = onCall({ timeoutSeconds: 120, memory: '1GiB' 
   // An agent package keeps the plan the workspace already has; its price comes from the rate card, never the client.
   const plan = parsed.data.plan ?? ws.plan;
   const agentQuote = agents ? quote(agents, await rateCard()) : null;
+  const raised = !agents && !credits && (await customerPriceRaised(ctx.uid, Date.now()));
 
   const paymentRef = db.collection('studioPayments').doc();
   await db.runTransaction(async (tx) => {
@@ -222,9 +225,11 @@ export const studioSubmitPayment = onCall({ timeoutSeconds: 120, memory: '1GiB' 
       email: ws.ownerEmail,
       plan,
       billing: agents || credits ? 'month' : billing,
-      amountUsd: agentQuote ? agentQuote.priceUsd : credits ? credits * CREDIT_DAY_USD : priceUsd(plan, billing),
+      amountUsd: agentQuote ? agentQuote.priceUsd : credits ? credits * CREDIT_DAY_USD : priceUsd(plan, billing, raised),
       ...(agents && agentQuote ? { kind: 'agents', agents, amountPkr: agentQuote.pricePkr } : {}),
       ...(credits ? { kind: 'credits', credits, amountPkr: credits * CREDIT_DAY_USD * PKR_PER_USD } : {}),
+      // The receipt check and the admin compare against this, so it has to carry the rise.
+      ...(raised ? { amountPkr: pricePkr(plan, billing, true) } : {}),
       txnId,
       txnKey: key,
       screenshotPath,

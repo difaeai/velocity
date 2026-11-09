@@ -2288,6 +2288,8 @@ export const studioApi = {
   ),
   /** The sign-up page saying hello, so an unfinished sign-up is on the admin's list. */
   touch: callable<Record<string, never>, { ok: boolean }>('studioTouch'),
+  /** This customer's own time at today's price, and whether the higher price applies yet. */
+  priceClock: callable<Record<string, never>, { leftMs: number; raised: boolean }>('studioPriceClock'),
   sendEmailCode: callable<Record<string, never>, { ok: boolean; sentTo?: string; alreadyVerified?: boolean }>(
     'studioSendEmailCode',
   ),

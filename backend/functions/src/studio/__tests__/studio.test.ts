@@ -25,6 +25,7 @@ import {
 } from '../index';
 import { studioSendEmailCode, studioTouch, studioVerifyEmailCode } from '../emailCode';
 import { PERIOD_MS, TRIAL_MS, YEAR_MS, type Workspace } from '../plans';
+import { PRICE_GRACE_MS, PRICE_WINDOW_MS, studioPriceClock } from '../priceClock';
 import { HOUSE, deskWorkspace, inWorkspace, liveWorkspaces, sdb, wsPath } from '../../social/workspace';
 
 const OWNER = 'studio-owner';
@@ -246,6 +247,43 @@ describe('paying', () => {
     const ws = (await db().doc(`workspaces/${wid}`).get()).data()!;
     expect(ws.plan).toBe('research');
     expect(ws.paidUntilMs).toBeGreaterThanOrEqual(before + YEAR_MS);
+  });
+
+  it('charges today’s price inside a customer’s 3 days and $2 more after them', async () => {
+    const wid = await signUp('content');
+    const charged = async (txnId: string) => {
+      const res = (await studioSubmitPayment.run(asUser(paid(wid, 'content', txnId), OWNER, { ws: wid }))) as { paymentId: string };
+      return (await db().doc(`studioPayments/${res.paymentId}`).get()).data()!;
+    };
+    expect((await charged('EP-100001')).amountUsd).toBe(26);
+
+    await db().doc(`studioPriceClocks/u_${OWNER}`).set({ startedAtMs: Date.now() - PRICE_WINDOW_MS - PRICE_GRACE_MS - 1000 });
+    expect(await charged('EP-100002')).toMatchObject({ amountUsd: 28, amountPkr: 7840 });
+  });
+
+  it('a credit pack never carries the rise', async () => {
+    const wid = await signUp('content');
+    await db().doc(`studioPriceClocks/u_${OWNER}`).set({ startedAtMs: 0 });
+    const res = (await studioSubmitPayment.run(
+      asUser({ credits: 5, txnId: 'EP-100003', screenshotPath: `workspaces/${wid}/payments/EP-100003.jpg` }, OWNER, { ws: wid }),
+    )) as { paymentId: string };
+    expect((await db().doc(`studioPayments/${res.paymentId}`).get()).data()).toMatchObject({ amountUsd: 5, amountPkr: 1400 });
+  });
+
+  it('counts a visitor by IP and keeps the clock across visits, without storing the address', async () => {
+    const visit = (ip?: string) =>
+      studioPriceClock.run({ data: {}, rawRequest: { ip } } as unknown as CallableRequest) as Promise<{ leftMs: number; raised: boolean }>;
+    const first = await visit('203.0.113.9');
+    expect(first.leftMs).toBeGreaterThan(PRICE_WINDOW_MS - 60_000);
+
+    const clocks = await db().collection('studioPriceClocks').get();
+    expect(clocks.size).toBe(1);
+    expect(clocks.docs[0].id).toMatch(/^ip_[0-9a-f]{64}$/);
+
+    await db().doc(clocks.docs[0].ref.path).set({ startedAtMs: 0 });
+    expect((await visit('203.0.113.9')).raised).toBe(true);
+    expect((await visit('203.0.113.10')).raised).toBe(false);
+    await expect(visit()).rejects.toThrow(/No address/);
   });
 
   it('rejecting frees the ID and the screenshot so an honest mistake can be sent again', async () => {

@@ -1,0 +1,691 @@
+/* The Demo button's dialog (BrainDemo.tsx). It sits inside a `.light` section,
+   so the dark tokens are set back here. Every movement is opt-in at the bottom. */
+
+.demo {
+  --text: #eaf4ee;
+  --text-mut: #9ab0a4;
+  --line: rgba(255, 255, 255, 0.09);
+  --line-hi: rgba(255, 255, 255, 0.17);
+  --card: rgba(255, 255, 255, 0.034);
+  --speed: 1;
+  width: min(1080px, calc(100vw - 24px));
+  max-width: none;
+  max-height: calc(100dvh - 24px);
+  margin: auto;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(204, 255, 0, 0.22);
+  border-radius: var(--r-xl);
+  color: var(--text);
+  background:
+    radial-gradient(rgba(204, 255, 0, 0.07) 1px, transparent 1.4px) 0 0 / 14px 14px,
+    radial-gradient(70% 90% at 72% 40%, #0f3322 0%, #06120c 60%, var(--void) 100%);
+  box-shadow: var(--shadow-lg);
+}
+
+.demo::backdrop {
+  background: rgba(1, 7, 5, 0.76);
+  backdrop-filter: blur(5px);
+}
+
+.demo.demo button:focus-visible {
+  outline-color: var(--lime);
+}
+
+.frame {
+  display: flex;
+  flex-direction: column;
+  /* One fixed height, so the dialog never jumps between a short slide and a tall one. */
+  height: min(640px, calc(100dvh - 26px));
+}
+
+.top,
+.foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  padding: var(--s-2) clamp(16px, 3vw, 32px);
+}
+
+.top {
+  border-bottom: 1px solid var(--line);
+}
+
+.foot {
+  flex-wrap: wrap;
+  border-top: 1px solid var(--line);
+}
+
+.label {
+  font-family: var(--font-mono), monospace;
+  font-size: 11.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--lime);
+}
+
+.label span {
+  margin-left: 10px;
+  color: var(--text-mut);
+}
+
+.closeBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--line-hi);
+  border-radius: var(--r-pill);
+  background: none;
+  font-family: var(--font-display), sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  transition: border-color 220ms var(--ease), background 220ms var(--ease);
+}
+
+.closeBtn:hover {
+  border-color: var(--lime);
+  background: rgba(204, 255, 0, 0.08);
+}
+
+.closeBtn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.track {
+  display: flex;
+  height: 100%;
+}
+
+/* The padding is the slide's, so a neighbour at rest sits fully outside the clip. */
+.slide {
+  flex: 0 0 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 0.72fr) minmax(0, 1.28fr);
+  gap: clamp(24px, 4vw, 48px);
+  align-items: safe center;
+  overflow-y: auto;
+  padding: clamp(20px, 3vw, 36px) clamp(16px, 3vw, 32px);
+}
+
+.announce {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.copy h3 {
+  margin-bottom: var(--s-3);
+  font-size: clamp(27px, 3.3vw, 42px);
+  color: #fff;
+}
+
+.copy p {
+  font-size: clamp(16px, 1.5vw, 18px);
+  color: var(--text-mut);
+}
+
+.dots {
+  display: flex;
+}
+
+/* A small dot in a full-size target. */
+.dots button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.dots button::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border-radius: var(--r-pill);
+  background: var(--line-hi);
+  transition: width 260ms var(--ease), background 260ms var(--ease);
+}
+
+.dots button[aria-current]::before {
+  width: 22px;
+  background: var(--lime);
+}
+
+.moves {
+  display: flex;
+  gap: var(--s-1);
+}
+
+.moves button {
+  min-height: 46px;
+  padding: 0 22px;
+  font-size: 15px;
+}
+
+.moves button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ── slide 1: the network ─────────────────────────────────────────────── */
+.stage {
+  position: relative;
+  height: clamp(320px, 48vh, 420px);
+}
+
+.wires {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.wire,
+.comet {
+  fill: none;
+}
+
+.wire {
+  stroke: rgba(204, 255, 0, 0.3);
+  stroke-width: 1.2;
+}
+
+.comet {
+  stroke: var(--lime);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-dasharray: 10 90;
+  opacity: 0;
+}
+
+/* The dark disc hides the wires where they cross under the brain. */
+.brain {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 40%;
+  aspect-ratio: 320 / 280;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, #06120c 70%, transparent);
+  transform: translate(-50%, -50%);
+}
+
+.agents,
+.channels,
+.routes,
+.gates,
+.loop {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agents li,
+.channels li {
+  position: absolute;
+  transform: translateY(-50%);
+  font-family: var(--font-display), sans-serif;
+  line-height: 1.15;
+}
+
+.agents li {
+  left: 0;
+  width: 26%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 1px solid rgba(204, 255, 0, 0.42);
+  border-radius: var(--r-sm);
+  background: #0e2a12;
+  font-size: clamp(11px, 1.3vw, 14px);
+  font-weight: 700;
+  color: #f4ffcc;
+}
+
+.channels li {
+  right: 0;
+  width: 24%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: clamp(10.5px, 1.25vw, 14px);
+  font-weight: 600;
+}
+
+.badge {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: clamp(26px, 3vw, 34px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 2px rgba(204, 255, 0, 0.45);
+}
+
+.badge img {
+  display: block;
+  width: 62%;
+  height: 62%;
+}
+
+/* ── slide 2: saying it ───────────────────────────────────────────────── */
+.listen {
+  display: grid;
+  justify-items: center;
+  gap: var(--s-3);
+}
+
+.miniBrain {
+  width: min(250px, 62%);
+  aspect-ratio: 320 / 280;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border: 1px solid rgba(204, 255, 0, 0.3);
+  border-radius: var(--r-pill);
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  color: #f4ffcc;
+}
+
+.status i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--lime);
+}
+
+.prompt {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  width: 100%;
+  padding: var(--s-3);
+  border: 1px solid rgba(204, 255, 0, 0.35);
+  border-radius: var(--r-md);
+  background: rgba(9, 20, 13, 0.86);
+}
+
+.prompt svg {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  color: var(--lime);
+}
+
+.prompt p {
+  margin: 0;
+  color: #fff;
+}
+
+/* ── slides 3 and 5: rows that light in turn ──────────────────────────── */
+.routes,
+.loop {
+  display: grid;
+  gap: var(--s-2);
+}
+
+.lit {
+  border: 1px solid var(--line-hi);
+  border-radius: var(--r-md);
+  background: var(--card);
+}
+
+.routes li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px var(--s-2);
+  padding: var(--s-3);
+}
+
+.routes q {
+  flex: 1 1 220px;
+  min-width: 0;
+  color: #fff;
+}
+
+.routes svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--lime);
+}
+
+.routes b,
+.loop b,
+.choices b {
+  font-family: var(--font-display), sans-serif;
+  font-weight: 700;
+}
+
+.routes b {
+  padding: 5px 13px;
+  border-radius: var(--r-pill);
+  background: var(--lime);
+  font-size: 14px;
+  color: #0b1400;
+}
+
+.loop {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.loop li {
+  padding: var(--s-3);
+}
+
+.loop span {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-bottom: var(--s-1);
+  border-radius: 50%;
+  background: var(--lime);
+  font-family: var(--font-mono), monospace;
+  font-size: 13px;
+  font-weight: 700;
+  color: #0b1400;
+}
+
+.loop b {
+  display: block;
+  font-size: 18px;
+  color: #fff;
+}
+
+.loop p {
+  margin: 4px 0 0;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--text-mut);
+}
+
+/* ── slide 4: approval ────────────────────────────────────────────────── */
+.choices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-2);
+  margin-bottom: var(--s-4);
+}
+
+.choices > div {
+  padding: var(--s-3);
+  border: 1px solid var(--line-hi);
+  border-radius: var(--r-md);
+  background: var(--card);
+}
+
+.choices > [data-on] {
+  border-color: var(--lime);
+  background: rgba(204, 255, 0, 0.1);
+}
+
+.choices b {
+  font-size: 18px;
+  color: #fff;
+}
+
+.choices p {
+  margin: 4px 0 0;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--text-mut);
+}
+
+.gates {
+  display: grid;
+  gap: var(--s-2);
+}
+
+.gates li {
+  display: flex;
+  gap: 10px;
+  font-size: 15.5px;
+  line-height: 1.45;
+}
+
+.gates svg {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  color: var(--lime);
+}
+
+@media (max-width: 820px) {
+  .slide {
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+    gap: var(--s-3);
+  }
+
+  .frame {
+    height: calc(100dvh - 26px);
+  }
+
+  .stage {
+    height: 320px;
+  }
+
+  .foot {
+    justify-content: center;
+    padding-block: var(--s-1);
+    row-gap: 0;
+  }
+
+  .dots button {
+    height: 30px;
+  }
+
+  .moves {
+    width: 100%;
+  }
+
+  .moves button {
+    flex: 1;
+  }
+}
+
+@media (max-width: 520px) {
+  .loop,
+  .choices {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .demo :global(svg) * {
+    animation: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .demo[open] {
+    animation: dialogIn 380ms var(--ease-out);
+  }
+
+  .demo[open]::backdrop {
+    animation: fadeIn 280ms var(--ease);
+  }
+
+  .track {
+    transition: transform 640ms cubic-bezier(0.22, 0.8, 0.2, 1);
+  }
+
+  .slide {
+    opacity: 0;
+    transition: opacity 420ms var(--ease);
+  }
+
+  .slide[data-active] {
+    opacity: 1;
+  }
+
+  /* Off screen nothing runs; what a slide plays on arrival starts when it arrives. */
+  .slide:not([data-active]) * {
+    animation-play-state: paused;
+  }
+
+  .slide[data-active] .copy h3 {
+    animation: riseIn 560ms var(--ease-out) 140ms both;
+  }
+
+  .slide[data-active] .copy p {
+    animation: riseIn 560ms var(--ease-out) 230ms both;
+  }
+
+  .slide[data-active] .visual {
+    animation: visualIn 680ms var(--ease-out) 120ms both;
+  }
+
+  .slide[data-active] .wire {
+    animation: wireIn 520ms var(--ease) both;
+    animation-delay: calc(220ms + var(--i) * 45ms);
+  }
+
+  .slide[data-active] :is(.agents, .channels) li {
+    animation: nodeIn 480ms var(--ease-out) both;
+    animation-delay: calc(260ms + var(--i) * 55ms);
+  }
+
+  .slide[data-active] :is(.routes, .loop) li {
+    animation:
+      rowIn 520ms var(--ease-out) both,
+      lit 8s var(--ease) infinite;
+    animation-delay: calc(240ms + var(--i) * 90ms), calc(900ms + var(--i) * 2s);
+  }
+
+  .slide[data-active] :is(.choices > div, .gates li) {
+    animation: rowIn 520ms var(--ease-out) both;
+    animation-delay: calc(240ms + var(--i) * 90ms);
+  }
+
+  .comet {
+    opacity: 1;
+    animation: comet 2.6s linear infinite;
+    animation-delay: calc(var(--i) * -0.23s);
+  }
+
+  .status i {
+    animation: live 1.4s ease-out infinite;
+  }
+
+  .slide[data-active] .prompt p {
+    animation: typing 4.5s steps(48) infinite;
+  }
+}
+
+@keyframes dialogIn {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.98);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes riseIn {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+}
+
+@keyframes visualIn {
+  from {
+    opacity: 0;
+    transform: translateX(40px) scale(0.97);
+  }
+}
+
+@keyframes wireIn {
+  from {
+    opacity: 0;
+  }
+}
+
+/* `scale`, not `transform`: these nodes are placed with a translate. */
+@keyframes nodeIn {
+  from {
+    opacity: 0;
+    scale: 0.6;
+  }
+}
+
+@keyframes rowIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+
+@keyframes comet {
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes live {
+  from {
+    box-shadow: 0 0 0 0 rgba(204, 255, 0, 0.7);
+  }
+  to {
+    box-shadow: 0 0 0 9px rgba(204, 255, 0, 0);
+  }
+}
+
+@keyframes typing {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  65%,
+  to {
+    clip-path: inset(0);
+  }
+}
+
+@keyframes lit {
+  0%,
+  21% {
+    border-color: var(--lime);
+    background: rgba(204, 255, 0, 0.12);
+  }
+  27% {
+    border-color: var(--line-hi);
+    background: var(--card);
+  }
+}

@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { PERIOD_MS, PKR_PER_USD, PLAN_IDS, PLANS, YEAR_MS, canUse, extendPaid, paidAfter, pricePkr, priceUsd, refusal } from '../plans';
+import { PRICE_GRACE_MS, PRICE_WINDOW_MS, priceState } from '../priceClock';
 
 const NOW = 1_800_000_000_000;
 const live = { trialEndsAtMs: NOW + 1000, paidUntilMs: 0 };
@@ -96,6 +97,23 @@ describe('paidAfter', () => {
   });
   it('keeps their worth on a downgrade, so nothing paid is thrown away', () => {
     expect(paidAfter({ plan: 'all', paidUntilMs: NOW + 26 * DAY }, 'content', NOW)).toBe(NOW + 32 * DAY + PERIOD_MS);
+  });
+});
+
+describe('the $2 rise after a customer’s 3 days', () => {
+  it('adds $2 a month, and a year is still twelve of those less 3%', () => {
+    expect(PLAN_IDS.map((id) => priceUsd(id, 'month', true))).toEqual([22, 28, 34]);
+    expect(PLAN_IDS.map((id) => priceUsd(id, 'year', true))).toEqual([256.08, 325.92, 395.76]);
+    expect(pricePkr('content', 'month', true)).toBe(28 * PKR_PER_USD);
+    expect(pricePkr('research', 'year', true)).toBe(71703);
+  });
+
+  it('holds the old price through the window and the grace after it, then raises it', () => {
+    const start = 1_000_000;
+    expect(priceState(start, start)).toEqual({ leftMs: PRICE_WINDOW_MS, raised: false });
+    expect(priceState(start, start + PRICE_WINDOW_MS)).toEqual({ leftMs: 0, raised: false });
+    expect(priceState(start, start + PRICE_WINDOW_MS + PRICE_GRACE_MS - 1).raised).toBe(false);
+    expect(priceState(start, start + PRICE_WINDOW_MS + PRICE_GRACE_MS).raised).toBe(true);
   });
 });
 

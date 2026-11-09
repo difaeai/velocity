@@ -43,6 +43,7 @@ import {
   type StudioBilling,
   type StudioPlanId,
 } from '@/lib/studio';
+import { useStudioPriceRaised } from '@/lib/useStudioPriceRaised';
 import a from '../account.module.css';
 import { FieldError, SkeletonRows, SuccessState } from '@/components/states';
 
@@ -66,6 +67,7 @@ export default function CheckoutPage() {
 
 function Checkout() {
   const { wid, ws } = useWorkspace();
+  const raised = useStudioPriceRaised();
   const params = useSearchParams();
   const askedPlan = params.get('plan') as StudioPlanId | null;
   const askedCredits = Number(params.get('credits'));
@@ -136,7 +138,7 @@ function Checkout() {
   // A workspace on a plan no longer sold (ads only) is offered the whole team.
   const chosen = plan ?? (STUDIO_PLAN_IDS.includes(ws.plan) ? ws.plan : 'all');
   const P = STUDIO_PLANS[chosen];
-  const amount = kind === 'agents' ? (agentQuote?.usd ?? 0) : kind === 'credits' ? (credits ?? 0) * STUDIO_CREDIT_DAY_USD : studioPriceUsd(chosen, billing);
+  const amount = kind === 'agents' ? (agentQuote?.usd ?? 0) : kind === 'credits' ? (credits ?? 0) * STUDIO_CREDIT_DAY_USD : studioPriceUsd(chosen, billing, raised);
   const amountPkr = kind === 'agents' ? (agentQuote?.pkr ?? 0) : studioPkr(amount);
   const pending = payments.find((p) => p.status === 'pending');
   const paidNow = nowMs > 0 && ws.paidUntilMs > nowMs;
@@ -232,7 +234,7 @@ function Checkout() {
                     {b === 'year' ? <em>Save {STUDIO_YEAR_DISCOUNT_PCT}%</em> : null}
                     <b>{b === 'month' ? 'Monthly' : 'Yearly'}</b>
                     <span>
-                      {studioUsd(studioPriceUsd(chosen, b))} · billed {b === 'month' ? 'every 30 days' : 'once for 365 days'}
+                      {studioUsd(studioPriceUsd(chosen, b, raised))} · billed {b === 'month' ? 'every 30 days' : 'once for 365 days'}
                     </span>
                   </button>
                 ))}
@@ -241,7 +243,7 @@ function Checkout() {
                 {STUDIO_PLAN_IDS.map((id) => (
                   <button key={id} type="button" role="radio" aria-checked={id === chosen} className={a.option} onClick={() => setPlan(id)}>
                     <b>{STUDIO_PLANS[id].name}</b>
-                    <span>{studioUsd(studioPriceUsd(id, billing))} / {billing}</span>
+                    <span>{studioUsd(studioPriceUsd(id, billing, raised))} / {billing}</span>
                   </button>
                 ))}
               </div>

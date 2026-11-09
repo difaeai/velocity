@@ -550,6 +550,222 @@
 
 }
 
+/* ── the price-rise countdown (PriceCountdown.tsx) ────────────────────── */
+/* The best card's ink and dots, with red kept for the alert. */
+.countdown {
+  position: relative;
+  /* Narrower than the cards, so Vexa's logos at the screen's edge stay off the seconds. */
+  max-width: 1040px;
+  margin: 0 auto clamp(40px, 5vw, 60px);
+  border-radius: var(--r-xl);
+  color: #eaf4ee;
+  background:
+    radial-gradient(rgba(204, 255, 0, 0.1) 1px, transparent 1.4px) 0 0 / 14px 14px,
+    radial-gradient(70% 150% at 100% 0%, rgba(18, 161, 94, 0.45), transparent 60%),
+    linear-gradient(150deg, #0b2418, var(--ink));
+  box-shadow: 0 28px 70px -34px rgba(4, 18, 12, 0.75);
+}
+
+/* The best card's travelling border, in the alert's colours. */
+.countdown::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 2px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--spin),
+    #ff2d44,
+    rgba(255, 45, 68, 0.14) 30%,
+    var(--lime) 50%,
+    rgba(255, 45, 68, 0.14) 70%,
+    #ff2d44
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.alertStrip {
+  overflow: hidden;
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+  background: #d3122a;
+  color: #fff;
+}
+
+.alertTrack {
+  display: flex;
+  justify-content: center;
+  width: max-content;
+  min-width: 100%;
+}
+
+.alertTrack span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 22px;
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Standing still, one copy is enough. */
+.alertTrack span:nth-child(n + 2) {
+  display: none;
+}
+
+.alertTrack svg {
+  width: 15px;
+  height: 15px;
+}
+
+.countdownBody {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(18px, 2.6vw, 28px);
+  padding: clamp(20px, 3vw, 34px) clamp(14px, 3.4vw, 44px);
+  text-align: center;
+}
+
+.countdownHead {
+  font-size: clamp(25px, 3vw, 40px);
+  color: #fff;
+}
+
+.countdownHead em {
+  font-style: normal;
+  color: #ff5165;
+}
+
+.demoRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2) var(--s-4);
+}
+
+.demoRow p {
+  margin: 0;
+  font-family: var(--font-display), sans-serif;
+  font-size: clamp(20px, 2.2vw, 26px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+
+.demoBtn.demoBtn:focus-visible {
+  outline-color: var(--lime);
+}
+
+.timer {
+  width: min(100%, 640px);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(6px, 1.2vw, 12px);
+}
+
+.timerUnit {
+  padding: clamp(12px, 1.8vw, 20px) 2px clamp(10px, 1.4vw, 14px);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.05);
+  text-align: center;
+}
+
+.timerUnit b {
+  display: block;
+  font-family: var(--font-display), sans-serif;
+  font-size: clamp(30px, 5vw, 60px);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  background-image: linear-gradient(120deg, #f4ffcc 0%, var(--lime) 55%, #8fe08a 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.timerUnit span {
+  display: block;
+  margin-top: 8px;
+  font-family: var(--font-mono), monospace;
+  font-size: clamp(9.5px, 1vw, 12px);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9ab0a4;
+}
+
+.timerUnit:last-child {
+  border-color: rgba(255, 81, 101, 0.6);
+  background: rgba(211, 18, 42, 0.18);
+}
+
+.timerUnit:last-child b {
+  background-image: none;
+  color: #ff5165;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .countdown {
+    animation: alarmGlow 1.8s ease-in-out infinite;
+  }
+
+  .countdown::before {
+    animation: spin 4s linear infinite;
+  }
+
+  .alertTrack {
+    justify-content: flex-start;
+    animation: alarmRun 34s linear infinite;
+  }
+
+  .alertTrack span:nth-child(n + 2) {
+    display: inline-flex;
+  }
+
+  .alertTrack svg {
+    animation: alarmRing 1s ease-in-out infinite;
+  }
+
+  .timerUnit b {
+    animation: flip 320ms var(--ease-out);
+  }
+}
+
+@keyframes alarmGlow {
+  50% {
+    box-shadow:
+      0 0 0 4px rgba(255, 45, 68, 0.2),
+      0 18px 60px -12px rgba(255, 45, 68, 0.62);
+  }
+}
+
+/* Half the track is exactly six of the twelve copies, so the loop has no seam. */
+@keyframes alarmRun {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes alarmRing {
+  25% {
+    transform: rotate(-16deg);
+  }
+  75% {
+    transform: rotate(16deg);
+  }
+}
+
 @keyframes rise {
   from {
     opacity: 0;

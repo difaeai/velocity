@@ -1,6 +1,7 @@
 import { STUDIO_YEAR_DISCOUNT_PCT } from '@/lib/studio';
 import s from '@/app/studio/studio.module.css';
 import site from './site.module.css';
+import { PriceCountdown } from './PriceCountdown';
 import { StudioPlans } from './StudioPlans';
 
 /**
@@ -56,6 +57,7 @@ export function StudioPricing({ heading = 'Pay for what you use. Nothing else.' 
             {STUDIO_YEAR_DISCOUNT_PCT}%.
           </p>
         </div>
+        <PriceCountdown />
         <StudioPlans />
         <p className={s.payNote}>Pay by bank transfer, EasyPaisa or JazzCash.</p>
       </div>
