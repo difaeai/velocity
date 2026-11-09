@@ -105,6 +105,8 @@ export const STUDIO_YEAR_DISCOUNT_PCT = 3;
 
 /** What a month of any plan costs more once a customer's own 3 days are over (backend studio/priceClock.ts). Mirrors the backend. */
 export const STUDIO_PRICE_RISE_USD = 2;
+/** How long each visitor keeps today's price. Mirrors the backend. */
+export const STUDIO_PRICE_WINDOW_MS = 3 * 86_400_000;
 
 /** A year is twelve months less exactly 3%, to the cent — never more (owner); a month is never discounted. Mirrors backend priceUsd. */
 export const studioPriceUsd = (plan: StudioPlanId, billing: StudioBilling, raised = false): number => {

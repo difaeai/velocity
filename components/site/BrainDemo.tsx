@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * The Demo button's dialog: how the Velocity Brain works, as slides. A native
+ * The Demo button's dialog: how Vexa's brain works, as slides. A native
  * <dialog>, so focus, Esc and sitting above the nav and Vexa come free. What the
  * slides claim is what components/social/brain.tsx and docs/SOCIAL.md do.
  */
@@ -169,7 +169,7 @@ function Loop() {
 const SLIDES: { title: string; text: string; art: ReactNode }[] = [
   {
     title: 'One brain. Everything connected.',
-    text: 'The Velocity Brain sits in the middle, with your agents on one side and your accounts on the other, so one sentence can reach all of them. Which agents you get depends on your plan.',
+    text: 'Vexa’s brain sits in the middle, with your agents on one side and your accounts on the other, so one sentence can reach all of them. Which agents you get depends on your plan.',
     art: <Network />,
   },
   {
@@ -219,7 +219,7 @@ export function BrainDemo({ onClose }: { onClose: () => void }) {
     <dialog
       ref={ref}
       className={s.demo}
-      aria-label="How the Velocity Brain works"
+      aria-label="How Vexa works"
       onClose={onClose}
       onKeyDown={arrows}
       // The frame fills the dialog, so a click landing on the dialog itself is on the backdrop.
@@ -231,7 +231,7 @@ export function BrainDemo({ onClose }: { onClose: () => void }) {
       <div className={s.frame}>
         <header className={s.top}>
           <span className={s.label}>
-            Velocity Brain <span>{`${at + 1} / ${SLIDES.length}`}</span>
+            Vexa Brain <span>{`${at + 1} / ${SLIDES.length}`}</span>
           </span>
           <button type="button" className={s.closeBtn} onClick={close}>
             <Close /> Close

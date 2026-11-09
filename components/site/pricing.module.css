@@ -635,15 +635,31 @@
   text-align: center;
 }
 
-.countdownCopy h3 {
-  margin-bottom: var(--s-3);
+.countdownHead {
   font-size: clamp(25px, 3vw, 40px);
   color: #fff;
 }
 
-.countdownCopy em {
+.countdownHead em {
   font-style: normal;
   color: #ff5165;
+}
+
+.demoRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2) var(--s-4);
+}
+
+.demoRow p {
+  margin: 0;
+  font-family: var(--font-display), sans-serif;
+  font-size: clamp(20px, 2.2vw, 26px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #fff;
 }
 
 .demoBtn.demoBtn:focus-visible {

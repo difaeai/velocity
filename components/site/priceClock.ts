@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 
 import { firebaseConfig, FUNCTIONS_REGION } from '@/lib/config';
+import { STUDIO_PRICE_WINDOW_MS } from '@/lib/studio';
 
 /**
  * This visitor's own deadline for today's price (backend studio/priceClock.ts).
@@ -11,7 +12,6 @@ const CLOCK_URL = `https://${FUNCTIONS_REGION}-${firebaseConfig.projectId}.cloud
 const KEPT = 'vexaPriceEndsAt';
 
 let endsAtMs: number | null = null;
-let failed = false;
 let asked = false;
 
 function kept(): number | null {
@@ -43,7 +43,9 @@ function ask() {
       keep(endsAtMs);
     })
     .catch(() => {
-      failed = true;
+      // The server could not say: this browser counts its own window, kept so a reload never restarts it.
+      endsAtMs = Date.now() + STUDIO_PRICE_WINDOW_MS;
+      keep(endsAtMs);
     });
 }
 
@@ -54,10 +56,9 @@ function subscribe(tick: () => void) {
   return () => clearInterval(id);
 }
 
-const secondsLeft = (): number | null | undefined =>
-  failed ? undefined : endsAtMs === null ? null : Math.ceil((endsAtMs - Date.now()) / 1000);
+const secondsLeft = (): number | null => (endsAtMs === null ? null : Math.ceil((endsAtMs - Date.now()) / 1000));
 
-/** Seconds of today's price left: null while asking, undefined if the server could not say. */
+/** Seconds of today's price left, null while asking. */
 export const usePriceSecondsLeft = () => useSyncExternalStore(subscribe, secondsLeft, () => null);
 
 /** Whether this visitor's own time is over. Re-renders only when that flips. */
