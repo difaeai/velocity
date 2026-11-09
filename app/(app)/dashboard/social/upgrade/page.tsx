@@ -10,6 +10,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
+import { useStudioPriceRaised } from '@/lib/useStudioPriceRaised';
 import { useWorkspace } from '@/lib/workspace';
 import {
   STUDIO_CREDIT_DAY_USD,
@@ -28,6 +29,7 @@ const ICON: Record<StudioPlanId, string> = { research: '🔬', sales: '🤝', co
 
 export default function UpgradePage() {
   const { ws } = useWorkspace();
+  const raised = useStudioPriceRaised();
   const [billing, setBilling] = useState<StudioBilling>('month');
   // The wall clock is subscribed to, not read during render.
   const [nowMs, setNowMs] = useState(0);
@@ -65,7 +67,7 @@ export default function UpgradePage() {
           const p = STUDIO_PLANS[id];
           const mine = id === ws.plan;
           const best = id === 'all';
-          const price = studioPriceUsd(id, billing);
+          const price = studioPriceUsd(id, billing, raised);
           const ribbon = mine && trial ? `Free trial · ${hoursLeft} hour${hoursLeft === 1 ? '' : 's'} left` : mine && paid ? 'Your plan' : best ? 'Best value — the whole team' : null;
           return (
             <div key={id} className={a.planWrap}>
@@ -83,7 +85,7 @@ export default function UpgradePage() {
                   <span className={a.priceUnit}>
                     USD / {billing}
                     <br />
-                    {billing === 'year' ? `save ${studioUsd(p.usd * 12 - price)} on 12 months` : 'billed monthly'}
+                    {billing === 'year' ? `save ${studioUsd(studioPriceUsd(id, 'month', raised) * 12 - price)} on 12 months` : 'billed monthly'}
                   </span>
                 </div>
                 <Link

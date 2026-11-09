@@ -19,6 +19,7 @@ import Link from 'next/link';
 import { auth } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth';
 import { studioApi } from '@/lib/api';
+import { useStudioPriceRaised } from '@/lib/useStudioPriceRaised';
 import {
   STUDIO_PLAN_IDS,
   STUDIO_PLANS,
@@ -247,6 +248,7 @@ function BusinessCard({
   onSignOut: () => void;
 }) {
   const router = useRouter();
+  const raised = useStudioPriceRaised();
   const [f, setF] = useState({
     businessName: '',
     what: '',
@@ -355,7 +357,7 @@ function BusinessCard({
         </button>
         <p className={s.fine}>
           No card needed. After {STUDIO_TRIAL_HOURS} hours, pick a plan —{' '}
-          {billing === 'year' ? `${studioUsd(studioPriceUsd(plan, 'year'))} a year` : `$${STUDIO_PLANS[plan].usd} a month`} for{' '}
+          {billing === 'year' ? `${studioUsd(studioPriceUsd(plan, 'year', raised))} a year` : `$${studioPriceUsd(plan, 'month', raised)} a month`} for{' '}
           {STUDIO_PLANS[plan].name} — or add credits at $1 a day. Pay by bank transfer, EasyPaisa or JazzCash.
         </p>
       </form>
