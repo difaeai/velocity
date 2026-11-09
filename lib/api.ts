@@ -2403,6 +2403,8 @@ export const socialApi = {
       publishWhenDone?: boolean;
       /** "Make it like this video": one of the two. */
       reference?: { youtube: string } | { storagePath: string };
+      /** The person's own video or pictures, already in Storage. Needs a `brief`. */
+      own?: string[];
     },
     { ok: boolean; id: string; format: SocialFormat }
   >('adminGenerateSocialPost', LONG_CALL_MS),
@@ -2430,7 +2432,7 @@ export const socialApi = {
   attachMedia: callable<
     { postId: string; storagePath: string; kind?: 'video' | 'image'; slide?: number; alt?: string },
     { ok: boolean }
-  >('adminAttachSocialMedia'),
+  >('adminAttachSocialMedia', 5 * 60_000),
   deletePost: callable<{ postId: string }, { ok: boolean }>('adminDeleteSocialPost'),
 
   syncComments: callable<Record<string, never>, { ok: boolean; summary: string }>('adminSyncSocialComments'),
@@ -2617,6 +2619,14 @@ export interface TikTokAdvertiserChoice {
   currency: string;
 }
 
+export interface YouTubeChannelChoice {
+  channelId: string;
+  name: string;
+  handle: string | null;
+  subscribers: number | null;
+  avatarUrl: string | null;
+}
+
 export interface TikTokCreatorInfo {
   creator_username?: string;
   creator_nickname?: string;
@@ -2643,6 +2653,7 @@ const videoConnect = callable<
   | { action: 'state' | 'start'; provider: VideoProvider }
   | { action: 'finish'; code: string; state: string }
   | { action: 'choose'; state: string; advertiserId: string }
+  | { action: 'channel'; state: string; channelId: string }
   | { action: 'disconnect' | 'creator' },
   never
 >('adminVideoConnect') as unknown as <R>(data: unknown) => Promise<R>;
@@ -2652,9 +2663,10 @@ export const videoConnectApi = {
   state: (provider: VideoProvider) => videoConnect<{ ready: boolean; vaultReady: boolean; redirectUri: string }>({ action: 'state', provider }),
   start: (provider: VideoProvider) => videoConnect<{ url: string; state: string }>({ action: 'start', provider }),
   finish: (code: string, state: string) =>
-    videoConnect<{ connected: string | null; choices: TikTokAdvertiserChoice[] }>({ action: 'finish', code, state }),
+    videoConnect<{ connected: string | null; choices: TikTokAdvertiserChoice[]; channels?: YouTubeChannelChoice[] }>({ action: 'finish', code, state }),
   choose: (state: string, advertiserId: string) =>
     videoConnect<{ connected: string | null; choices: TikTokAdvertiserChoice[] }>({ action: 'choose', state, advertiserId }),
+  channel: (state: string, channelId: string) => videoConnect<{ connected: string | null }>({ action: 'channel', state, channelId }),
   disconnect: () => videoConnect<{ ok: boolean }>({ action: 'disconnect' }),
   /** The TikTok account as it stands now: the Post to TikTok screen reads it each time it opens. */
   creator: () => videoConnect<TikTokCreatorInfo>({ action: 'creator' }),

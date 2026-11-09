@@ -27,6 +27,7 @@ import {
   type TikTokAdvertiserChoice,
   type VideoConnectHandoff,
   type VideoProvider,
+  type YouTubeChannelChoice,
 } from '@/lib/api';
 import { Button, Card } from '@/components/ui';
 import { SkeletonRows } from '@/components/states';
@@ -37,7 +38,7 @@ const COPY: Record<VideoProvider, { mark: string; id: string; title: string; but
     id: 'youtube',
     title: 'YouTube',
     button: 'Continue with Google',
-    off: 'Connect your channel. Every reel the team makes goes up as a Short, and comments come to your Inbox. YouTube ads also need Google Ads connected.',
+    off: 'Connect your channel. If your Google account has several, Google lists them and you pick one. Every reel the team makes goes up as a Short, and comments come to your Inbox. YouTube ads also need Google Ads connected.',
     on: 'Every reel the team makes goes up here as a Short.',
   },
   tiktok: {
@@ -59,6 +60,7 @@ const COPY: Record<VideoProvider, { mark: string; id: string; title: string; but
 };
 
 const field: CSSProperties = { width: '100%', height: 38, border: `1px solid ${colors.border}`, borderRadius: 10, padding: '0 10px', font: 'inherit', fontSize: 13.5 };
+const channelRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: 10, border: `1px solid ${colors.border}`, borderRadius: 12, background: colors.surface, font: 'inherit', color: 'inherit', textAlign: 'left', cursor: 'pointer' };
 
 export function VideoConnect({
   provider,
@@ -73,6 +75,7 @@ export function VideoConnect({
   const copy = COPY[provider];
   const [app, setApp] = useState<Awaited<ReturnType<typeof videoConnectApi.state>> | null>(null);
   const [choices, setChoices] = useState<{ state: string; list: TikTokAdvertiserChoice[] } | null>(null);
+  const [channels, setChannels] = useState<{ state: string; list: YouTubeChannelChoice[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -100,6 +103,7 @@ export function VideoConnect({
       try {
         const res = await videoConnectApi.finish(h.code, h.state);
         if (res.connected) setNote(`Connected: ${res.connected}.`);
+        else if (res.channels?.length) setChannels({ state: h.state, list: res.channels });
         else setChoices({ state: h.state, list: res.choices });
       } catch (e) {
         setError(e instanceof Error ? e.message : 'The connection could not be finished.');
@@ -134,6 +138,7 @@ export function VideoConnect({
   async function start() {
     setError(null);
     setNote(null);
+    setChannels(null);
     try {
       const { url } = await videoConnectApi.start(provider);
       try {
@@ -157,6 +162,21 @@ export function VideoConnect({
       setNote(`Connected: ${res.connected}.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'TikTok would not keep that ad account.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function keepChannel(channelId: string) {
+    if (!channels) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await videoConnectApi.channel(channels.state, channelId);
+      setChannels(null);
+      setNote(`Connected: ${res.connected}.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'YouTube would not keep that channel.');
     } finally {
       setBusy(false);
     }
@@ -189,6 +209,34 @@ export function VideoConnect({
           error ? null : (
             <SkeletonRows rows={1} />
           )
+        ) : channels ? (
+          <div style={{ display: 'grid', gap: 8 }}>
+            <span style={{ fontWeight: 700 }}>{channels.list.length > 1 ? 'Which channel should the team post to?' : 'Is this the channel the team should post to?'}</span>
+            {channels.list.map((c) => (
+              <button key={c.channelId} type="button" disabled={busy} onClick={() => void keepChannel(c.channelId)} style={channelRow}>
+                {c.avatarUrl ? (
+                  // A Google-hosted picture of someone else's channel: nothing to optimise.
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={c.avatarUrl} alt="" width={40} height={40} style={{ borderRadius: '50%', flexShrink: 0 }} />
+                ) : null}
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <strong style={{ display: 'block', fontSize: 14.5 }}>{c.name}</strong>
+                  <span style={{ color: colors.muted, fontSize: 12.5 }}>
+                    {[c.handle, c.subscribers === null ? null : `${c.subscribers.toLocaleString()} subscribers`].filter(Boolean).join(' · ')}
+                  </span>
+                </span>
+                <span style={{ color: colors.primary, fontWeight: 800, fontSize: 13, flexShrink: 0 }}>Use this channel</span>
+              </button>
+            ))}
+            <div>
+              <Button variant="ghost" onClick={start} disabled={busy}>
+                Not this one? Choose a different channel
+              </Button>
+            </div>
+            <p style={{ margin: 0, fontSize: 12.5, color: colors.muted, lineHeight: 1.5 }}>
+              Google lists every channel on your account after you choose the account. Each sign-in connects the one channel you pick there.
+            </p>
+          </div>
         ) : choices ? (
           <div style={{ display: 'grid', gap: 6 }}>
             <span style={{ fontWeight: 700 }}>That sign-in reaches several ad accounts. Which one should run your ads?</span>
@@ -201,7 +249,7 @@ export function VideoConnect({
         ) : connected ? (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <Button variant="ghost" onClick={start} disabled={busy}>
-              Connect a different account
+              {provider === 'youtube' ? 'Choose a different channel' : 'Connect a different account'}
             </Button>
             <Button variant="danger" onClick={disconnect} disabled={busy}>
               Disconnect

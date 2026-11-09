@@ -35,6 +35,7 @@ import {
 } from '@/lib/api';
 import { FORMAT_META, PLATFORM_META } from './shared';
 import { adMoney } from './ads';
+import { OWN_ACCEPT, hasVideo, ownFilesProblem, uploadOwnFiles } from './ownMedia';
 
 export type Agent = 'team' | 'expert' | 'campaign' | 'email';
 
@@ -480,6 +481,8 @@ export function Brain({
   const [agent, setAgent] = useState<Agent>('team');
   const [refFile, setRefFile] = useState<File | null>(null);
   const [refAsked, setRefAsked] = useState(false);
+  const [ownFiles, setOwnFiles] = useState<File[]>([]);
+  const [ownAsked, setOwnAsked] = useState(false);
   const [direct, setDirect] = useState<boolean | null>(null);
   const [budget, setBudget] = useState('');
   const [days, setDays] = useState('');
@@ -502,7 +505,21 @@ export function Brain({
   const adsReady = networkReady && (ads?.dailyCap ?? 0) > 0 && ads?.mode != null;
   // Folded away until wanted: most pieces need only the kind and a sentence.
   const showRef = refAsked || Boolean(refLink.trim()) || Boolean(refFile);
+  const showOwn = ownAsked || ownFiles.length > 0;
   const said = brief.trim();
+
+  function pickOwn(files: File[]) {
+    if (!files.length) return;
+    const problem = ownFilesProblem(files);
+    if (problem) {
+      onError(problem);
+      return;
+    }
+    setOwnFiles(files);
+    // A video cannot be a picture post: the chips must say what it will really be.
+    if (hasVideo(files) && want !== 'reel') onWant('reel');
+  }
+
   const toInbox = said.length < 5 || INBOX_ASK.test(said);
 
   /** Typing re-reads the sentence; a pick of yours holds until the words point somewhere else. */
@@ -557,16 +574,20 @@ export function Brain({
         } else if (refLink.trim()) {
           reference = { youtube: refLink.trim() };
         }
+        const own = ownFiles.length ? await uploadOwnFiles(ownFiles, path) : undefined;
         const res = await socialApi.generate({
           replace: true,
           format: want,
           ...(said.length >= 3 ? { brief: said } : {}),
           publishWhenDone: postDirect,
           ...(reference ? { reference } : {}),
+          ...(own ? { own } : {}),
         });
         setRefFile(null);
         onRefLink('');
         setRefAsked(false);
+        setOwnFiles([]);
+        setOwnAsked(false);
         onDone(
           postDirect
             ? `The team made the ${FORMAT_META[res.format].label.toLowerCase()} and is posting it — see it on Content & calendar.`
@@ -590,7 +611,7 @@ export function Brain({
         ? disabled || !adsReady || said.length < 5
         : agent === 'email'
           ? false
-          : disabled;
+          : disabled || (ownFiles.length > 0 && said.length < 3);
   const status = busy ? 'Thinking…' : sent ? 'Sent ✓' : said ? `Listening · ${AGENTS[agent].name}` : 'Ready';
   // The team's pieces show their own approve switch below; the ads desk keeps its own.
   const gate =
@@ -687,7 +708,7 @@ export function Brain({
           id="make-brief"
           rows={2}
           aria-label="Tell the brain what you want"
-          placeholder={`e.g. ${examples[example % examples.length]}`}
+          placeholder={agent === 'team' && ownFiles.length ? 'Say what your video or pictures show, and who they are for' : `e.g. ${examples[example % examples.length]}`}
         />
         <button type="button" className="bn-go" onClick={go} disabled={busy || blocked}>
           {busy ? (
@@ -706,7 +727,9 @@ export function Brain({
               ? 'The expert is building it…'
               : refFile || refLink.trim()
                 ? 'The team is watching the video…'
-                : 'The team is working…'
+                : ownFiles.length
+                  ? 'The team is working with your files…'
+                  : 'The team is working…'
             : agent === 'expert'
               ? 'Plan it with the expert'
               : agent === 'campaign'
@@ -748,10 +771,55 @@ export function Brain({
                 🎞️ + Make it like a video I like
               </button>
             ) : null}
+            {!showOwn ? (
+              <button type="button" className="bn-textbtn" onClick={() => setOwnAsked(true)}>
+                📎 + Use my own video or pictures
+              </button>
+            ) : null}
           </>
         ) : null}
         {busy ? <span className="bn-hint">Takes a few minutes. You can leave this page — it carries on.</span> : null}
       </div>
+
+      {agent === 'team' && showOwn ? (
+        <div className="bn-panel">
+          <p className="bn-hint" style={{ margin: '0 0 8px' }}>
+            {!ownFiles.length
+              ? 'One video (MP4 or MOV), or up to 10 pictures. Then say in the box what they show.'
+              : hasVideo(ownFiles)
+                ? 'Your video goes out as it is. The team writes the caption and hashtags for it.'
+                : want === 'reel'
+                  ? 'The team turns your pictures into a reel, with words, a voice and music.'
+                  : 'Your pictures go out as they are. The team writes the words.'}
+          </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <label className="bn-pick">
+              {ownFiles.length ? `📎 ${ownFiles.length === 1 ? ownFiles[0].name : `${ownFiles.length} pictures`}` : 'Choose files'}
+              <input
+                type="file"
+                accept={OWN_ACCEPT}
+                multiple
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  pickOwn(Array.from(e.target.files ?? []));
+                  e.target.value = '';
+                }}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => {
+                setOwnFiles([]);
+                setOwnAsked(false);
+              }}
+              className="bn-pick"
+              aria-label="Remove your files"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {agent === 'team' && showRef ? (
         <div className="bn-panel">

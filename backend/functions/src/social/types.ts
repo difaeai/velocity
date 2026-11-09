@@ -373,6 +373,19 @@ export const PLATFORM_FORMATS: Record<Platform, ContentFormat[]> = {
   linkedin: ['post'],
 };
 
+/** What a person's own upload counts as, or null for a file the networks would refuse. Pure. */
+export function ownKind(contentType: string): 'video' | 'image' | null {
+  if (/^video\/(mp4|quicktime)$/.test(contentType)) return 'video';
+  return contentType.startsWith('image/') ? 'image' : null;
+}
+
+/** What a person's own files can go out as: a video is never a picture post, and several pictures need a carousel. Pure. */
+export function ownFormat(kinds: ('video' | 'image')[], asked?: ContentFormat): ContentFormat {
+  if (kinds.includes('video')) return asked && FORMAT_SPECS[asked].kind === 'video' ? asked : 'reel';
+  if (!asked) return 'reel';
+  return kinds.length > 1 && FORMAT_SPECS[asked].kind === 'image' ? 'carousel' : asked;
+}
+
 export function platformsForFormat(format: ContentFormat): Platform[] {
   return PLATFORMS.filter((p) => PLATFORM_FORMATS[p].includes(format));
 }

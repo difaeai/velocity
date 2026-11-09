@@ -38,6 +38,7 @@ import { Button, Card } from '@/components/ui';
 import { FORMAT_META, FormatChip, StatusPill, longDate, postSummary } from '@/components/social/shared';
 import { PostingTime, localHourLabel } from '@/components/social/launch';
 import { ContentTabs } from '@/components/social/contentTabs';
+import { OWN_ACCEPT, hasVideo, ownFilesProblem, uploadOwnFiles } from '@/components/social/ownMedia';
 
 /** Pakistan's today, as `YYYY-MM-DD`. PKT is UTC+5, no daylight saving. */
 function todayPkt(): string {
@@ -337,6 +338,8 @@ export default function CalendarPage() {
                 </div>
               ) : null}
 
+              <OwnUpload key={selected} date={selected} busy={busy} run={run} />
+
               <details>
                 <summary style={{ fontSize: 12.5, color: colors.secondary, cursor: 'pointer', fontWeight: 700 }}>
                   Make something else for this day
@@ -486,6 +489,94 @@ function AnglePicker({
         </option>
       ))}
     </select>
+  );
+}
+
+/** The owner's own video or pictures for this day. The team writes the words around them. */
+function OwnUpload({
+  date,
+  busy,
+  run,
+}: {
+  date: string;
+  busy: string | null;
+  run: (label: string, fn: () => Promise<string>) => Promise<void>;
+}) {
+  const { path } = useWorkspace();
+  const [files, setFiles] = useState<File[]>([]);
+  const [about, setAbout] = useState('');
+  const [format, setFormat] = useState<SocialFormat>('reel');
+  const [problem, setProblem] = useState<string | null>(null);
+  const video = hasVideo(files);
+
+  function pick(picked: File[]) {
+    if (!picked.length) return;
+    const wrong = ownFilesProblem(picked);
+    setProblem(wrong);
+    if (wrong) return;
+    setFiles(picked);
+    setFormat('reel');
+  }
+
+  const send = () =>
+    run(`own-${date}`, async () => {
+      const own = await uploadOwnFiles(files, path);
+      const res = await socialApi.generate({ date, replace: true, format, brief: about.trim(), own });
+      setFiles([]);
+      setAbout('');
+      return `Added your ${FORMAT_META[res.format].label.toLowerCase()} to ${longDate(date)}. The team wrote the words for it.`;
+    });
+
+  return (
+    <div style={{ display: 'grid', gap: 8, padding: 10, borderRadius: 10, border: `1px dashed ${colors.border}` }}>
+      <div style={sectionLabel}>Your own video or pictures</div>
+      <label style={{ fontSize: 13, fontWeight: 700, color: colors.secondary, cursor: busy === null ? 'pointer' : 'not-allowed' }}>
+        {files.length ? `📎 ${files.length === 1 ? files[0].name : `${files.length} pictures`} (change)` : 'Upload a video, or up to 10 pictures'}
+        <input
+          type="file"
+          accept={OWN_ACCEPT}
+          multiple
+          disabled={busy !== null}
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            pick(Array.from(e.target.files ?? []));
+            e.target.value = '';
+          }}
+        />
+      </label>
+      {problem ? <p style={{ margin: 0, fontSize: 12.5, color: colors.danger }}>{problem}</p> : null}
+      {files.length ? (
+        <>
+          <select value={format} onChange={(e) => setFormat(e.target.value as SocialFormat)} aria-label="How it goes out" style={selectStyle}>
+            {video ? (
+              <>
+                <option value="reel">Post it as a reel (vertical)</option>
+                <option value="video">Post it as a video (wide)</option>
+              </>
+            ) : (
+              <>
+                <option value="reel">Make a reel from them</option>
+                <option value="post">Post them as pictures</option>
+              </>
+            )}
+          </select>
+          <textarea
+            value={about}
+            onChange={(e) => setAbout(e.target.value)}
+            rows={2}
+            maxLength={1500}
+            placeholder="What does it show, and who is it for? The team writes the words from this."
+            aria-label="What your video or pictures show"
+            style={{ ...fieldStyle, resize: 'vertical' }}
+          />
+          <div>
+            <Button onClick={send} disabled={busy !== null || about.trim().length < 3}>
+              {busy === `own-${date}` ? 'The team is working…' : 'Add to this day'}
+            </Button>
+          </div>
+        </>
+      ) : null}
+    </div>
   );
 }
 

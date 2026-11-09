@@ -851,7 +851,20 @@ async function youtubeAccessToken(c: PlatformCredentials): Promise<string> {
   return res.access_token;
 }
 
-async function verifyYouTube(c: PlatformCredentials): Promise<PlatformProfile> {
+export interface YouTubeChannel {
+  channelId: string;
+  name: string;
+  handle: string | null;
+  subscribers: number | null;
+  avatarUrl: string | null;
+}
+
+/**
+ * The channels this sign-in can post to. Google ties a sign-in to the channel
+ * picked on its own screen and an upload cannot name another, so this is
+ * normally that one channel.
+ */
+export async function youtubeChannels(c: PlatformCredentials): Promise<YouTubeChannel[]> {
   const token = await youtubeAccessToken(c);
   const res = await call<{
     items?: {
@@ -859,17 +872,28 @@ async function verifyYouTube(c: PlatformCredentials): Promise<PlatformProfile> {
       snippet: { title: string; customUrl?: string; thumbnails?: { default?: { url: string } } };
       statistics?: { subscriberCount?: string };
     }[];
-  }>('youtube', 'https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true', {
+  }>('youtube', 'https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true&maxResults=50', {
     headers: { authorization: `Bearer ${token}` },
   });
-  const channel = res.items?.[0];
+  return (res.items ?? []).map((channel) => ({
+    channelId: channel.id,
+    name: channel.snippet.title,
+    handle: channel.snippet.customUrl ?? null,
+    subscribers: channel.statistics?.subscriberCount ? Number(channel.statistics.subscriberCount) : null,
+    avatarUrl: channel.snippet.thumbnails?.default?.url ?? null,
+  }));
+}
+
+async function verifyYouTube(c: PlatformCredentials): Promise<PlatformProfile> {
+  const channels = await youtubeChannels(c);
+  const channel = channels.find((x) => x.channelId === c.externalId) ?? channels[0];
   if (!channel) throw new PlatformError('youtube', 'That account has no YouTube channel.');
   return {
-    displayName: channel.snippet.title,
-    handle: channel.snippet.customUrl ?? null,
-    externalId: channel.id,
-    followers: channel.statistics?.subscriberCount ? Number(channel.statistics.subscriberCount) : null,
-    avatarUrl: channel.snippet.thumbnails?.default?.url ?? null,
+    displayName: channel.name,
+    handle: channel.handle,
+    externalId: channel.channelId,
+    followers: channel.subscribers,
+    avatarUrl: channel.avatarUrl,
   };
 }
 

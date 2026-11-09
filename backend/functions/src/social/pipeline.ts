@@ -79,6 +79,8 @@ import {
   ROLE_SPECS,
   REVISION_SCOPES,
   STAGE_COVER,
+  ownFormat,
+  ownKind,
   postMedia,
   postsOnItsOwn,
   supports,
@@ -1047,6 +1049,8 @@ async function createPost(opts: {
   publishWhenDone?: boolean;
   /** A video the person wants this made like, already watched. */
   reference?: { read: ReferenceRead; by: string };
+  /** The person's own video or pictures, already in the piece's folder. */
+  media?: MediaAsset[];
 }): Promise<string> {
   const settings = await getSocialSettings();
   const angle = opts.angle ?? (await nextAngle(settings));
@@ -1076,7 +1080,7 @@ async function createPost(opts: {
     ads: null,
     direction: null,
     cut: null,
-    media: [],
+    media: opts.media ?? [],
     targets,
     results: {},
     quality: null,
@@ -1675,6 +1679,73 @@ async function readReference(
   }
 }
 
+const UPLOAD_PATH = z
+  .string()
+  .regex(/^(workspaces\/[\w-]+\/)?socialUploads\/[\w.-]+$/)
+  .max(300);
+
+/** Told to everyone on the piece: they cannot see the file, only what the person said about it. */
+const OWN_NOTE = {
+  video: 'This video was supplied and goes out exactly as it is. Write only the words that go with it, and do not describe anything the line above does not mention.',
+  image: 'These pictures were supplied and are the visuals of this piece. Write the words for them, and do not describe anything the line above does not mention.',
+};
+
+/** What was uploaded, going by what Storage says it is. */
+async function readOwn(paths: string[]): Promise<{ storagePath: string; kind: 'video' | 'image' }[]> {
+  const files = await Promise.all(
+    paths.map(async (storagePath) => {
+      if (!ownUpload(storagePath)) throw new HttpsError('permission-denied', 'Attach a file uploaded from this console.');
+      const [meta] = await storage
+        .bucket()
+        .file(storagePath)
+        .getMetadata()
+        .catch(() => {
+          throw new HttpsError('not-found', 'That upload did not arrive. Try again.');
+        });
+      const kind = ownKind(String(meta.contentType ?? ''));
+      if (!kind) throw new HttpsError('invalid-argument', 'Upload an MP4 or MOV video, or pictures.');
+      return { storagePath, kind };
+    }),
+  );
+  if (files.length > 1 && files.some((f) => f.kind === 'video')) {
+    throw new HttpsError('invalid-argument', 'Choose one video, or some pictures, not both.');
+  }
+  return files;
+}
+
+/** An upload, moved into the piece's own folder and described the way a rendered file is. */
+async function keepUpload(params: {
+  postId: string;
+  format: ContentFormat;
+  storagePath: string;
+  kind: 'video' | 'image';
+  slide: number;
+  alt: string;
+}): Promise<MediaAsset> {
+  const { postId, format, kind, slide, alt } = params;
+  const source = storage.bucket().file(params.storagePath);
+  const [bytes] = await source.download();
+  const stored =
+    kind === 'video'
+      ? await storeVideo(postId, bytes)
+      : await storeFile({ path: `${postFolder(postId)}/slide-${slide}.jpg`, bytes: await asJpeg(bytes), contentType: 'image/jpeg' });
+  // The piece has its own copy now, and these run to 200 MB.
+  await source.delete().catch(() => undefined);
+  return {
+    kind,
+    provider: 'manual',
+    model: null,
+    jobId: null,
+    storagePath: stored.path,
+    url: stored.url,
+    urlExpiresAtMs: stored.expiresAtMs,
+    durationSec: null,
+    aspect: FORMAT_SPECS[format].aspect,
+    slide: kind === 'video' ? 1 : slide,
+    alt,
+  };
+}
+
 /** "Put the team on it" — the same run the scheduler does, on demand. */
 export const adminGenerateSocialPost = deskCall('content',
   { timeoutSeconds: RUN_TIMEOUT_SECONDS, memory: '2GiB' },
@@ -1697,17 +1768,18 @@ export const adminGenerateSocialPost = deskCall('content',
         reference: z
           .object({
             youtube: z.string().trim().max(300).optional(),
-            storagePath: z
-              .string()
-              .regex(/^(workspaces\/[\w-]+\/)?socialUploads\/[\w.-]+$/)
-              .max(300)
-              .optional(),
+            storagePath: UPLOAD_PATH.optional(),
           })
           .refine((r) => Boolean(r.youtube) !== Boolean(r.storagePath))
           .optional(),
+        /** The person's own video or pictures, uploaded by the console. */
+        own: z.array(UPLOAD_PATH).min(1).max(10).optional(),
       })
       .safeParse(req.data ?? {});
     if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
+    if (parsed.data.own && !parsed.data.brief) {
+      throw new HttpsError('invalid-argument', 'Say what your video or pictures show, so the team can write about them.');
+    }
 
     const team = await activeTeam();
     if (!team.length) {
@@ -1719,7 +1791,8 @@ export const adminGenerateSocialPost = deskCall('content',
 
     const settings = await getSocialSettings();
     const date = parsed.data.date ?? dayKey(Date.now());
-    const format = parsed.data.format ?? (await nextFormat(settings));
+    const own = parsed.data.own ? await readOwn(parsed.data.own) : null;
+    const format = own ? ownFormat(own.map((o) => o.kind), parsed.data.format) : (parsed.data.format ?? (await nextFormat(settings)));
     let id = postIdFor(date, format);
 
     const existing = (await postRef(id).get()).data() as SocialPost | undefined;
@@ -1749,6 +1822,11 @@ export const adminGenerateSocialPost = deskCall('content',
       ? { read: await readReference(parsed.data.reference, settings, date), by: ctx.uid }
       : undefined;
 
+    // On the piece before the team starts: the render keeps a video, and cuts pictures into the reel.
+    const media = own
+      ? await Promise.all(own.map((o, i) => keepUpload({ postId: id, format, storagePath: o.storagePath, kind: o.kind, slide: i + 1, alt: '' })))
+      : undefined;
+
     try {
       await createPost({
         id,
@@ -1756,9 +1834,10 @@ export const adminGenerateSocialPost = deskCall('content',
         format,
         angle: parsed.data.angle,
         targets: parsed.data.targets,
-        brief: parsed.data.brief ? { text: parsed.data.brief, by: ctx.uid } : undefined,
+        brief: parsed.data.brief ? { text: own ? `${parsed.data.brief}\n${OWN_NOTE[own[0].kind]}` : parsed.data.brief, by: ctx.uid } : undefined,
         publishWhenDone: parsed.data.publishWhenDone,
         reference,
+        media,
       });
       return { ok: true, id, format };
     } catch (e) {
@@ -2063,7 +2142,7 @@ async function asJpeg(bytes: Buffer): Promise<Buffer> {
  * is uploaded to Storage by the console and handed over as a path, so it goes
  * through exactly the same publish path as a rendered one.
  */
-export const adminAttachSocialMedia = deskCall('content', async (req) => {
+export const adminAttachSocialMedia = deskCall('content', { memory: '1GiB', timeoutSeconds: 300 }, async (req) => {
   const parsed = z
     .object({
       postId: z.string().min(1).max(64),
@@ -2085,34 +2164,17 @@ export const adminAttachSocialMedia = deskCall('content', async (req) => {
   const format = post.format ?? 'reel';
   const kind = parsed.data.kind ?? (FORMAT_SPECS[format].kind === 'video' ? 'video' : 'image');
 
-  const { storage } = await import('../lib/firebase');
-  const source = storage.bucket().file(storagePath);
-  const [exists] = await source.exists();
+  const [exists] = await storage.bucket().file(storagePath).exists();
   if (!exists) throw new HttpsError('not-found', 'No file at that path.');
 
-  const [bytes] = await source.download();
-  const stored =
-    kind === 'video'
-      ? await storeVideo(postId, bytes)
-      : await storeFile({
-          path: `${postFolder(postId)}/slide-${slide ?? 1}.jpg`,
-          bytes: await asJpeg(bytes),
-          contentType: 'image/jpeg',
-        });
-
-  const asset: MediaAsset = {
+  const asset = await keepUpload({
+    postId,
+    format,
+    storagePath,
     kind,
-    provider: 'manual',
-    model: null,
-    jobId: null,
-    storagePath: stored.path,
-    url: stored.url,
-    urlExpiresAtMs: stored.expiresAtMs,
-    durationSec: null,
-    aspect: FORMAT_SPECS[format].aspect,
-    slide: kind === 'video' ? 1 : (slide ?? 1),
+    slide: slide ?? 1,
     alt: alt ?? post.seo?.altTexts[(slide ?? 1) - 1] ?? '',
-  };
+  });
 
   const media = postMedia(post).filter((m) => !(m.kind === asset.kind && m.slide === asset.slide));
   await patch(postId, {
