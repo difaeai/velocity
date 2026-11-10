@@ -7,6 +7,8 @@
  * it. Change one, change the other.
  */
 
+import type { SocialPlatform } from './api';
+
 export type StudioPlanId = 'research' | 'content' | 'all' | 'sales' | 'ads';
 export type StudioNeed = 'research' | 'content' | 'ads' | 'sales' | 'any';
 /** One part of a plan, or several of which any one will do — a page two plans share. */
@@ -155,6 +157,8 @@ export interface StudioWorkspace {
   creditDays?: number;
   /** The Pakistan day the last credit day was spent. */
   creditDayOn?: string;
+  /** The networks chosen at sign-up: the console asks to connect these first. */
+  platforms?: SocialPlatform[];
 }
 
 /** `workspaces/{id}/creditLog/{id}`: what the customer sees of their credits — never what a day really cost. */

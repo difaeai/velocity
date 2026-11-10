@@ -103,6 +103,8 @@ export interface Brand {
   website: string;
 }
 
+import type { Platform } from '../social/types';
+
 export interface Workspace {
   name: string;
   ownerUid: string;
@@ -120,6 +122,23 @@ export interface Workspace {
   creditDays?: number;
   /** The Pakistan day (`YYYY-MM-DD`) the last credit day was spent: one a day at most. */
   creditDayOn?: string;
+  /** The networks the owner said they post on at sign-up: what the console asks them to connect first. */
+  platforms?: Platform[];
+}
+
+/** A plan paid for before the business was described (`studioUsers/{uid}.prepaid`): the next workspace starts on it. */
+export interface Prepaid {
+  plan: PlanId;
+  billing: Billing;
+  paymentId: string;
+  atMs: number;
+}
+
+/** A new workspace's time: the free day — or, paid up front, the paid period and no trial. */
+export function startTerms(prepaid: Prepaid | null, nowMs: number): Pick<Workspace, 'trialEndsAtMs' | 'paidUntilMs' | 'accessUntilMs'> {
+  if (!prepaid) return { trialEndsAtMs: nowMs + TRIAL_MS, paidUntilMs: 0, accessUntilMs: nowMs + TRIAL_MS };
+  const paidUntilMs = nowMs + (prepaid.billing === 'year' ? YEAR_MS : PERIOD_MS);
+  return { trialEndsAtMs: nowMs, paidUntilMs, accessUntilMs: paidUntilMs };
 }
 
 /** Whether this workspace may do this, now. */

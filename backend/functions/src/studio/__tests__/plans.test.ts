@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { PERIOD_MS, PKR_PER_USD, PLAN_IDS, PLANS, YEAR_MS, canUse, extendPaid, paidAfter, pricePkr, priceUsd, refusal } from '../plans';
+import { PERIOD_MS, PKR_PER_USD, PLAN_IDS, PLANS, TRIAL_MS, YEAR_MS, canUse, extendPaid, paidAfter, pricePkr, priceUsd, refusal, startTerms } from '../plans';
 import { PRICE_GRACE_MS, PRICE_WINDOW_MS, priceState } from '../priceClock';
 
 const NOW = 1_800_000_000_000;
@@ -145,5 +145,18 @@ describe('priceUsd', () => {
       expect(pricePkr(id, 'year')).toBeGreaterThanOrEqual(pricePkr(id, 'month') * 12 * 0.97);
       expect(pricePkr(id, 'month')).toBe(PLANS[id].usd * PKR_PER_USD);
     }
+  });
+});
+
+describe('startTerms', () => {
+  it('gives a free day when nothing was paid up front', () => {
+    expect(startTerms(null, NOW)).toEqual({ trialEndsAtMs: NOW + TRIAL_MS, paidUntilMs: 0, accessUntilMs: NOW + TRIAL_MS });
+  });
+
+  it('starts a prepaid workspace paid, with no trial, for a month or a year', () => {
+    const month = startTerms({ plan: 'all', billing: 'month', paymentId: 'p1', atMs: NOW }, NOW);
+    expect(month).toEqual({ trialEndsAtMs: NOW, paidUntilMs: NOW + PERIOD_MS, accessUntilMs: NOW + PERIOD_MS });
+    expect(canUse({ ...month, plan: 'all' }, 'sales', NOW)).toBe(true);
+    expect(startTerms({ plan: 'content', billing: 'year', paymentId: 'p2', atMs: NOW }, NOW).paidUntilMs).toBe(NOW + YEAR_MS);
   });
 });

@@ -1778,9 +1778,10 @@ export interface MetaPageChoice {
 /** A customer's "I paid", waiting for an admin, at `studioPayments/{id}`. */
 export interface StudioPaymentDoc {
   id: string;
-  wid: string;
+  /** Null on a payment sent at sign-up, before the workspace existed. */
+  wid: string | null;
   uid: string;
-  business: string;
+  business: string | null;
   email: string | null;
   plan: StudioPlanId;
   /** Absent on payments sent before yearly billing existed: those were monthly. */
@@ -2266,6 +2267,7 @@ export const studioApi = {
       language: string;
       differences?: string;
       plan: StudioPlanId;
+      platforms?: SocialPlatform[];
     },
     { ok: boolean; workspaceId: string; trialEndsAtMs: number }
   >('studioCreateWorkspace'),

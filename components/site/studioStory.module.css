@@ -1005,7 +1005,8 @@
   }
   .step {
     width: 40%;
-    min-height: 88vh;
+    /* Tall enough that the console's scene and the narration finish before the next step takes over. */
+    min-height: 130vh;
     padding-right: 3.5%;
     gap: 18px;
   }
@@ -1099,7 +1100,7 @@
     display: none;
   }
   .step {
-    min-height: 58vh;
+    min-height: 80vh;
     justify-content: flex-start;
     padding-top: 24px;
   }

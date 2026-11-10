@@ -33,11 +33,14 @@ import {
   type SocialEmployee,
   type SocialFormat,
   type SocialPageRead,
+  type SocialPlatform,
   type SocialPostDoc,
   type SocialReadiness,
   type SocialSettings,
 } from '@/lib/api';
 import { PLATFORM_META, longDate } from '@/components/social/shared';
+import { InstagramConnect } from '@/components/social/instagramConnect';
+import { VideoConnect } from '@/components/social/videoConnect';
 import { Blockers, readBlockers } from '@/components/social/blockers';
 import { LaunchSequence, localHourLabel } from '@/components/social/launch';
 import { AdsSection, ApprovalBox, Hero, KpiTile, SalesSection, readDesk } from '@/components/social/dashboard';
@@ -67,7 +70,7 @@ const FIRST_PAINT = {
 } as SocialSettings;
 
 export default function SocialOverview() {
-  const { path, house, includes } = useWorkspace();
+  const { path, house, includes, ws } = useWorkspace();
   const [accounts, setAccounts] = useState<SocialAccountDoc[]>([]);
   const [posts, setPosts] = useState<SocialPostDoc[]>([]);
   const [settings, setSettings] = useState<SocialSettings | null>(null);
@@ -328,6 +331,8 @@ export default function SocialOverview() {
 
       {/* a Studio workspace's first days: market read → content → posting → funnel → close */}
       {!house ? <LaunchSequence settings={settings} /> : null}
+      {/* the networks picked at sign-up, each connected from right here */}
+      {ws?.platforms?.length ? <ChosenPlatforms platforms={ws.platforms} accounts={accounts} /> : null}
 
       {/* what is actually stopping it, if anything */}
       {readiness ? <Blockers blockers={blockers} /> : null}
@@ -436,5 +441,30 @@ export default function SocialOverview() {
         .
       </p>
     </div>
+  );
+}
+
+/** The networks picked at sign-up that are not connected yet, with the connect itself on the home page. */
+function ChosenPlatforms({ platforms, accounts }: { platforms: SocialPlatform[]; accounts: SocialAccountDoc[] }) {
+  const by = (p: SocialPlatform) => accounts.find((x) => x.platform === p);
+  const open = platforms.filter((p) => by(p)?.status !== 'connected');
+  if (!open.length) return null;
+  // Instagram and Facebook share one Facebook sign-in; the rest are pasted on Connected accounts.
+  const pasted = open.filter((p) => !['instagram', 'facebook', 'youtube', 'tiktok'].includes(p));
+  return (
+    <section className="fx-rise" style={{ marginBottom: 16 }}>
+      <strong style={{ fontSize: 14 }}>Connect where you post</strong>
+      <p className="fx-muted" style={{ fontSize: 13, margin: '4px 0 12px', lineHeight: 1.55 }}>
+        You chose {open.map((p) => PLATFORM_META[p].label).join(', ')} at sign-up. Nothing goes out until an account is connected.
+      </p>
+      {open.includes('instagram') || open.includes('facebook') ? <InstagramConnect account={by('instagram')} /> : null}
+      {open.includes('youtube') ? <VideoConnect provider="youtube" account={by('youtube')} /> : null}
+      {open.includes('tiktok') ? <VideoConnect provider="tiktok" account={by('tiktok')} /> : null}
+      {pasted.length ? (
+        <Link href="/dashboard/social/accounts" style={{ color: colors.secondary, fontWeight: 800, fontSize: 13.5 }}>
+          Connect {pasted.map((p) => PLATFORM_META[p].label).join(', ')} on Connected accounts →
+        </Link>
+      ) : null}
+    </section>
   );
 }

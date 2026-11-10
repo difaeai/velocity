@@ -1040,10 +1040,14 @@ test('Velocity Studio: a customer reads only their own workspace, never its secr
     await setDoc(doc(db, 'workspaces/wsA/system/socialAutomation'), { enabled: false });
     await setDoc(doc(db, 'workspaces/wsA/socialAccounts/instagram/secret/credentials'), { token: 'sealed' });
     await setDoc(doc(db, 'workspaces/wsB/socialPosts/p1'), { status: 'published' });
-    await setDoc(doc(db, 'studioPayments/payA'), { wid: 'wsA', status: 'pending' });
-    await setDoc(doc(db, 'studioPayments/payB'), { wid: 'wsB', status: 'pending' });
+    await setDoc(doc(db, 'studioPayments/payA'), { wid: 'wsA', uid: 'ownerA', status: 'pending' });
+    await setDoc(doc(db, 'studioPayments/payB'), { wid: 'wsB', uid: 'ownerB', status: 'pending' });
+    // Paid at sign-up, before any workspace existed.
+    await setDoc(doc(db, 'studioPayments/preC'), { wid: null, uid: 'signupC', status: 'pending' });
+    await setDoc(doc(db, 'studioPayments/preD'), { wid: null, uid: 'signupD', status: 'pending' });
   });
   const ownerA = testEnv.authenticatedContext('ownerA', { ws: 'wsA' }).firestore();
+  const signupC = testEnv.authenticatedContext('signupC').firestore();
 
   await assertSucceeds(getDoc(doc(ownerA, 'workspaces/wsA')));
   await assertSucceeds(getDoc(doc(ownerA, 'workspaces/wsA/socialPosts/p1')));
@@ -1057,6 +1061,12 @@ test('Velocity Studio: a customer reads only their own workspace, never its secr
   await assertSucceeds(getDoc(doc(ownerA, 'studioPayments/payA')));
   await assertFails(getDoc(doc(ownerA, 'studioPayments/payB')));
   await assertFails(setDoc(doc(ownerA, 'studioPayments/forged'), { wid: 'wsA', status: 'approved' }));
+  // The sign-up page watches its own pre-workspace payment, and nobody else's.
+  await assertSucceeds(getDoc(doc(signupC, 'studioPayments/preC')));
+  await assertSucceeds(getDocs(query(collection(signupC, 'studioPayments'), where('uid', '==', 'signupC'))));
+  await assertFails(getDoc(doc(signupC, 'studioPayments/preD')));
+  await assertFails(getDoc(doc(signupC, 'studioPayments/payA')));
+  await assertFails(setDoc(doc(signupC, 'studioPayments/forged2'), { wid: null, uid: 'signupC', status: 'approved' }));
   await assertFails(getDoc(doc(ownerA, 'studioTxnRefs/ANY')));
 
   // A rider with no workspace sees none; an admin sees all.

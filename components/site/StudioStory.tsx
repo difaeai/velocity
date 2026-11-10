@@ -6,7 +6,8 @@
  * The steps scroll by; beside each a mock of the real Studio console — same
  * nav, same green-and-white theme — acts out the step in view, with the
  * matching film from the shop in the corner. On wide screens the steps zig-zag
- * and the console glides to whichever lane the text is not in. A narrator reads each step the
+ * and the console glides to whichever lane the text is not in. Every step, the
+ * first included, is announced by the wipe and acted out afresh. A narrator reads each step the
  * moment it scrolls in, with small sounds timed to its animation (drawn live
  * with Web Audio, no files). The voice, the first-touch rule and the mute are
  * the whole page's, in `siteSound.tsx`.
@@ -183,7 +184,8 @@ export function StudioStory() {
   const rows = useRef<(HTMLLIElement | null)[]>([]);
   // Each move to another step: which way, and a count so the wipe replays. Read by the sound effect too.
   const [turn, setTurn] = useState({ n: 0, dir: 1 });
-  const shownRef = useRef(0);
+  // -1 until a step is read, so the first one gets its wipe and scene like the rest.
+  const shownRef = useRef(-1);
 
   // The step crossing the middle of the screen is the one in view — on a phone, the band just under the pinned console.
   useEffect(() => {
@@ -260,7 +262,7 @@ export function StudioStory() {
                 }}
                 id={`step-${i + 1}`}
                 data-i={i}
-                className={`${s.step} ${i === shown ? s.on : ''}`}
+                className={`${s.step} ${i === shown && turn.n > 0 ? s.on : ''}`}
                 aria-current={i === shown ? 'step' : undefined}
               >
                 <span className={s.badge}>
@@ -312,7 +314,7 @@ export function StudioStory() {
                   <span className={s.meter} style={{ ['--p' as string]: (shown + 1) / STEPS.length }} />
                   {turn.n > 0 && !reduced ? (
                     <div key={turn.n} className={`${s.wipe} ${turn.dir < 0 ? s.wipeBack : ''}`}>
-                      <span className={s.wipeKicker}>{turn.dir > 0 ? 'Next step' : 'Back a step'}</span>
+                      <span className={s.wipeKicker}>{turn.dir < 0 ? 'Back a step' : shown === 0 ? 'Here we go' : 'Next step'}</span>
                       <span className={s.wipeNum}>
                         Step {shown + 1} <small>of {STEPS.length}</small>
                       </span>
@@ -340,7 +342,7 @@ export function StudioStory() {
                         <strong>{step.page}</strong>
                       </div>
                       <div
-                        key={step.key}
+                        key={turn.n}
                         className={`${s.scene} ${reduced ? s.rest : turn.dir < 0 ? s.fromLeft : ''}`}
                         style={{ ['--lag' as string]: `${lag}s` }}
                       >

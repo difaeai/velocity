@@ -1,37 +1,63 @@
 'use client';
 
 /**
- * Velocity Studio's first run, once there is an account: prove the email, then
- * describe the business in five answers, and the free day starts.
+ * Velocity Studio's first run, once there is an account: prove the email, pay
+ * for a plan — or take the free day instead — describe the business, say which
+ * networks you post on, and the console opens.
  *
  * Signing in and signing up live at /studio/login and /studio/signup; anyone
  * who reaches this page signed out is sent there with their plan. Google
  * sign-in arrives verified. An email-and-password account gets a six-digit code
  * by email and types it here; the backend refuses a workspace (and its free
- * day) to an address nobody proved. The answers become the team's brief on day
- * one. Paying is in the console, once the free day is used.
+ * day) to an address nobody proved.
+ *
+ * Paying comes before the business (owner, 2026-11-10): the receipt and the
+ * transaction ID go to `studioSubmitPayment` with no workspace yet, a person
+ * approves it, and the workspace made afterwards starts on that plan, paid, with
+ * no trial. The free day is the way past paying. There is no card gateway, so
+ * the ways to pay are the transfers the Billing page takes.
  */
 
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
+import { ref, uploadBytes } from 'firebase/storage';
 
-import { auth } from '@/lib/firebase';
+import { auth, db, storage } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth';
-import { studioApi } from '@/lib/api';
+import { SOCIAL_PLATFORMS, studioApi, type SocialPlatform, type StudioPaymentDoc } from '@/lib/api';
 import { useStudioPriceRaised } from '@/lib/useStudioPriceRaised';
 import {
   STUDIO_PLAN_IDS,
   STUDIO_PLANS,
   STUDIO_TRIAL_HOURS,
+  STUDIO_YEAR_DISCOUNT_PCT,
+  studioPkr,
   studioPriceUsd,
   studioUsd,
   type StudioBilling,
   type StudioPlanId,
 } from '@/lib/studio';
 import { VelocityIcon } from '@/components/BrandMark';
+import { FieldError } from '@/components/states';
+import { PLATFORM_META } from '@/components/social/shared';
 import { carried } from '../StudioAuth';
 import s from '../auth.module.css';
+import a from '../../dashboard/social/account.module.css';
+
+const STAGES = ['Account', 'Verify email', 'Pay or try', 'Your business', 'Platforms'];
+
+/** The five answers that become the team's brief. */
+interface Brand {
+  businessName: string;
+  what: string;
+  audience: string;
+  market: string;
+  language: string;
+  differences: string;
+  website: string;
+}
 
 export default function StudioStartPage() {
   return (
@@ -50,10 +76,14 @@ function Start() {
   const [plan, setPlan] = useState<StudioPlanId>(
     STUDIO_PLAN_IDS.includes(asked as StudioPlanId) ? (asked as StudioPlanId) : 'all',
   );
-  const billing: StudioBilling = params.get('billing') === 'year' ? 'year' : 'month';
+  const [billing, setBilling] = useState<StudioBilling>(params.get('billing') === 'year' ? 'year' : 'month');
   // The token's own flag only changes after a refresh; this carries the moment between.
   const [verifiedNow, setVerifiedNow] = useState(false);
   const verified = Boolean(user?.emailVerified) || verifiedNow;
+  // "Try it free" instead of paying; the business answers, kept until the platforms are picked.
+  const [trial, setTrial] = useState(false);
+  const [brand, setBrand] = useState<Brand | null>(null);
+  const [payments, setPayments] = useState<StudioPaymentDoc[]>([]);
 
   useEffect(() => {
     if (initializing) return;
@@ -67,7 +97,19 @@ function Start() {
     if (uid && !isAdmin && !workspaceId) studioApi.touch({}).catch(() => undefined);
   }, [uid, isAdmin, workspaceId]);
 
-  const stage = !verified ? 2 : 3;
+  // The payment sent here, before any workspace: the page moves on by itself when it is approved.
+  useEffect(() => {
+    if (!uid) return;
+    return onSnapshot(
+      query(collection(db, 'studioPayments'), where('uid', '==', uid)),
+      (snap) => setPayments(snap.docs.map((d) => ({ ...(d.data() as StudioPaymentDoc), id: d.id }))),
+      () => setPayments([]),
+    );
+  }, [uid]);
+  const prepay = payments.filter((p) => p.wid === null).sort((x, y) => y.createdAtMs - x.createdAtMs)[0] ?? null;
+  const paid = prepay?.status === 'approved' ? prepay : null;
+
+  const stage = !verified ? 2 : !(paid || trial) ? 3 : !brand ? 4 : 5;
 
   return (
     <main className={`${s.page} ${s.single}`}>
@@ -88,7 +130,7 @@ function Start() {
           {initializing || !user || workspaceId ? null : (
             <div className={`${s.inner} ${s.wide}`}>
               <ol className={s.steps} aria-label="Getting started">
-                {['Account', 'Verify email', 'Your business'].map((label, i) => {
+                {STAGES.map((label, i) => {
                   const n = i + 1;
                   const state = n < stage ? s.stepDone : n === stage ? s.stepOn : '';
                   return (
@@ -110,10 +152,26 @@ function Start() {
                     Open the console
                   </Link>
                 </div>
-              ) : !verified ? (
+              ) : stage === 2 ? (
                 <VerifyCard email={user.email} onVerified={() => setVerifiedNow(true)} onSignOut={signOut} />
+              ) : stage === 3 ? (
+                prepay?.status === 'pending' ? (
+                  <WaitingCard payment={prepay} />
+                ) : (
+                  <PayCard
+                    uid={user.uid}
+                    plan={plan}
+                    onPlan={setPlan}
+                    billing={billing}
+                    onBilling={setBilling}
+                    rejected={prepay?.status === 'rejected' ? prepay : null}
+                    onTrial={() => setTrial(true)}
+                  />
+                )
+              ) : stage === 4 ? (
+                <BusinessCard plan={paid?.plan ?? plan} onPlan={paid ? null : setPlan} email={user.email} onSignOut={signOut} onDone={setBrand} />
               ) : (
-                <BusinessCard plan={plan} onPlan={setPlan} billing={billing} email={user.email} onSignOut={signOut} />
+                <PlatformsCard brand={brand as Brand} plan={paid?.plan ?? plan} billing={paid?.billing ?? billing} paid={Boolean(paid)} onBack={() => setBrand(null)} />
               )}
             </div>
           )}
@@ -234,22 +292,234 @@ function VerifyCard({ email, onVerified, onSignOut }: { email: string | null; on
   );
 }
 
-function BusinessCard({
+interface ReceivingAccounts {
+  easypaisaNumber?: string;
+  jazzcashNumber?: string;
+  bankName?: string;
+  bankIban?: string;
+  accountTitle?: string;
+}
+type Method = { key: string; label: string; value: string };
+
+/** Pay for the plan now — a transfer and its receipt, as the Billing page takes them — or take the free day instead. */
+function PayCard({
+  uid,
   plan,
   onPlan,
   billing,
-  email,
-  onSignOut,
+  onBilling,
+  rejected,
+  onTrial,
 }: {
+  uid: string;
   plan: StudioPlanId;
   onPlan: (p: StudioPlanId) => void;
   billing: StudioBilling;
+  onBilling: (b: StudioBilling) => void;
+  rejected: StudioPaymentDoc | null;
+  onTrial: () => void;
+}) {
+  const raised = useStudioPriceRaised();
+  const [accounts, setAccounts] = useState<ReceivingAccounts | null>(null);
+  const [method, setMethod] = useState<string | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [txnId, setTxnId] = useState('');
+  const [agreed, setAgreed] = useState(false);
+  const [tried, setTried] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getDoc(doc(db, 'config', 'settlementAccounts'))
+      .then((snap) => setAccounts((snap.data() as ReceivingAccounts | undefined) ?? {}))
+      .catch(() => setAccounts({}));
+  }, []);
+
+  const amount = studioPriceUsd(plan, billing, raised);
+  const amountPkr = studioPkr(amount);
+  const methods: Method[] = accounts
+    ? [
+        accounts.easypaisaNumber ? { key: 'ep', label: 'EasyPaisa', value: accounts.easypaisaNumber } : null,
+        accounts.jazzcashNumber ? { key: 'jc', label: 'JazzCash', value: accounts.jazzcashNumber } : null,
+        accounts.bankIban ? { key: 'bank', label: accounts.bankName ? `Bank — ${accounts.bankName}` : 'Bank transfer', value: accounts.bankIban } : null,
+      ].filter((m): m is Method => m !== null)
+    : [];
+  const picked = methods.find((m) => m.key === method) ?? methods[0];
+  const ready = Boolean(file) && txnId.trim().length >= 6 && agreed && methods.length > 0;
+
+  function copy(m: Method) {
+    void navigator.clipboard?.writeText(m.value).then(() => {
+      setCopied(m.key);
+      setTimeout(() => setCopied(null), 1500);
+    });
+  }
+
+  async function send() {
+    // What is missing is said at its field, not by a button that stays grey.
+    setTried(true);
+    if (!ready || !file) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if (file.size > 10 * 1024 * 1024) throw new Error('That picture is over 10 MB.');
+      const screenshotPath = `studioSignup/${uid}/payments/${Date.now()}-${file.name.replace(/[^\w.-]/g, '')}`;
+      await uploadBytes(ref(storage, screenshotPath), file, { contentType: file.type || 'image/jpeg' });
+      await studioApi.submitPayment({ plan, billing, txnId: txnId.trim(), screenshotPath });
+      // The listener on studioPayments moves the page on to "being checked".
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'That did not work.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className={s.card}>
+      <div style={{ display: 'grid', gap: 4 }}>
+        <h1 className={s.cardTitle} style={{ fontSize: 24 }}>
+          Pay for your plan
+        </h1>
+        <p className={s.signedAs}>
+          Send the amount by EasyPaisa, JazzCash or bank transfer and upload the receipt. Our AI reads it the moment it
+          arrives; a person approves it, usually within a few hours, and your plan starts then.
+        </p>
+      </div>
+      {rejected ? (
+        <p className={s.error} role="alert">
+          Your last payment was not received{rejected.note ? `: ${rejected.note}` : ''}. Send it again, or try Vexa free first.
+        </p>
+      ) : null}
+
+      <div className={s.field} role="radiogroup" aria-label="Plan">
+        Your plan
+        <div className={s.plans}>
+          {STUDIO_PLAN_IDS.map((id) => (
+            <button key={id} type="button" role="radio" aria-checked={id === plan} className={s.planChip} onClick={() => onPlan(id)}>
+              {STUDIO_PLANS[id].name} · {studioUsd(studioPriceUsd(id, billing, raised))}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className={s.field} role="radiogroup" aria-label="Billing">
+        Billing
+        <div className={s.plans}>
+          {(['month', 'year'] as const).map((b) => (
+            <button key={b} type="button" role="radio" aria-checked={billing === b} className={s.planChip} onClick={() => onBilling(b)}>
+              {b === 'month' ? 'Monthly' : `Yearly — save ${STUDIO_YEAR_DISCOUNT_PCT}%`}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className={s.field}>
+        Send Rs {amountPkr.toLocaleString('en-PK')} ({studioUsd(amount)} for {billing === 'year' ? 'a year' : '30 days'}) to
+        {accounts === null ? (
+          <p className={s.sub}>Loading the receiving accounts…</p>
+        ) : !methods.length ? (
+          <p className={s.error}>Payment details are being set up. Email business@velocityrides.app and we will send them — or try Vexa free below.</p>
+        ) : (
+          <div className={a.box}>
+            <div className={a.methods} role="radiogroup" aria-label="Pay with">
+              {methods.map((m) => (
+                <button key={m.key} type="button" role="radio" aria-checked={picked?.key === m.key} className={a.method} onClick={() => setMethod(m.key)}>
+                  {m.label}
+                </button>
+              ))}
+            </div>
+            {picked ? (
+              <div className={a.account}>
+                <span>
+                  <code>{picked.value}</code>
+                  {accounts.accountTitle ? <small>{accounts.accountTitle}</small> : null}
+                </span>
+                <button type="button" className={a.copy} onClick={() => copy(picked)}>
+                  {copied === picked.key ? 'Copied ✓' : 'Copy'}
+                </button>
+              </div>
+            ) : null}
+          </div>
+        )}
+      </div>
+
+      <label className={`${a.drop} ${file ? a.dropDone : ''}`} style={{ position: 'relative' }}>
+        <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+        <b>{file ? `✓ ${file.name}` : 'Add the receipt screenshot'}</b>
+        <span>{file ? 'Tap to choose a different picture' : 'A photo or screenshot of the transfer, up to 10 MB'}</span>
+      </label>
+      <FieldError message={tried && !file ? 'Add the screenshot of your transfer receipt — a photo of the screen is fine.' : null} />
+      <label className={s.field}>
+        Transaction ID
+        <input
+          className={s.input}
+          value={txnId}
+          onChange={(e) => setTxnId(e.target.value)}
+          placeholder="From the receipt, e.g. 0123456789"
+          aria-invalid={tried && txnId.trim().length < 6}
+          aria-describedby="start-txn-error"
+        />
+        <FieldError id="start-txn-error" message={tried && txnId.trim().length < 6 ? 'Type the transaction ID printed on the receipt — at least 6 characters.' : null} />
+      </label>
+      <label className={a.agree}>
+        <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
+        <span>I sent Rs {amountPkr.toLocaleString('en-PK')} to the account shown, and the receipt and transaction ID above are from that transfer.</span>
+      </label>
+      <FieldError message={tried && !agreed ? 'Tick this to confirm the transfer is yours.' : null} />
+      {error ? (
+        <p className={s.error} role="alert">
+          {error}
+        </p>
+      ) : null}
+      <button type="button" className={s.primary} onClick={send} disabled={busy}>
+        {busy ? <span className={s.spinner} aria-hidden /> : null}
+        {busy ? 'Sending — our AI is reading the receipt…' : 'Submit payment'}
+      </button>
+
+      <p className={s.fine}>
+        Want to see Vexa work first?{' '}
+        <button type="button" className={s.link} onClick={onTrial}>
+          Start a free {STUDIO_TRIAL_HOURS}-hour trial instead
+        </button>{' '}
+        — no payment now: tell us about your business and go.
+      </p>
+    </div>
+  );
+}
+
+/** The payment is in; a person is checking it. The page moves on by itself once it is approved. */
+function WaitingCard({ payment }: { payment: StudioPaymentDoc }) {
+  return (
+    <div className={s.card} style={{ maxWidth: 480, justifySelf: 'center', width: '100%' }}>
+      <div className={s.head}>
+        <h1 className={s.title} style={{ fontSize: 30 }}>
+          Payment received
+        </h1>
+        <p className={s.sub}>
+          We have your receipt for the <strong style={{ color: '#1c1b1b' }}>{STUDIO_PLANS[payment.plan].name}</strong> plan
+          ({studioUsd(payment.amountUsd)}{payment.billing === 'year' ? ' a year' : ' a month'}), sent {when(payment.createdAtMs)}. A
+          person checks the money arrived, usually within a few hours. This page moves on by itself the moment it is
+          approved — you can close it and log in later.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function BusinessCard({
+  plan,
+  onPlan,
+  email,
+  onSignOut,
+  onDone,
+}: {
+  plan: StudioPlanId;
+  /** Null once the plan is paid for: no chips to change it. */
+  onPlan: ((p: StudioPlanId) => void) | null;
   email: string | null;
   onSignOut: () => void;
+  onDone: (brand: Brand) => void;
 }) {
-  const router = useRouter();
-  const raised = useStudioPriceRaised();
-  const [f, setF] = useState({
+  const [f, setF] = useState<Brand>({
     businessName: '',
     what: '',
     audience: '',
@@ -258,26 +528,10 @@ function BusinessCard({
     differences: '',
     website: '',
   });
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+  const set = (k: keyof Brand) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setF({ ...f, [k]: e.target.value });
 
   const ready = f.businessName.trim().length >= 2 && f.what.trim().length >= 5 && f.audience.trim() && f.market.trim();
-
-  async function go() {
-    setBusy(true);
-    setError(null);
-    try {
-      await studioApi.createWorkspace({ ...f, plan });
-      // The workspace claim only reaches the console in a fresh token.
-      await auth.currentUser?.getIdToken(true);
-      router.replace('/dashboard/social');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'That did not work.');
-      setBusy(false);
-    }
-  }
 
   return (
     <div className={s.card}>
@@ -296,7 +550,7 @@ function BusinessCard({
         style={{ display: 'grid', gap: 12 }}
         onSubmit={(e) => {
           e.preventDefault();
-          if (ready && !busy) void go();
+          if (ready) onDone(f);
         }}
       >
         <label className={s.field}>
@@ -335,32 +589,111 @@ function BusinessCard({
           <input className={s.input} value={f.website} onChange={set('website')} placeholder="https://" />
         </label>
 
-        <div className={s.field} role="radiogroup" aria-label="Your free day">
-          Your free day
-          <div className={s.plans}>
-            {STUDIO_PLAN_IDS.map((id) => (
-              <button key={id} type="button" role="radio" aria-checked={id === plan} className={s.planChip} onClick={() => onPlan(id)}>
-                {STUDIO_PLANS[id].name}
-              </button>
-            ))}
+        {onPlan ? (
+          <div className={s.field} role="radiogroup" aria-label="Your free day">
+            Your free day
+            <div className={s.plans}>
+              {STUDIO_PLAN_IDS.map((id) => (
+                <button key={id} type="button" role="radio" aria-checked={id === plan} className={s.planChip} onClick={() => onPlan(id)}>
+                  {STUDIO_PLANS[id].name}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
-
-        {error ? (
-          <p className={s.error} role="alert">
-            {error}
+        ) : (
+          <p className={s.fine}>
+            Your plan: <b>{STUDIO_PLANS[plan].name}</b> — paid. It starts the moment your console opens.
           </p>
-        ) : null}
-        <button type="submit" className={s.primary} disabled={busy || !ready}>
-          {busy ? <span className={s.spinner} aria-hidden /> : null}
-          {busy ? 'Setting up your team — keep this page open…' : `Start my free ${STUDIO_TRIAL_HOURS} hours`}
+        )}
+
+        <button type="submit" className={s.primary} disabled={!ready}>
+          Next: where you post
         </button>
+      </form>
+    </div>
+  );
+}
+
+/** The networks Vexa should post on; the console opens with each one ready to connect. */
+function PlatformsCard({
+  brand,
+  plan,
+  billing,
+  paid,
+  onBack,
+}: {
+  brand: Brand;
+  plan: StudioPlanId;
+  billing: StudioBilling;
+  paid: boolean;
+  onBack: () => void;
+}) {
+  const router = useRouter();
+  const raised = useStudioPriceRaised();
+  const [chosen, setChosen] = useState<SocialPlatform[]>(['instagram', 'facebook']);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const toggle = (p: SocialPlatform) => setChosen((c) => (c.includes(p) ? c.filter((x) => x !== p) : [...c, p]));
+
+  async function go() {
+    setBusy(true);
+    setError(null);
+    try {
+      await studioApi.createWorkspace({ ...brand, plan, platforms: chosen });
+      // The workspace claim only reaches the console in a fresh token.
+      await auth.currentUser?.getIdToken(true);
+      router.replace('/dashboard/social');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'That did not work.');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className={s.card}>
+      <div style={{ display: 'grid', gap: 4 }}>
+        <h1 className={s.cardTitle} style={{ fontSize: 24 }}>
+          Where do you post?
+        </h1>
+        <p className={s.signedAs}>
+          Pick the networks Vexa should post on. Your console opens with each one ready to connect — Instagram and Facebook
+          take one Facebook sign-in. You can add more later.
+        </p>
+      </div>
+      <div className={s.field} role="group" aria-label="Networks">
+        <div className={s.plans}>
+          {SOCIAL_PLATFORMS.map((p) => (
+            <button key={p} type="button" role="checkbox" aria-checked={chosen.includes(p)} className={s.planChip} onClick={() => toggle(p)}>
+              {chosen.includes(p) ? '✓ ' : ''}
+              {PLATFORM_META[p].label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {error ? (
+        <p className={s.error} role="alert">
+          {error}
+        </p>
+      ) : null}
+      <button type="button" className={s.primary} disabled={busy} onClick={go}>
+        {busy ? <span className={s.spinner} aria-hidden /> : null}
+        {busy ? 'Setting up your team — keep this page open…' : paid ? 'Open my console' : `Start my free ${STUDIO_TRIAL_HOURS} hours`}
+      </button>
+      <div className={s.row}>
+        <button type="button" className={s.link} onClick={onBack} disabled={busy}>
+          ← Your business
+        </button>
+        <span />
+      </div>
+      {paid ? null : (
         <p className={s.fine}>
           No card needed. After {STUDIO_TRIAL_HOURS} hours, pick a plan —{' '}
           {billing === 'year' ? `${studioUsd(studioPriceUsd(plan, 'year', raised))} a year` : `$${studioPriceUsd(plan, 'month', raised)} a month`} for{' '}
           {STUDIO_PLANS[plan].name} — or add credits at $1 a day. Pay by bank transfer, EasyPaisa or JazzCash.
         </p>
-      </form>
+      )}
     </div>
   );
 }
+
+const when = (ms: number) => new Date(ms).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });

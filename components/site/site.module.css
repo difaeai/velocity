@@ -118,6 +118,13 @@
   margin-inline: auto;
   position: relative;
   z-index: 1;
+  transition: z-index 0s 220ms;
+}
+
+/* A plan card in focus (StudioPlans): its blur covers the sticky nav too, and stays over it while it fades. */
+.wrap:has(> [data-focus]) {
+  z-index: 100;
+  transition-delay: 0s;
 }
 
 .section {

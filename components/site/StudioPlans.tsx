@@ -9,7 +9,8 @@
  * the card is on screen. With reduced motion or Data Saver the films show their
  * posters and download nothing. Flipping the switch runs the figures to their
  * new values; hovering a card brings it to the middle and grows it (CSS, on the
- * fixed slot each card sits in), and leaving puts every card back.
+ * fixed slot each card sits in), and leaving puts every card back. While a card
+ * is hovered or tapped, the rest of the page blurs behind it.
  *
  * Tap a card, or its "Hear Vexa" button, and Vexa says what she does on that
  * plan (Assistant.tsx).
@@ -19,7 +20,6 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 
 import {
-  STUDIO_PLAN_IDS,
   STUDIO_PLANS,
   STUDIO_YEAR_DISCOUNT_PCT,
   studioPriceUsd,
@@ -66,6 +66,13 @@ const FILMS: Record<StudioPlanId, { src: string; chip: string; alt: string }> = 
   },
 };
 
+/** The whole-team plan in the middle. Only this section's order: billing and sign-up keep STUDIO_PLAN_IDS. */
+const CARD_ORDER: StudioPlanId[] = ['research', 'all', 'content'];
+
+/** `how` is null once the card has let go: it stays above the blur while the blur fades. */
+type Focus = { id: StudioPlanId; how: 'hover' | 'tap' | null };
+const letGo = (f: Focus | null): Focus | null => f && { ...f, how: null };
+
 /** Runs a figure from where it stood to `to` in a fast ease-out, so flipping Monthly / Yearly reads as the price moving. */
 function Count({ to, from = to }: { to: number; from?: number }) {
   const reduced = useReducedMotion();
@@ -104,10 +111,11 @@ export function StudioPlans() {
   const still = reduced || saveData;
   const [billing, setBilling] = useState<StudioBilling>('month');
   const raised = usePriceRaised();
-  const [seen, setSeen] = useState(() => STUDIO_PLAN_IDS.map(() => false));
+  const [seen, setSeen] = useState(() => CARD_ORDER.map(() => false));
   const cards = useRef<(HTMLElement | null)[]>([]);
   const films = useRef<(HTMLVideoElement | null)[]>([]);
   const { speak } = useVexa();
+  const [focus, setFocus] = useState<Focus | null>(null);
 
   useEffect(() => {
     const io = new IntersectionObserver(
@@ -115,8 +123,11 @@ export function StudioPlans() {
         for (const e of entries) {
           const i = Number((e.target as HTMLElement).dataset.i);
           if (e.isIntersecting) setSeen((s) => (s[i] ? s : s.map((v, j) => v || j === i)));
-          // The card scrolled away: its assistant stops talking.
-          else hush(planVoice(STUDIO_PLAN_IDS[i]));
+          // The card scrolled away: its assistant stops talking and the page comes back.
+          else {
+            hush(planVoice(CARD_ORDER[i]));
+            setFocus((f) => (f?.id === CARD_ORDER[i] ? letGo(f) : f));
+          }
           const film = films.current[i];
           if (!film) continue;
           if (e.isIntersecting && !still) void film.play().catch(() => undefined);
@@ -143,14 +154,23 @@ export function StudioPlans() {
       </div>
 
       <div className={styles.plans}>
-        {STUDIO_PLAN_IDS.map((id, i) => {
+        {CARD_ORDER.map((id, i) => {
           const p = STUDIO_PLANS[id];
           const best = id === 'all';
           const month = studioPriceUsd(id, 'month', raised);
           const year = studioPriceUsd(id, 'year', raised);
           const twelve = month * 12;
           return (
-            <div key={id} className={styles.slot}>
+            <div
+              key={id}
+              className={`${styles.slot} ${focus?.id === id ? styles.focused : ''}`}
+              onPointerEnter={(e) => {
+                if (e.pointerType === 'mouse') setFocus({ id, how: 'hover' });
+              }}
+              onPointerLeave={(e) => {
+                if (e.pointerType === 'mouse') setFocus(letGo);
+              }}
+            >
               <article
                 ref={(el) => {
                   cards.current[i] = el;
@@ -161,6 +181,7 @@ export function StudioPlans() {
                 onPointerMove={glow}
                 // A tap anywhere on the card but its links and buttons: Vexa says what she does on this plan.
                 onClick={(e) => {
+                  setFocus((f) => (f?.id === id && f.how ? f : { id, how: 'tap' }));
                   if (!(e.target as Element).closest('a, button')) speak(planVoice(id), e);
                 }}
               >
@@ -226,6 +247,7 @@ export function StudioPlans() {
           );
         })}
       </div>
+      <div className={styles.scrim} data-focus={focus?.how ?? undefined} aria-hidden onClick={() => setFocus(letGo)} />
     </>
   );
 }

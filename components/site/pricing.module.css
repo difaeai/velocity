@@ -890,3 +890,41 @@
     var(--glass-sheen);
   box-shadow: var(--glass-rim), 0 28px 70px -28px rgba(140, 190, 0, 0.55);
 }
+
+/* ── the card in focus (StudioPlans) ──────────────────────────────────── */
+/* Covers the whole page but the focused card; site.module.css lifts .wrap above the nav so it can. */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  background: rgba(4, 18, 12, 0.38);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.scrim[data-focus] {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* The next tap closes a tapped card; a mouse has to keep reaching the slots under the blur. */
+.scrim[data-focus="tap"] {
+  pointer-events: auto;
+}
+
+.slot.focused .card {
+  z-index: 5;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .scrim {
+    transition: opacity 220ms var(--ease), visibility 0s 220ms;
+  }
+
+  .scrim[data-focus] {
+    transition-delay: 0s;
+  }
+}
