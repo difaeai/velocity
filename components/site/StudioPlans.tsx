@@ -21,6 +21,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import {
   STUDIO_PLANS,
+  STUDIO_TRIAL_USD,
   STUDIO_YEAR_DISCOUNT_PCT,
   studioPriceUsd,
   studioUsd,
@@ -239,7 +240,7 @@ export function StudioPlans() {
                     href={`/studio/signup?plan=${id}${billing === 'year' ? '&billing=year' : ''}`}
                     className={`${site.btn} ${best ? site.btnLime : site.btnGhost} ${styles.cta}`}
                   >
-                    Start free <ArrowRight />
+                    Try a day for {studioUsd(STUDIO_TRIAL_USD)} <ArrowRight />
                   </Link>
                 </div>
               </article>

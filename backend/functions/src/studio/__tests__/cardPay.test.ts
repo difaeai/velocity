@@ -82,6 +82,25 @@ describe('a card payment Stripe has proved', () => {
     expect((await db().doc(`studioUsers/${UID}`).get()).get('prepaid')).toMatchObject({ billing: 'year' });
   });
 
+  it('a dollar buys the day, parked on the person as a trial', async () => {
+    // Also real: a sandbox payment of US$1.00 against the trial checkout, same day.
+    expect(
+      await recordCardPayment(
+        paidSession({
+          id: 'cs_test_a0HeNkmnCQnUkgYJW96VvqGWJ6FfQYsmZetDSzqMeQt4U1U1J3sOh3FMv6',
+          amount_total: 100,
+          payment_intent: 'pi_3UafUFK57y7yv4e80k5fL8dn',
+          metadata: { uid: UID, wid: '', plan: 'all', billing: 'month', amountUsd: '1', kind: 'trial' },
+        }),
+      ),
+    ).toBe('approved');
+
+    const pay = (await db().doc('studioPayments/cs_test_a0HeNkmnCQnUkgYJW96VvqGWJ6FfQYsmZetDSzqMeQt4U1U1J3sOh3FMv6').get()).data();
+    expect(pay).toMatchObject({ kind: 'trial', plan: 'all', amountUsd: 1, method: 'card', status: 'approved', decidedBy: 'stripe' });
+    // `startTerms` reads this and gives 24 hours instead of a month.
+    expect((await db().doc(`studioUsers/${UID}`).get()).get('prepaid')).toMatchObject({ plan: 'all', trial: true });
+  });
+
   it('writes nothing for a session nobody paid', async () => {
     expect(await recordCardPayment(paidSession({ payment_status: 'unpaid', status: 'open' }))).toBe('ignored');
     expect((await db().collection('studioPayments').get()).empty).toBe(true);

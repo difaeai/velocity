@@ -132,11 +132,22 @@ export interface Prepaid {
   billing: Billing;
   paymentId: string;
   atMs: number;
+  /** The day, not the plan: a payment of TRIAL_USD that buys 24 hours (owner, 2026-11-11). */
+  trial?: boolean;
 }
 
-/** A new workspace's time: the free day — or, paid up front, the paid period and no trial. */
-export function startTerms(prepaid: Prepaid | null, nowMs: number): Pick<Workspace, 'trialEndsAtMs' | 'paidUntilMs' | 'accessUntilMs'> {
-  if (!prepaid) return { trialEndsAtMs: nowMs + TRIAL_MS, paidUntilMs: 0, accessUntilMs: nowMs + TRIAL_MS };
+/**
+ * What the trial day costs. It is not free any more (owner, 2026-11-11): the
+ * day is bought like anything else, by card or by a transfer of this much with
+ * its receipt, and only an approved payment starts it. A dollar is small enough
+ * not to be the decision and large enough to prove the payer is real — which is
+ * the whole reason for it.
+ */
+export const TRIAL_USD = 1;
+
+/** A new workspace's time: the day that was paid for, or the plan that was. */
+export function startTerms(prepaid: Prepaid, nowMs: number): Pick<Workspace, 'trialEndsAtMs' | 'paidUntilMs' | 'accessUntilMs'> {
+  if (prepaid.trial) return { trialEndsAtMs: nowMs + TRIAL_MS, paidUntilMs: 0, accessUntilMs: nowMs + TRIAL_MS };
   const paidUntilMs = nowMs + (prepaid.billing === 'year' ? YEAR_MS : PERIOD_MS);
   return { trialEndsAtMs: nowMs, paidUntilMs, accessUntilMs: paidUntilMs };
 }

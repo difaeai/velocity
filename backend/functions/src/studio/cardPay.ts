@@ -32,7 +32,7 @@ import { z } from 'zod';
 import { db } from '../lib/firebase';
 import { requireAuth } from '../lib/guards';
 import { decideStudioPayment } from './index';
-import { PLANS, PLAN_IDS, priceUsd, type Billing, type PlanId } from './plans';
+import { PLANS, PLAN_IDS, TRIAL_USD, priceUsd, type Billing, type PlanId } from './plans';
 import { customerPriceRaised } from './priceClock';
 import { verifyStripeEvent } from './stripeSignature';
 
@@ -92,13 +92,18 @@ export const studioCardCheckout = onCall(async (req) => {
       plan: z.enum(PLAN_IDS as [PlanId, ...PlanId[]]),
       billing: z.enum(['month', 'year']).optional().default('month'),
       where: z.enum(['start', 'billing']).optional().default('start'),
+      /** One day of that plan for TRIAL_USD instead of a month of it. */
+      trial: z.literal(true).optional(),
     })
     .safeParse(req.data ?? {});
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Choose a plan.');
-  const { plan, billing, where } = parsed.data;
+  const { plan, billing, where, trial } = parsed.data;
+  // The day is what a workspace starts on, so it can only be bought before there is one.
+  if (trial && wid) throw new HttpsError('failed-precondition', 'The one-day trial is only for a new workspace.');
 
-  const raised = await customerPriceRaised(ctx.uid, Date.now());
-  const usd = priceUsd(plan, billing, raised);
+  // A trial is a dollar, always: the price clock is the plan's, and must not be started by it either.
+  const raised = trial ? false : await customerPriceRaised(ctx.uid, Date.now());
+  const usd = trial ? TRIAL_USD : priceUsd(plan, billing, raised);
   const email = typeof ctx.token.email === 'string' ? ctx.token.email : '';
   const base = webOrigin();
 
@@ -113,15 +118,21 @@ export const studioCardCheckout = onCall(async (req) => {
       'line_items[0][quantity]': '1',
       'line_items[0][price_data][currency]': 'usd',
       'line_items[0][price_data][unit_amount]': String(Math.round(usd * 100)),
-      'line_items[0][price_data][product_data][name]': `${PLANS[plan].name} — ${billing === 'year' ? 'one year' : '30 days'}`,
+      'line_items[0][price_data][product_data][name]': trial
+        ? `${PLANS[plan].name} — one day`
+        : `${PLANS[plan].name} — ${billing === 'year' ? 'one year' : '30 days'}`,
       'metadata[uid]': ctx.uid,
       'metadata[wid]': wid ?? '',
       'metadata[plan]': plan,
-      'metadata[billing]': billing,
+      'metadata[billing]': trial ? 'month' : billing,
       'metadata[amountUsd]': String(usd),
+      ...(trial ? { 'metadata[kind]': 'trial' } : {}),
     },
-    // A double tap buys one session, not two.
-    `studio-${ctx.uid}-${plan}-${billing}-${Math.floor(Date.now() / 60_000)}`,
+    // A double tap buys one session, not two. The amount is in the key because
+    // Stripe refuses a key reused with different parameters: without it, someone
+    // who tries the month and then the day inside the same minute is told the
+    // gateway refused them, which is both wrong and unfixable from their side.
+    `studio-${ctx.uid}-${plan}-${billing}-${trial ? 'day' : 'period'}-${Math.round(usd * 100)}-${Math.floor(Date.now() / 60_000)}`,
   );
   const url = typeof session.url === 'string' ? session.url : '';
   if (!url) throw new HttpsError('internal', 'The card gateway gave no payment page.');
@@ -136,7 +147,7 @@ interface Session {
   payment_intent?: unknown;
   customer_email?: unknown;
   customer_details?: { email?: unknown };
-  metadata?: { uid?: unknown; wid?: unknown; plan?: unknown; billing?: unknown; amountUsd?: unknown };
+  metadata?: { uid?: unknown; wid?: unknown; plan?: unknown; billing?: unknown; amountUsd?: unknown; kind?: unknown };
 }
 
 /**
@@ -164,7 +175,9 @@ export async function recordCardPayment(session: Session): Promise<'approved' | 
     logger.error('stripe: paid session carries no plan of ours', { id, uid, plan: meta.plan });
     return 'ignored';
   }
-  const billing: Billing = meta.billing === 'year' ? 'year' : 'month';
+  // A day of that plan rather than a month of it; `decideStudioPayment` reads this and parks a trial.
+  const trial = meta.kind === 'trial';
+  const billing: Billing = !trial && meta.billing === 'year' ? 'year' : 'month';
   const wid = typeof meta.wid === 'string' && meta.wid ? meta.wid : null;
   const cents = typeof session.amount_total === 'number' ? session.amount_total : 0;
   const amountUsd = cents > 0 ? cents / 100 : Number(meta.amountUsd) || priceUsd(plan, billing);
@@ -188,6 +201,7 @@ export async function recordCardPayment(session: Session): Promise<'approved' | 
       plan,
       billing,
       amountUsd,
+      ...(trial ? { kind: 'trial' } : {}),
       // What the owner searches for in Stripe; there is no receipt to read, so none is kept.
       txnId: typeof session.payment_intent === 'string' ? session.payment_intent : id,
       txnKey: null,

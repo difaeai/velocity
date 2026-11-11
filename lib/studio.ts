@@ -134,6 +134,14 @@ export const studioUsd = (usd: number): string => `$${Number.isInteger(usd) ? us
 
 export const STUDIO_TRIAL_HOURS = 24;
 
+/**
+ * What the trial day costs. It is not free (owner, 2026-11-11): the day is
+ * bought like anything else — by card, or by a transfer of this much with its
+ * receipt — and only an approved payment starts it. Mirrors backend
+ * `studio/plans.ts` TRIAL_USD.
+ */
+export const STUDIO_TRIAL_USD = 1;
+
 /** Credits: a day of the team's work for $1, used only when a plan runs out or a month's AI work is used up. Mirrors the backend. */
 export const STUDIO_CREDIT_DAY_USD = 1;
 /** The packs on sale, in days (one day = one dollar). */

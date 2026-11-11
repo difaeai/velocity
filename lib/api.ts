@@ -1799,8 +1799,12 @@ export interface StudioPaymentDoc {
   analysis?: StudioPaymentAnalysis | null;
   /** How it was paid. Absent on every payment sent before cards were taken: those were all transfers. */
   method?: 'card';
-  /** A month of AI agents, or credit days, rather than a plan; `plan` is then the plan the workspace already had. */
-  kind?: 'agents' | 'credits';
+  /**
+   * A month of AI agents or credit days rather than a plan (`plan` is then the
+   * plan the workspace already had), or `trial` — a dollar for one day of
+   * `plan`, which is the only way a workspace starts without a month behind it.
+   */
+  kind?: 'agents' | 'credits' | 'trial';
   agents?: AgentPackage;
   /** Credit days bought, a dollar each. */
   credits?: number;
@@ -1812,6 +1816,7 @@ export interface StudioPaymentDoc {
 export function studioPaymentLabel(p: Pick<StudioPaymentDoc, 'kind' | 'credits' | 'plan'>, planName: string): string {
   if (p.kind === 'agents') return 'AI agents package';
   if (p.kind === 'credits') return `Credits · ${p.credits} day${p.credits === 1 ? '' : 's'}`;
+  if (p.kind === 'trial') return `One day · ${planName}`;
   return planName;
 }
 
@@ -2282,6 +2287,8 @@ export const studioApi = {
       billing?: StudioBilling;
       agents?: AgentPackage;
       credits?: number;
+      /** One day of `plan` for STUDIO_TRIAL_USD instead of a month of it; only before a workspace exists. */
+      trial?: true;
       txnId: string;
       screenshotPath: string;
     },
@@ -2301,9 +2308,10 @@ export const studioApi = {
    * The price is worked out on the server; `where` only chooses which of our own
    * pages Stripe returns to. Approval needs no admin: the gateway proves it.
    */
-  cardCheckout: callable<{ plan: StudioPlanId; billing?: StudioBilling; where?: 'start' | 'billing' }, { url: string }>(
-    'studioCardCheckout',
-  ),
+  cardCheckout: callable<
+    { plan: StudioPlanId; billing?: StudioBilling; where?: 'start' | 'billing'; trial?: true },
+    { url: string }
+  >('studioCardCheckout'),
   sendEmailCode: callable<Record<string, never>, { ok: boolean; sentTo?: string; alreadyVerified?: boolean }>(
     'studioSendEmailCode',
   ),

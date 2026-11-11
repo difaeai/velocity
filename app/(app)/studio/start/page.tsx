@@ -43,6 +43,7 @@ import {
   STUDIO_PLAN_IDS,
   STUDIO_PLANS,
   STUDIO_TRIAL_HOURS,
+  STUDIO_TRIAL_USD,
   STUDIO_YEAR_DISCOUNT_PCT,
   studioPriceUsd,
   studioUsd,
@@ -91,8 +92,6 @@ function Start() {
   // The token's own flag only changes after a refresh; this carries the moment between.
   const [verifiedNow, setVerifiedNow] = useState(false);
   const verified = Boolean(user?.emailVerified) || verifiedNow;
-  // "Try it free" instead of paying; the business answers, kept until the platforms are picked.
-  const [trial, setTrial] = useState(false);
   const [brand, setBrand] = useState<Brand | null>(null);
   const [payments, setPayments] = useState<StudioPaymentDoc[]>([]);
 
@@ -120,7 +119,9 @@ function Start() {
   const prepay = payments.filter((p) => p.wid === null).sort((x, y) => y.createdAtMs - x.createdAtMs)[0] ?? null;
   const paid = prepay?.status === 'approved' ? prepay : null;
 
-  const stage = !verified ? 2 : !(paid || trial) ? 3 : !brand ? 4 : 5;
+  // Nothing is free any more, not even the day (owner, 2026-11-11): the only way
+  // past the pay step is an approved payment, a month of a plan or a dollar for a day.
+  const stage = !verified ? 2 : !paid ? 3 : !brand ? 4 : 5;
 
   return (
     <main className={`${s.page} ${s.single}`}>
@@ -179,13 +180,13 @@ function Start() {
                     billing={billing}
                     onBilling={setBilling}
                     rejected={prepay?.status === 'rejected' ? prepay : null}
-                    onTrial={() => setTrial(true)}
                   />
                 )
               ) : stage === 4 ? (
-                <BusinessCard plan={paid?.plan ?? plan} onPlan={paid ? null : setPlan} email={user.email} onSignOut={signOut} onDone={setBrand} />
+                // Stage 4 and 5 are only reachable once `paid` is set, which is what the stage above checks.
+                <BusinessCard plan={(paid as StudioPaymentDoc).plan} email={user.email} onSignOut={signOut} onDone={setBrand} />
               ) : (
-                <PlatformsCard brand={brand as Brand} plan={paid?.plan ?? plan} billing={paid?.billing ?? billing} paid={Boolean(paid)} onBack={() => setBrand(null)} />
+                <PlatformsCard brand={brand as Brand} plan={(paid as StudioPaymentDoc).plan} onBack={() => setBrand(null)} />
               )}
             </div>
           )}
@@ -424,7 +425,11 @@ function PlanBoxes({
   );
 }
 
-/** Pay for the plan now — a bank transfer and its receipt, as the Billing page takes them — or take the free day instead. */
+/**
+ * Pay before anything starts: a month (or a year) of a plan, or one day of it
+ * for a dollar. Either by card, or by a transfer with its receipt — and the day
+ * is proved exactly like the month, which is the point of charging for it.
+ */
 function PayCard({
   uid,
   plan,
@@ -432,7 +437,6 @@ function PayCard({
   billing,
   onBilling,
   rejected,
-  onTrial,
 }: {
   uid: string;
   plan: StudioPlanId;
@@ -440,7 +444,6 @@ function PayCard({
   billing: StudioBilling;
   onBilling: (b: StudioBilling) => void;
   rejected: StudioPaymentDoc | null;
-  onTrial: () => void;
 }) {
   const raised = useStudioPriceRaised();
   const money = useStudioMoney();
@@ -448,8 +451,10 @@ function PayCard({
   const saving = useSaveData();
   const still = reduced || saving;
   const [accounts, setAccounts] = useState<ReceivingAccounts | null>(null);
-  /** Bank transfer, or a card — the card gateway is not open yet, so picking it says so. */
-  const [how, setHow] = useState<'transfer' | 'card'>('transfer');
+  /** The card first (owner, 2026-11-11); until the gateway is switched on it says so rather than pretending. */
+  const [how, setHow] = useState<'transfer' | 'card'>('card');
+  /** A month (or a year) of the plan, or one day of it for a dollar. */
+  const [buying, setBuying] = useState<'plan' | 'trial'>('plan');
   const [copied, setCopied] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [txnId, setTxnId] = useState('');
@@ -464,7 +469,9 @@ function PayCard({
       .catch(() => setAccounts({}));
   }, []);
 
-  const amount = studioPriceUsd(plan, billing, raised);
+  const trial = buying === 'trial';
+  // A dollar for the day, never the plan's price and never the price clock's rise.
+  const amount = trial ? STUDIO_TRIAL_USD : studioPriceUsd(plan, billing, raised);
   const local = money(amount);
   // The transfer itself is named in money that is owed to the penny: rupees here, dollars where the local figure is only a guide.
   const owed = local.exact ? local.text : studioUsd(amount);
@@ -483,7 +490,7 @@ function PayCard({
     setBusy(true);
     setError(null);
     try {
-      const { url } = await studioApi.cardCheckout({ plan, billing, where: 'start' });
+      const { url } = await studioApi.cardCheckout({ plan, billing, where: 'start', ...(trial ? { trial: true } : {}) });
       // Stripe's own page; it brings them back to ?paid=card, where the webhook has usually landed already.
       window.location.assign(url);
     } catch (e) {
@@ -502,7 +509,7 @@ function PayCard({
       if (file.size > 10 * 1024 * 1024) throw new Error('That picture is over 10 MB.');
       const screenshotPath = `studioSignup/${uid}/payments/${Date.now()}-${file.name.replace(/[^\w.-]/g, '')}`;
       await uploadBytes(ref(storage, screenshotPath), file, { contentType: file.type || 'image/jpeg' });
-      await studioApi.submitPayment({ plan, billing, txnId: txnId.trim(), screenshotPath });
+      await studioApi.submitPayment({ plan, billing, txnId: txnId.trim(), screenshotPath, ...(trial ? { trial: true } : {}) });
       // The listener on studioPayments keeps this page here, on "thank you — waiting for confirmation".
     } catch (e) {
       setError(e instanceof Error ? e.message : 'That did not work.');
@@ -554,48 +561,42 @@ function PayCard({
         </ul>
       </div>
 
-      <div className={s.field} role="radiogroup" aria-label="Billing">
-        Billing
-        <div className={s.plans}>
-          {(['month', 'year'] as const).map((b) => (
-            <button key={b} type="button" role="radio" aria-checked={billing === b} className={s.planChip} onClick={() => onBilling(b)}>
-              {b === 'month' ? 'Monthly' : `Yearly — save ${STUDIO_YEAR_DISCOUNT_PCT}%`}
-            </button>
-          ))}
+      {trial ? null : (
+        <div className={s.field} role="radiogroup" aria-label="Billing">
+          Billing
+          <div className={s.plans}>
+            {(['month', 'year'] as const).map((b) => (
+              <button key={b} type="button" role="radio" aria-checked={billing === b} className={s.planChip} onClick={() => onBilling(b)}>
+                {b === 'month' ? 'Monthly' : `Yearly — save ${STUDIO_YEAR_DISCOUNT_PCT}%`}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className={s.total}>
         <span>To pay today</span>
-        <strong key={`${plan}-${billing}`}>
+        <strong key={`${plan}-${billing}-${buying}`}>
           {local.exact ? local.text : `about ${local.text}`}
           <small>
-            {studioUsd(amount)} for {billing === 'year' ? 'a year' : '30 days'}
+            {studioUsd(amount)} for {trial ? `${STUDIO_TRIAL_HOURS} hours` : billing === 'year' ? 'a year' : '30 days'}
           </small>
         </strong>
       </div>
 
       <div style={{ display: 'grid', gap: 4 }}>
         <h2 className={s.cardTitle} style={{ fontSize: 20 }}>
-          Pay for your plan
+          {trial ? 'Pay for your day' : 'Pay for your plan'}
         </h2>
-        <p className={s.signedAs}>Two ways to pay. A person approves it, usually within a few hours, and your plan starts then.</p>
+        <p className={s.signedAs}>
+          {accounts?.cardLive
+            ? 'By card it starts the moment it goes through. By transfer a person checks it, usually within a few hours.'
+            : 'Two ways to pay. A person approves it, usually within a few hours, and it starts then.'}
+        </p>
       </div>
 
+      {/* The card on the left, the transfer on the right (owner, 2026-11-11). */}
       <div className={s.payWays} role="radiogroup" aria-label="How to pay">
-        <button
-          type="button"
-          role="radio"
-          aria-checked={how === 'transfer'}
-          className={`${s.payWay} ${how === 'transfer' ? s.payWayOn : ''}`}
-          onClick={() => setHow('transfer')}
-        >
-          <span className={s.wayIcon} aria-hidden>
-            <BankMark />
-          </span>
-          <b>Bank transfer</b>
-          <small>Send it from your bank app, then upload the receipt</small>
-        </button>
         <button type="button" role="radio" aria-checked={how === 'card'} className={`${s.payWay} ${how === 'card' ? s.payWayOn : ''}`} onClick={() => setHow('card')}>
           <span className={s.wayIcon} aria-hidden>
             <CardMark />
@@ -609,6 +610,19 @@ function PayCard({
             <MastercardMark />
           </span>
         </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={how === 'transfer'}
+          className={`${s.payWay} ${how === 'transfer' ? s.payWayOn : ''}`}
+          onClick={() => setHow('transfer')}
+        >
+          <span className={s.wayIcon} aria-hidden>
+            <BankMark />
+          </span>
+          <b>Bank transfer</b>
+          <small>Send it from your bank app, then upload the receipt</small>
+        </button>
       </div>
 
       {how === 'card' && accounts?.cardLive ? (
@@ -620,8 +634,8 @@ function PayCard({
           <b>Pay {studioUsd(amount)} by card</b>
           <p>
             Stripe takes the payment on its own page, so we never see your card. Any country&rsquo;s Visa or Mastercard
-            works, your bank converts from dollars, and your plan starts the moment it goes through — nobody to wait
-            for.
+            works, your bank converts from dollars, and {trial ? 'your day' : 'your plan'} starts the moment it goes
+            through — nobody to wait for.
           </p>
           <button type="button" className={s.primary} disabled={busy} onClick={() => void payByCard()}>
             {busy ? 'Opening the card page…' : `Pay ${studioUsd(amount)} by card`}
@@ -654,7 +668,7 @@ function PayCard({
             {accounts === null ? (
               <p className={s.sub}>Loading the receiving account…</p>
             ) : !iban ? (
-              <p className={s.error}>Payment details are being set up. Email business@velocityrides.app and we will send them — or try Vexa free below.</p>
+              <p className={s.error}>Payment details are being set up. Email business@velocityrides.app and we will send them.</p>
             ) : (
               <div className={s.acct}>
                 <span>
@@ -714,13 +728,24 @@ function PayCard({
         </>
       )}
 
-      <p className={s.fine}>
-        Want to see Vexa work first?{' '}
-        <button type="button" className={s.link} onClick={onTrial}>
-          Start a free {STUDIO_TRIAL_HOURS}-hour trial instead
-        </button>{' '}
-        — no payment now: tell us about your business and go.
-      </p>
+      {trial ? (
+        <p className={s.fine}>
+          You are buying <b>one day</b> of {STUDIO_PLANS[plan].name} for {studioUsd(STUDIO_TRIAL_USD)} — the same team,
+          for {STUDIO_TRIAL_HOURS} hours.{' '}
+          <button type="button" className={s.link} onClick={() => setBuying('plan')}>
+            Pay for the whole month instead
+          </button>
+        </p>
+      ) : (
+        <p className={s.fine}>
+          Want to see Vexa work first?{' '}
+          <button type="button" className={s.link} onClick={() => setBuying('trial')}>
+            Take one day for {studioUsd(STUDIO_TRIAL_USD)} instead
+          </button>{' '}
+          — {STUDIO_TRIAL_HOURS} hours of the same team. We check that dollar the same way, which is how we know you are
+          real.
+        </p>
+      )}
     </div>
   );
 }
@@ -817,14 +842,12 @@ function WaitingCard({ payment }: { payment: StudioPaymentDoc }) {
 
 function BusinessCard({
   plan,
-  onPlan,
   email,
   onSignOut,
   onDone,
 }: {
+  /** Always the plan that was paid for — a month of it, or the day. It cannot be changed here. */
   plan: StudioPlanId;
-  /** Null once the plan is paid for: no chips to change it. */
-  onPlan: ((p: StudioPlanId) => void) | null;
   email: string | null;
   onSignOut: () => void;
   onDone: (brand: Brand) => void;
@@ -899,22 +922,9 @@ function BusinessCard({
           <input className={s.input} value={f.website} onChange={set('website')} placeholder="https://" />
         </label>
 
-        {onPlan ? (
-          <div className={s.field} role="radiogroup" aria-label="Your free day">
-            Your free day
-            <div className={s.plans}>
-              {STUDIO_PLAN_IDS.map((id) => (
-                <button key={id} type="button" role="radio" aria-checked={id === plan} className={s.planChip} onClick={() => onPlan(id)}>
-                  {STUDIO_PLANS[id].name}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <p className={s.fine}>
-            Your plan: <b>{STUDIO_PLANS[plan].name}</b> — paid. It starts the moment your console opens.
-          </p>
-        )}
+        <p className={s.fine}>
+          Your plan: <b>{STUDIO_PLANS[plan].name}</b> — paid. It starts the moment your console opens.
+        </p>
 
         <button type="submit" className={s.primary} disabled={!ready}>
           Next: where you post
@@ -928,18 +938,13 @@ function BusinessCard({
 function PlatformsCard({
   brand,
   plan,
-  billing,
-  paid,
   onBack,
 }: {
   brand: Brand;
   plan: StudioPlanId;
-  billing: StudioBilling;
-  paid: boolean;
   onBack: () => void;
 }) {
   const router = useRouter();
-  const raised = useStudioPriceRaised();
   const [chosen, setChosen] = useState<SocialPlatform[]>(['instagram', 'facebook']);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -987,7 +992,7 @@ function PlatformsCard({
       ) : null}
       <button type="button" className={s.primary} disabled={busy} onClick={go}>
         {busy ? <span className={s.spinner} aria-hidden /> : null}
-        {busy ? 'Setting up your team — keep this page open…' : paid ? 'Open my console' : `Start my free ${STUDIO_TRIAL_HOURS} hours`}
+        {busy ? 'Setting up your team — keep this page open…' : 'Open my console'}
       </button>
       <div className={s.row}>
         <button type="button" className={s.link} onClick={onBack} disabled={busy}>
@@ -995,13 +1000,6 @@ function PlatformsCard({
         </button>
         <span />
       </div>
-      {paid ? null : (
-        <p className={s.fine}>
-          No card needed. After {STUDIO_TRIAL_HOURS} hours, pick a plan —{' '}
-          {billing === 'year' ? `${studioUsd(studioPriceUsd(plan, 'year', raised))} a year` : `$${studioPriceUsd(plan, 'month', raised)} a month`} for{' '}
-          {STUDIO_PLANS[plan].name} — or add credits at $1 a day. Pay by bank transfer.
-        </p>
-      )}
     </div>
   );
 }

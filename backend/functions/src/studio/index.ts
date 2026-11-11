@@ -52,6 +52,7 @@ import {
   PKR_PER_USD,
   PLAN_IDS,
   PLANS,
+  TRIAL_USD,
   YEAR_MS,
   extendPaid,
   paidAfter,
@@ -124,12 +125,19 @@ export const studioCreateWorkspace = onCall(async (req) => {
   // Paid before describing the business: that plan, paid, no trial — whatever plan the page sent.
   const userRef = db.doc(`studioUsers/${ctx.uid}`);
   const prepaid = ((await userRef.get()).get('prepaid') as Prepaid | undefined) ?? null;
+  // Nothing starts unpaid any more (owner, 2026-11-11), not even the day: a
+  // workspace exists only once a payment — a plan, or TRIAL_USD for the day —
+  // has been proved by the gateway or approved by a person.
+  if (!prepaid) {
+    throw new HttpsError('failed-precondition', 'Pay for a plan, or for the one-day trial, before your team starts.');
+  }
   const ref = db.collection('workspaces').doc();
   const workspace: Workspace = {
     name: s.businessName,
     ownerUid: ctx.uid,
     ownerEmail: (ctx.token.email as string | undefined) ?? null,
-    plan: prepaid?.plan ?? s.plan,
+    // The plan is the one that was paid for — for a trial day too — never the one the page last had on screen.
+    plan: prepaid.plan,
     ...startTerms(prepaid, now),
     createdAtMs: now,
     brand: {
@@ -144,11 +152,9 @@ export const studioCreateWorkspace = onCall(async (req) => {
     platforms: s.platforms,
   };
   await ref.set(workspace);
-  if (prepaid) {
-    await userRef.update({ prepaid: FieldValue.delete() });
-    // Now the payment has a workspace: the customer's Billing page and the admin's list show it under the business.
-    await db.doc(`studioPayments/${prepaid.paymentId}`).update({ wid: ref.id, business: s.businessName });
-  }
+  await userRef.update({ prepaid: FieldValue.delete() });
+  // Now the payment has a workspace: the customer's Billing page and the admin's list show it under the business.
+  await db.doc(`studioPayments/${prepaid.paymentId}`).update({ wid: ref.id, business: s.businessName });
 
   await inWorkspace(ref.id, async () => {
     await sdb.doc('system/socialAutomation').set({
@@ -198,14 +204,20 @@ export const studioSubmitPayment = onCall({ timeoutSeconds: 120, memory: '1GiB' 
         .int()
         .refine((n) => (CREDIT_PACKS as readonly number[]).includes(n))
         .optional(),
+      /** TRIAL_USD for one day of the plan named beside it, instead of a month of it. */
+      trial: z.literal(true).optional(),
       txnId: text(60).optional().default(''),
       screenshotPath: text(300).optional().default(''),
     })
     .refine((d) => [d.plan, d.agents, d.credits].filter(Boolean).length === 1)
+    // A trial is a day OF a plan, so it comes with one and never with a package or credits.
+    .refine((d) => !d.trial || Boolean(d.plan))
     .safeParse(req.data ?? {});
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Choose a plan.');
-  const { billing, agents, credits, txnId, screenshotPath } = parsed.data;
+  const { billing, agents, credits, trial, txnId, screenshotPath } = parsed.data;
   if (!wid && (agents || credits)) throw new HttpsError('failed-precondition', 'Sign up for Vexa first.');
+  // The day is what a workspace starts on, so it can only be bought before there is one.
+  if (trial && wid) throw new HttpsError('failed-precondition', 'The one-day trial is only for a new workspace.');
   const key = txnKey(txnId);
   // Both, always: the ID is what can be claimed once, the screenshot what the check reads.
   if (!screenshotPath || key.length < 6) {
@@ -235,7 +247,7 @@ export const studioSubmitPayment = onCall({ timeoutSeconds: 120, memory: '1GiB' 
   const plan = parsed.data.plan ?? ws?.plan;
   if (!plan) throw new HttpsError('invalid-argument', 'Choose a plan.');
   const agentQuote = agents ? quote(agents, await rateCard()) : null;
-  const raised = !agents && !credits && (await customerPriceRaised(ctx.uid, Date.now()));
+  const raised = !agents && !credits && !trial && (await customerPriceRaised(ctx.uid, Date.now()));
 
   const paymentRef = db.collection('studioPayments').doc();
   await db.runTransaction(async (tx) => {
@@ -250,12 +262,20 @@ export const studioSubmitPayment = onCall({ timeoutSeconds: 120, memory: '1GiB' 
       business: ws?.name ?? null,
       email: ws?.ownerEmail ?? (ctx.token.email as string | undefined) ?? null,
       plan,
-      billing: agents || credits ? 'month' : billing,
-      amountUsd: agentQuote ? agentQuote.priceUsd : credits ? credits * CREDIT_DAY_USD : priceUsd(plan, billing, raised),
+      billing: agents || credits || trial ? 'month' : billing,
+      amountUsd: agentQuote
+        ? agentQuote.priceUsd
+        : credits
+          ? credits * CREDIT_DAY_USD
+          : trial
+            ? TRIAL_USD
+            : priceUsd(plan, billing, raised),
       ...(agents && agentQuote ? { kind: 'agents', agents, amountPkr: agentQuote.pricePkr } : {}),
       ...(credits ? { kind: 'credits', credits, amountPkr: credits * CREDIT_DAY_USD * PKR_PER_USD } : {}),
+      // A day of that plan, not a month of it: one dollar, and the price clock never touches it.
+      ...(trial ? { kind: 'trial', amountPkr: TRIAL_USD * PKR_PER_USD } : {}),
       // The receipt check and the admin compare against this, so it has to carry the rise.
-      ...(raised ? { amountPkr: pricePkr(plan, billing, true) } : {}),
+      ...(raised && !trial ? { amountPkr: pricePkr(plan, billing, true) } : {}),
       txnId,
       txnKey: key,
       screenshotPath,
@@ -295,7 +315,7 @@ export async function decideStudioPayment(paymentId: string, approve: boolean, b
           status: string;
           txnKey: string | null;
           imageSha?: string | null;
-          kind?: 'agents' | 'credits';
+          kind?: 'agents' | 'credits' | 'trial';
           agents?: AgentPackage;
           credits?: number;
           amountUsd?: number;
@@ -313,9 +333,16 @@ export async function decideStudioPayment(paymentId: string, approve: boolean, b
       return { ok: true, status: 'rejected' };
     }
     // Paid before the business was described: parked on the person; the workspace made next starts on it.
+    // A trial payment parks the same way and is what buys the 24 hours (`startTerms`).
     if (!pay.wid) {
       tx.update(payRef, decided);
-      const prepaid: Prepaid = { plan: pay.plan, billing: pay.billing ?? 'month', paymentId, atMs: now };
+      const prepaid: Prepaid = {
+        plan: pay.plan,
+        billing: pay.billing ?? 'month',
+        paymentId,
+        atMs: now,
+        ...(pay.kind === 'trial' ? { trial: true } : {}),
+      };
       tx.set(db.doc(`studioUsers/${pay.uid}`), { prepaid }, { merge: true });
       return { ok: true, status: 'approved' };
     }
