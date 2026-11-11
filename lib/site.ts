@@ -49,6 +49,27 @@ export const ANDROID_REQUIREMENT = 'Phones & tablets · Android 7.0+';
 export const SUPPORT_EMAIL = 'business@velocityrides.app';
 
 /**
+ * The business behind the product, published rather than buried.
+ *
+ * A card network requires a shop to name itself, say where it is and give a
+ * number that is answered before it may take a card, and the /support page is
+ * where that lives (public/legal/support.html). These constants are the one
+ * copy of it: the footers, that page and anything Stripe is shown must agree,
+ * because a mismatch between the site and the gateway is exactly what a review
+ * stops on.
+ *
+ * `BUSINESS_LEGAL_NAME` is the company; `Velocity Rides` is what it trades as
+ * and what a customer sees. The support address and phone are the ones on file
+ * with the gateway — change them in both places or in neither.
+ */
+export const BUSINESS_LEGAL_NAME = 'Berreto (Private) Limited';
+export const SUPPORT_PHONE = '+66 92 884 5564';
+export const SUPPORT_ADDRESS = '241/32 Rat-u-Thit 200 Pi Road, Pa Tong, Kathu, Phuket 83150, Thailand';
+
+/** Business name, address, phone and how to reach a person. Served by the same rewrite mechanism as the pages above. */
+export const SUPPORT_URL = `${SITE_URL}/support`;
+
+/**
  * Official profiles, emitted as schema.org `sameAs` on the homepage.
  *
  * Google has no Search Console field for social accounts; `sameAs` is the

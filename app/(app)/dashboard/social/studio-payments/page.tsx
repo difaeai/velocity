@@ -78,6 +78,8 @@ export default function StudioPaymentsPage() {
                   {p.business ?? 'New sign-up'} · {studioPaymentLabel(p, STUDIO_PLANS[p.plan].name)}
                   {p.billing === 'year' ? ' · a year' : ''} · {studioUsd(p.amountUsd)}
                   {p.txnId ? ` · ${p.txnId}` : ''}
+                  {/* Why it has no receipt and no verdict: Stripe proved it, not a person. */}
+                  {p.method === 'card' ? ' · card' : ''}
                 </span>
                 <VerdictBadge analysis={p.analysis} />
                 <strong style={{ color: p.status === 'approved' ? colors.success : colors.danger }}>{p.status}</strong>

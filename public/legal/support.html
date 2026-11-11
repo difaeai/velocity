@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Velocity Rides — Support</title>
+<meta name="description" content="How to reach Velocity Rides: support email, phone, business address, what we sell, and our refund policy.">
+<!-- Answers on /support, /contact and the .html spellings (see
+     next.config.ts rewrites). The canonical names the one Google should keep.
+     Kept in step with lib/site.ts: SUPPORT_EMAIL, SUPPORT_PHONE and
+     SUPPORT_ADDRESS are the same details the payment gateway holds. -->
+<link rel="canonical" href="https://velocityrides.app/support">
+<style>
+  :root{
+    --bg:#f7f8f6; --surface:#ffffff; --ink:#161d18; --muted:#5c665f;
+    --border:#e5e9e3; --accent:#c3f000; --accent-ink:#1f2b10; --link:#2c7a46;
+    --shadow:0 1px 2px rgba(20,30,22,.05),0 8px 30px rgba(20,30,22,.05);
+    --maxw:44rem;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0e1210; --surface:#151a17; --ink:#e7ede8; --muted:#98a49b;
+      --border:#242b26; --link:#a8e05a;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 34px rgba(0,0,0,.35);
+    }
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+    line-height:1.65;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:clamp(1.25rem,4vw,3rem) clamp(1.1rem,4vw,2rem) 4rem}
+  header.doc{margin-bottom:2.5rem}
+  .brandbar{display:flex;align-items:center;gap:.7rem;margin-bottom:1.75rem}
+  .mark{display:inline-grid;place-items:center;width:2.2rem;height:2.2rem;border-radius:.55rem;
+    background:var(--accent);color:var(--accent-ink);font-weight:800;font-size:1.05rem;
+    letter-spacing:-.02em;box-shadow:var(--shadow)}
+  .brandname{font-weight:700;letter-spacing:-.01em;font-size:1.02rem}
+  .brandname small{display:block;font-weight:500;color:var(--muted);font-size:.72rem;letter-spacing:.02em}
+  .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--muted);margin:0 0 .6rem}
+  h1{font-size:clamp(1.9rem,5vw,2.7rem);line-height:1.08;letter-spacing:-.025em;
+    text-wrap:balance;margin:0 0 1rem;font-weight:800}
+  .meta{display:flex;flex-wrap:wrap;gap:.5rem .9rem;font-size:.85rem;color:var(--muted);
+    padding-top:1rem;border-top:1px solid var(--border)}
+  .meta b{color:var(--ink);font-weight:600}
+  .lede{font-size:1.06rem;color:var(--ink);margin:1.6rem 0 0;max-width:38rem}
+  section{margin-top:2.6rem}
+  h2{font-size:1.18rem;letter-spacing:-.01em;margin:0 0 .8rem;font-weight:700;
+    display:flex;gap:.7rem;align-items:baseline;text-wrap:balance}
+  h2 .n{font-family:var(--mono);font-size:.82rem;color:var(--accent-ink);
+    background:var(--accent);border-radius:.35rem;padding:.12rem .42rem;font-weight:700;
+    flex:none;transform:translateY(-1px)}
+  h3{font-size:.98rem;margin:1.5rem 0 .4rem;font-weight:700;letter-spacing:-.005em}
+  p{margin:.7rem 0}
+  a{color:var(--link);text-underline-offset:2px}
+  a:focus-visible{outline:2px solid var(--link);outline-offset:3px;border-radius:2px}
+  ul{margin:.6rem 0;padding-left:1.15rem}
+  li{margin:.35rem 0}
+  li::marker{color:var(--muted)}
+  strong{font-weight:650}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:.9rem;
+    padding:1.1rem 1.25rem;box-shadow:var(--shadow);margin-top:1rem}
+  .tablewrap{overflow-x:auto;border:1px solid var(--border);border-radius:.9rem;margin-top:1.1rem;box-shadow:var(--shadow)}
+  table{border-collapse:collapse;width:100%;font-size:.9rem;background:var(--surface)}
+  th,td{text-align:left;padding:.7rem .9rem;border-bottom:1px solid var(--border);vertical-align:top}
+  th{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;
+    background:color-mix(in srgb,var(--surface) 92%,var(--ink))}
+  tr:last-child td{border-bottom:none}
+  td b{font-weight:650}
+  footer.doc{margin-top:3.5rem;padding-top:1.4rem;border-top:1px solid var(--border);
+    color:var(--muted);font-size:.85rem;display:flex;flex-direction:column;gap:.3rem}
+  .pill{display:inline-block;font-family:var(--mono);font-size:.72rem;letter-spacing:.04em;
+    color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:.2rem .6rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="doc">
+    <div class="brandbar">
+      <span class="mark" aria-hidden="true">V</span>
+      <span class="brandname">Velocity Rides<small>com.velocityridzpk.app</small></span>
+    </div>
+    <p class="eyebrow">Help &middot; Support</p>
+    <h1>Support</h1>
+    <p class="lede">Who we are, how to reach a person, what we sell and what happens if you want
+      your money back. If you are in the middle of a ride or a dispute, the fastest route is
+      <b>Support</b> inside the app &mdash; it opens a ticket that is answered in order.</p>
+    <div class="meta">
+      <span><b>Updated:</b> 11 November 2026</span>
+      <span><b>Email:</b> <a href="mailto:business@velocityrides.app">business@velocityrides.app</a></span>
+      <span><b>Phone &amp; WhatsApp:</b> <a href="tel:+66928845564">+66 92 884 5564</a></span>
+    </div>
+  </header>
+
+  <section>
+    <h2><span class="n">1</span> Who you are dealing with</h2>
+    <p>Velocity Rides is owned and operated by Berreto (Private) Limited. &ldquo;Velocity
+      Rides&rdquo; is the name it trades under and the name you see on the app, on this site and on
+      your receipt.</p>
+    <div class="tablewrap">
+      <table>
+        <tr>
+          <th>Legal business name</th>
+          <td><b>Berreto (Private) Limited</b></td>
+        </tr>
+        <tr>
+          <th>Trading as</th>
+          <td>Velocity Rides &middot; Velocity Studio &middot; Vexa</td>
+        </tr>
+        <tr>
+          <th>Support address</th>
+          <td>241/32 Rat-u-Thit 200 Pi Road, Pa Tong, Kathu, Phuket 83150, Thailand</td>
+        </tr>
+        <tr>
+          <th>Support phone</th>
+          <td><a href="tel:+66928845564">+66 92 884 5564</a> &mdash; WhatsApp on the same number</td>
+        </tr>
+        <tr>
+          <th>Support email</th>
+          <td><a href="mailto:business@velocityrides.app">business@velocityrides.app</a></td>
+        </tr>
+        <tr>
+          <th>Hours</th>
+          <td>Email and WhatsApp are answered every day. Ride safety and SOS are handled
+            immediately, at any hour, from inside the app.</td>
+        </tr>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">2</span> How to reach us</h2>
+    <ul>
+      <li><b>In the app</b> &mdash; open <b>Support</b>. A ticket is answered there, and anything
+        about a particular ride already carries that ride with it, so nothing has to be explained
+        twice.</li>
+      <li><b>Safety, during a ride</b> &mdash; the <b>Safety Centre</b> in the app has the
+        emergency numbers and an SOS that messages your emergency contacts straight away.</li>
+      <li><b>Email</b> &mdash; <a href="mailto:business@velocityrides.app">business@velocityrides.app</a>,
+        for anything at all, including billing and refunds.</li>
+      <li><b>Phone or WhatsApp</b> &mdash; <a href="tel:+66928845564">+66 92 884 5564</a>.</li>
+      <li><b>Post</b> &mdash; the support address above.</li>
+    </ul>
+    <p>Tell us the phone number or email on your account and, for anything about money, the
+      transaction or receipt. That is enough to find it.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">3</span> What we sell</h2>
+    <p>Two different things, billed differently.</p>
+    <div class="tablewrap">
+      <table>
+        <tr>
+          <th>Rides</th>
+          <td>Car, bike, courier and shared intercity rides in Pakistan, booked in the Velocity
+            Rides app. You pay the fare for the ride you took, in rupees, in cash or from your
+            Velocity balance. There is no subscription and no booking fee for a rider.</td>
+        </tr>
+        <tr>
+          <th>Velocity Studio &mdash; Vexa</th>
+          <td>A social media team for a business, sold by the month or by the year, in US dollars:
+            <b>$20</b> (Research Assistant), <b>$26</b> (Content) or <b>$32</b> (Social Media
+            Manager + Meta &amp; Google Ad Expert) a month. A year is the same price less 3%. Each
+            payment buys exactly that one month or one year &mdash; nothing renews on its own and no
+            card is kept on file to be charged again.</td>
+        </tr>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">4</span> How you can pay</h2>
+    <p>For Velocity Studio: a transfer to our bank account, or a debit or credit card.</p>
+    <p>Card payments are taken by <b>Stripe</b> on Stripe's own page. We never see, handle or store
+      your card number, and your card is not saved for later unless you tell us otherwise. Your
+      statement will show the amount in US dollars; your own bank decides the exchange rate it uses.</p>
+    <p>Rides are paid in rupees, in cash to the driver or from your in-app balance.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">5</span> Refunds and cancellations</h2>
+    <p><b>Velocity Studio.</b> Nothing renews automatically, so stopping is simply not paying
+      again. If you ask for your money back <b>before the team has started work</b>, we refund the
+      payment in full, to the same card or account it came from, within 7 working days of agreeing
+      it. Once the team has started work for that month or year, that period is not refunded, but
+      nothing further is charged and your access runs to the end of what you paid for.</p>
+    <p><b>Rides.</b> Cancelling before a driver has set off costs nothing. A cancellation fee is
+      only charged where the app told you so at the time, and it is shown to you before it applies.
+      If you were charged for a ride you did not take, or the fare looks wrong, tell us within
+      <b>7 days</b> through Support in the app or by email and we will check it against the trip
+      record and put it right.</p>
+    <p><b>Chargebacks.</b> If something looks wrong on your statement, write to us first &mdash; we
+      can usually settle it the same day, which is faster than a bank dispute.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">6</span> Your account and your data</h2>
+    <p>You can delete your account, and everything we hold with it, from
+      <a href="/delete-account">velocityrides.app/delete-account</a>. What we collect and why is in
+      the <a href="/privacy">Privacy Policy</a>, and the agreement itself is in the
+      <a href="/terms">Terms of Service</a>.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">7</span> If we cannot agree</h2>
+    <p>Write to <a href="mailto:business@velocityrides.app">business@velocityrides.app</a> with
+      what happened and what you want done. A person reads it. Complaints are handled under the
+      <a href="/terms">Terms of Service</a>, which also says whose law applies.</p>
+  </section>
+
+  <footer class="doc">
+    <span class="pill">Velocity Rides &middot; com.velocityridzpk.app</span>
+    <span>&copy; 2026 Velocity Rides. All rights reserved. Velocity Rides is a product of
+      <a href="https://berreto.com" target="_blank" rel="noreferrer">Berreto (Private) Limited</a>.</span>
+    <span><a href="/terms">Terms</a> &middot; <a href="/privacy">Privacy</a> &middot;
+      <a href="/delete-account">Delete your account</a></span>
+  </footer>
+</div>
+</body>
+</html>

@@ -142,6 +142,7 @@ jobs:
           WHATSAPP_ENV: ${{ secrets.WHATSAPP_ENV }}
           WHATSAPP_OTP_ENV: ${{ secrets.WHATSAPP_OTP_ENV }}
           COST_SOURCES_ENV: ${{ secrets.COST_SOURCES_ENV }}
+          STRIPE_ENV: ${{ secrets.STRIPE_ENV }}
           VOICE_BRIDGE_URL: ${{ steps.bridge.outputs.url }}
         run: |
           : > .env.velocity-fe379
@@ -373,6 +374,26 @@ jobs:
             echo "· costs: vendor billing CONFIGURED"
           else
             echo "· costs: no COST_SOURCES_ENV — the cost page stays hand-entered"
+          fi
+          # Velocity Studio paid by card: STRIPE_SECRET_KEY and
+          # STRIPE_WEBHOOK_SECRET, in their own block for the same reason every
+          # block here is split — GitHub never reads a secret back, so adding a
+          # line to someone else's block means retyping what nobody can see.
+          #
+          # Absent → `studioCardCheckout` refuses with "card payments are not
+          # open yet" and Studio takes bank transfers only, which is also what
+          # the Receiving accounts page's card switch should say. Both have to
+          # be here: a key with no webhook secret takes the money and never
+          # starts the plan.
+          if [ -n "$STRIPE_ENV" ]; then
+            printf '%s\n' "$STRIPE_ENV" >> .env.velocity-fe379
+          fi
+          if grep -q "^STRIPE_SECRET_KEY=." .env.velocity-fe379 && grep -q "^STRIPE_WEBHOOK_SECRET=." .env.velocity-fe379; then
+            echo "· studio: card payments CONFIGURED"
+          elif grep -q "^STRIPE_SECRET_KEY=." .env.velocity-fe379; then
+            echo "· studio: STRIPE_SECRET_KEY without STRIPE_WEBHOOK_SECRET — a card would be charged and no plan would start"
+          else
+            echo "· studio: no STRIPE_ENV — Studio stays on bank transfer"
           fi
           # Which cost sources will actually answer once deployed.
           #
