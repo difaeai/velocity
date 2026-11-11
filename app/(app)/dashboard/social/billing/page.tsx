@@ -44,16 +44,15 @@ import {
   type StudioBilling,
   type StudioPlanId,
 } from '@/lib/studio';
+import { useStudioMoney } from '@/lib/useStudioMoney';
 import { useStudioPriceRaised } from '@/lib/useStudioPriceRaised';
 import a from '../account.module.css';
 import { FieldError, SkeletonRows, SuccessState } from '@/components/states';
 
+/** Only the bank account: Vexa is not paid by mobile wallet (owner, 2026-11-11). */
 interface ReceivingAccounts {
-  easypaisaNumber?: string;
-  jazzcashNumber?: string;
   bankName?: string;
   bankIban?: string;
-  accountTitle?: string;
 }
 
 type Method = { key: string; label: string; value: string; title: string };
@@ -69,6 +68,7 @@ export default function CheckoutPage() {
 function Checkout() {
   const { wid, ws } = useWorkspace();
   const raised = useStudioPriceRaised();
+  const money = useStudioMoney();
   const params = useSearchParams();
   const askedPlan = params.get('plan') as StudioPlanId | null;
   const askedCredits = Number(params.get('credits'));
@@ -141,6 +141,9 @@ function Checkout() {
   const P = STUDIO_PLANS[chosen];
   const amount = kind === 'agents' ? (agentQuote?.usd ?? 0) : kind === 'credits' ? (credits ?? 0) * STUDIO_CREDIT_DAY_USD : studioPriceUsd(chosen, billing, raised);
   const amountPkr = kind === 'agents' ? (agentQuote?.pkr ?? 0) : studioPkr(amount);
+  // Only Pakistan is quoted in rupees; a transfer is named in money that is owed to the penny.
+  const local = kind === 'agents' ? { text: `Rs ${amountPkr.toLocaleString('en-PK')}`, exact: true } : money(amount);
+  const owed = local.exact ? local.text : studioUsd(amount);
   const pending = payments.find((p) => p.status === 'pending');
   const paidNow = nowMs > 0 && ws.paidUntilMs > nowMs;
   const onTrial = nowMs > 0 && !paidNow && ws.trialEndsAtMs > nowMs;
@@ -148,14 +151,12 @@ function Checkout() {
   const daysLeft = nowMs > 0 ? Math.floor((ws.paidUntilMs - nowMs) / 86_400_000) : 0;
   const switchUntil = kind === 'plan' && chosen !== ws.plan && daysLeft > 0 ? studioPaidAfter(ws, chosen, billing, nowMs) : null;
 
-  // The bank comes first, and carries the company's title; the wallets are personal.
+  // The one account Vexa is paid into, under the title the bank prints.
   const methods: Method[] = accounts
     ? [
         accounts.bankIban
           ? { key: 'bank', label: accounts.bankName ? `Bank — ${accounts.bankName}` : 'Bank transfer', value: accounts.bankIban, title: STUDIO_BANK_TITLE }
           : null,
-        accounts.easypaisaNumber ? { key: 'ep', label: 'EasyPaisa', value: accounts.easypaisaNumber, title: accounts.accountTitle ?? '' } : null,
-        accounts.jazzcashNumber ? { key: 'jc', label: 'JazzCash', value: accounts.jazzcashNumber, title: accounts.accountTitle ?? '' } : null,
       ].filter((m): m is Method => m !== null)
     : [];
   const picked = methods.find((m) => m.key === method) ?? methods[0];
@@ -289,7 +290,7 @@ function Checkout() {
               {picked ? (
                 <div className={a.account}>
                   <span>
-                    <small>Send Rs {amountPkr.toLocaleString('en-PK')} to</small>
+                    <small>Send {owed} to</small>
                     <code>{picked.value}</code>
                     {picked.title ? <small>{picked.title}</small> : null}
                   </span>
@@ -371,7 +372,8 @@ function Checkout() {
             <div className={`${a.line} ${a.total}`}>
               <span>Total due today</span>
               <span>
-                {studioUsd(amount)} · Rs {amountPkr.toLocaleString('en-PK')}
+                {studioUsd(amount)}
+                {local.text === studioUsd(amount) ? '' : ` · ${local.exact ? '' : 'about '}${local.text}`}
               </span>
             </div>
           </div>
@@ -400,8 +402,8 @@ function Checkout() {
               <label className={a.agree}>
                 <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
                 <span>
-                  I sent Rs {amountPkr.toLocaleString('en-PK')} to the account shown, and the receipt and transaction ID above are
-                  from that transfer.
+                  I sent {owed} to the account shown, and the receipt and transaction ID above are from that
+                  transfer.
                 </span>
               </label>
               <FieldError message={tried && !agreed ? 'Tick this to confirm the transfer is yours.' : null} />
