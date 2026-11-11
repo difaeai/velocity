@@ -17,6 +17,7 @@ import {
   SITE_URL as SITE,
   PRIVACY_URL,
   TERMS_URL,
+  SUPPORT_URL,
   DELETE_ACCOUNT_URL,
   SOCIAL_PROFILES,
   FACEBOOK_URL,
@@ -335,6 +336,7 @@ export default function Home() {
             <span className={styles.footerLegal}>
               <a href={PRIVACY_URL}>Privacy</a>
               <a href={TERMS_URL}>Terms</a>
+              <a href={SUPPORT_URL}>Support</a>
               <a href={DELETE_ACCOUNT_URL}>Delete your account</a>
             </span>
           </div>

@@ -386,8 +386,7 @@ jobs:
           # be here: a key with no webhook secret takes the money and never
           # starts the plan.
           if [ -n "$STRIPE_ENV" ]; then
-            printf '%s
-' "$STRIPE_ENV" >> .env.velocity-fe379
+            printf '%s\n' "$STRIPE_ENV" >> .env.velocity-fe379
           fi
           if grep -q "^STRIPE_SECRET_KEY=." .env.velocity-fe379 && grep -q "^STRIPE_WEBHOOK_SECRET=." .env.velocity-fe379; then
             echo "· studio: card payments CONFIGURED"

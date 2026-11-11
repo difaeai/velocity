@@ -62,6 +62,12 @@ const nextConfig: NextConfig = {
       { source: '/terms', destination: '/legal/terms.html' },
       { source: '/terms-of-service', destination: '/legal/terms.html' },
       { source: '/terms.html', destination: '/legal/terms.html' },
+      // Who we are, where we are and the number that is answered — what a card
+      // network looks for before it lets a shop take a card, and what a customer
+      // looks for when something has gone wrong. /contact is the spelling people type.
+      { source: '/support', destination: '/legal/support.html' },
+      { source: '/support.html', destination: '/legal/support.html' },
+      { source: '/contact', destination: '/legal/support.html' },
       // The short address for Vexa: what TikTok's app form and its reviewer are given.
       { source: '/vexa', destination: '/studio' },
     ];
