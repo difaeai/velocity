@@ -604,3 +604,544 @@ textarea.input {
   -webkit-backdrop-filter: var(--glass-blur);
   box-shadow: var(--glass-rim), var(--glass-drop);
 }
+
+/* ── the pay step (/studio/start): what the money buys, in pictures ─────── */
+
+/* Vexa, beside what she is saying. */
+.vexaSays {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px 12px 10px;
+  border-radius: 16px;
+  background: linear-gradient(120deg, #eef7ef 0%, #f6faf3 60%, #fbfdf6 100%);
+  border: 1px solid #e0ece1;
+}
+.vexaFig {
+  display: block;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: radial-gradient(70% 70% at 50% 35%, #ffffff 0%, #e9f3ea 100%);
+  box-shadow: inset 0 0 0 1px rgba(4, 35, 26, 0.07);
+  animation: vexaFloat 4.5s ease-in-out infinite;
+}
+.vexaFig img {
+  display: block;
+  width: 190%;
+  height: auto;
+  margin: -6% 0 0 -45%;
+}
+@keyframes vexaFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+.vexaBubble {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #3d4741;
+}
+.vexaBubble b {
+  color: var(--green);
+}
+
+/* The three plans, small. */
+.planBoxes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.planBox {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  padding: 8px 8px 10px;
+  border: 1.5px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  font: inherit;
+  text-align: left;
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.18s, box-shadow 0.18s, transform 0.18s;
+}
+.planBox:hover {
+  border-color: var(--line-hi);
+  transform: translateY(-2px);
+}
+.planBoxOn {
+  border-color: var(--green);
+  box-shadow: 0 10px 26px -14px rgba(0, 76, 49, 0.55);
+}
+.boxFilm {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border-radius: 9px;
+  overflow: hidden;
+  background: #eef3f0;
+}
+.boxFilm video,
+.boxFilm img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.boxTick {
+  position: absolute;
+  inset: auto 5px 5px auto;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--green);
+  color: var(--lime);
+  font-size: 12px;
+  font-weight: 800;
+  opacity: 0;
+  transform: scale(0.6);
+  transition: opacity 0.18s, transform 0.18s;
+}
+.planBoxOn .boxTick {
+  opacity: 1;
+  transform: scale(1);
+}
+.boxName {
+  font-size: 14px;
+  font-weight: 750;
+  margin-top: 2px;
+}
+.boxCost {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--green);
+  letter-spacing: -0.02em;
+}
+.boxCost small {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.boxLogos {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+.boxLogos img {
+  width: 16px;
+  height: 16px;
+  opacity: 0.85;
+}
+
+/* What the picked plan does, ticked off. */
+.gets {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  animation: getsIn 0.25s ease-out;
+}
+@keyframes getsIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.gets > b {
+  font-size: 14.5px;
+  font-weight: 750;
+}
+.gets ul {
+  display: grid;
+  gap: 6px;
+  list-style: none;
+}
+.gets li {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 8px;
+  align-items: start;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: #3d4741;
+}
+.getsTick {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #e2f0e6;
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+/* The one figure that matters. */
+.total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border-radius: 14px;
+  color: #eaf3ec;
+  background: linear-gradient(135deg, var(--green) 0%, var(--ink) 100%);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.total strong {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #fff;
+  text-align: right;
+  animation: totalIn 0.3s ease-out;
+}
+.total small {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--lime);
+  letter-spacing: 0;
+}
+@keyframes totalIn {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+}
+
+/* Bank transfer, or a card. */
+.payWays {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+}
+.payWay {
+  display: grid;
+  gap: 3px;
+  justify-items: start;
+  padding: 12px 14px;
+  border: 1.5px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  font: inherit;
+  text-align: left;
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+.payWay:hover {
+  border-color: var(--line-hi);
+}
+.payWayOn {
+  border-color: var(--green);
+  background: #f4f9f6;
+  box-shadow: 0 10px 26px -16px rgba(0, 76, 49, 0.6);
+}
+.wayIcon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: #eef3f0;
+  color: var(--green);
+  margin-bottom: 3px;
+}
+.payWayOn .wayIcon {
+  background: var(--green);
+  color: var(--lime);
+}
+.payWay b {
+  font-size: 14.5px;
+  font-weight: 750;
+}
+.payWay small {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.wayMarks {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+.soon {
+  display: inline-block;
+  vertical-align: 1px;
+  margin-left: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #fff3da;
+  color: #8a5a06;
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.walletMark {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+/* The card gateway is not open yet, and says so. */
+.soonBox {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+  padding: 20px 18px;
+  border-radius: 14px;
+  border: 1.5px dashed #d8c89a;
+  background: #fffdf6;
+}
+.soonArt {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+.soonArt svg:first-child {
+  transform: rotate(-7deg);
+}
+.soonArt svg:last-child {
+  transform: rotate(7deg);
+}
+.soonBox b {
+  font-size: 15px;
+  font-weight: 750;
+}
+.soonBox p {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+  max-width: 44ch;
+}
+.soonBox .primary {
+  margin-top: 6px;
+}
+
+/* Where to send it. */
+.payBox {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid var(--line);
+}
+.payMethods {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.payMethod {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1.5px solid var(--line-hi);
+  background: #fff;
+  border-radius: 999px;
+  padding: 6px 13px 6px 9px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  cursor: pointer;
+}
+.payMethod[aria-checked='true'] {
+  border-color: var(--green);
+  background: #e7f0ea;
+  color: var(--green);
+}
+.acct {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px;
+  border-radius: 12px;
+  background: #eef3f0;
+}
+.acct code {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  word-break: break-all;
+}
+.acct small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.copyBtn {
+  margin-left: auto;
+  border: 1px solid var(--line-hi);
+  background: #fff;
+  border-radius: 10px;
+  padding: 7px 12px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.dropArt {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  background: #e7f0ea;
+  color: var(--green);
+  margin-bottom: 2px;
+}
+
+/* Thank you — waiting for the transaction to be confirmed. */
+.thanks {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+}
+.thanksArt {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: #e7f0ea;
+  color: var(--green);
+  box-shadow: 0 0 0 0 rgba(0, 76, 49, 0.35);
+  animation: thanksPop 0.45s cubic-bezier(0.2, 1.4, 0.4, 1), thanksRing 2.4s ease-out 0.45s infinite;
+}
+@keyframes thanksPop {
+  from {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+}
+@keyframes thanksRing {
+  70% {
+    box-shadow: 0 0 0 16px rgba(0, 76, 49, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(0, 76, 49, 0);
+  }
+}
+.track {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+}
+.track li {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  align-items: center;
+  gap: 10px;
+  font-size: 13.5px;
+  font-weight: 650;
+  color: var(--muted);
+}
+.track li > span {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line-hi);
+  background: #fff;
+  font-size: 11px;
+  font-weight: 800;
+}
+.trackDone {
+  color: var(--green) !important;
+}
+.track .trackDone > span {
+  background: var(--green);
+  border-color: var(--green);
+  color: var(--lime);
+}
+.trackOn {
+  color: var(--text) !important;
+}
+.track .trackOn > span {
+  border-color: var(--green);
+  animation: trackPulse 1.4s ease-in-out infinite;
+}
+.track .trackOn > span::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+}
+@keyframes trackPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(0, 76, 49, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(0, 76, 49, 0);
+  }
+}
+
+@media (max-width: 440px) {
+  .planBoxes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .planBoxes > :last-child {
+    grid-column: span 2;
+  }
+  .vexaSays {
+    grid-template-columns: 56px 1fr;
+  }
+  .vexaFig {
+    width: 56px;
+    height: 56px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vexaFig,
+  .thanksArt,
+  .trackOn > span,
+  .gets,
+  .total strong {
+    animation: none;
+  }
+  .planBox:hover {
+    transform: none;
+  }
+}

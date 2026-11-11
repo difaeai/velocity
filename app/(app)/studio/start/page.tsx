@@ -14,11 +14,18 @@
  * Paying comes before the business (owner, 2026-11-10): the receipt and the
  * transaction ID go to `studioSubmitPayment` with no workspace yet, a person
  * approves it, and the workspace made afterwards starts on that plan, paid, with
- * no trial. The free day is the way past paying. There is no card gateway, so
- * the ways to pay are the transfers the Billing page takes.
+ * no trial. The free day is the way past paying.
+ *
+ * The pay step shows what the money buys before it asks for any: Vexa herself,
+ * the three plans as small boxes with their reels and the networks each works
+ * on, and then the two ways to pay — bank transfer (the company's bank account
+ * first, then the EasyPaisa and JazzCash wallets) or a card, which is not open
+ * yet and says so rather than pretending. Once the receipt is in, the page
+ * stays here on "thank you — waiting for your transaction to be confirmed"
+ * until an admin approves it.
  */
 
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
@@ -29,6 +36,7 @@ import { useAuth } from '@/lib/auth';
 import { SOCIAL_PLATFORMS, studioApi, type SocialPlatform, type StudioPaymentDoc } from '@/lib/api';
 import { useStudioPriceRaised } from '@/lib/useStudioPriceRaised';
 import {
+  STUDIO_BANK_TITLE,
   STUDIO_PLAN_IDS,
   STUDIO_PLANS,
   STUDIO_TRIAL_HOURS,
@@ -40,6 +48,7 @@ import {
   type StudioPlanId,
 } from '@/lib/studio';
 import { VelocityIcon } from '@/components/BrandMark';
+import { useReducedMotion, useSaveData } from '@/components/site/useReducedMotion';
 import { FieldError } from '@/components/states';
 import { PLATFORM_META } from '@/components/social/shared';
 import { carried } from '../StudioAuth';
@@ -299,9 +308,128 @@ interface ReceivingAccounts {
   bankIban?: string;
   accountTitle?: string;
 }
-type Method = { key: string; label: string; value: string };
+type Method = { key: string; label: string; value: string; title: string; mark: ReactNode };
 
-/** Pay for the plan now — a transfer and its receipt, as the Billing page takes them — or take the free day instead. */
+/** The reel each plan is sold with, without its extension: `.mp4` plays, `.jpg` is its poster. The pricing page shows the same three. */
+const PLAN_FILM: Record<string, string> = {
+  research: '/site/plan-ads',
+  content: '/site/plan-content',
+  all: '/site/plan-all',
+};
+/** A short name for the box; the full plan name is spelled out under the three. */
+const PLAN_SHORT: Record<string, string> = { research: 'Research', content: 'Content', all: 'Whole team' };
+/** The networks a plan works on, as the logo files in /site/logos. */
+const PLAN_LOGOS: Record<string, string[]> = {
+  research: ['instagram', 'facebook', 'google'],
+  content: ['instagram', 'facebook', 'youtube', 'tiktok'],
+  all: ['facebook', 'instagram', 'google-ads', 'youtube', 'tiktok', 'gmail'],
+};
+
+/* ── the marks on the ways to pay: a few paths, so no logo files ship ───── */
+
+function BankMark() {
+  return (
+    <svg viewBox="0 0 24 24" width={24} height={24} fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M3 9.5 12 4.2l9 5.3" />
+      <path d="M5.2 10.4v7.4M9.7 10.4v7.4M14.3 10.4v7.4M18.8 10.4v7.4" />
+      <path d="M3.2 20.3h17.6" />
+    </svg>
+  );
+}
+
+function CardMark() {
+  return (
+    <svg viewBox="0 0 24 24" width={24} height={24} fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect x="2.6" y="5.2" width="18.8" height="13.6" rx="3" />
+      <path d="M2.6 10h18.8" />
+      <path d="M6.2 14.8h3.4" />
+    </svg>
+  );
+}
+
+function VisaMark() {
+  return (
+    <svg viewBox="0 0 48 32" width={40} height={27} role="img" aria-label="Visa">
+      <rect x="0.5" y="0.5" width="47" height="31" rx="5" fill="#fff" stroke="#e2e8e4" />
+      <text x="24" y="21.5" textAnchor="middle" fontFamily="Georgia, 'Times New Roman', serif" fontSize="13.5" fontStyle="italic" fontWeight="700" fill="#1a1f71">
+        VISA
+      </text>
+    </svg>
+  );
+}
+
+function MastercardMark() {
+  return (
+    <svg viewBox="0 0 48 32" width={40} height={27} role="img" aria-label="Mastercard">
+      <rect x="0.5" y="0.5" width="47" height="31" rx="5" fill="#fff" stroke="#e2e8e4" />
+      <circle cx="20.5" cy="16" r="8" fill="#eb001b" />
+      <circle cx="27.5" cy="16" r="8" fill="#f79e1b" />
+      <path d="M24 10.2a8 8 0 0 0 0 11.6 8 8 0 0 0 0-11.6Z" fill="#ff5f00" />
+    </svg>
+  );
+}
+
+/** A mobile wallet's name in its own colour — the mark people look for on a pay sheet. */
+function WalletMark({ name, bg }: { name: string; bg: string }) {
+  return (
+    <span className={s.walletMark} style={{ background: bg }}>
+      {name}
+    </span>
+  );
+}
+
+/** The three plans as small boxes, each with its reel and the networks it works on, so the money has a picture against it. */
+function PlanBoxes({
+  plan,
+  onPlan,
+  billing,
+  raised,
+  still,
+}: {
+  plan: StudioPlanId;
+  onPlan: (p: StudioPlanId) => void;
+  billing: StudioBilling;
+  raised: boolean;
+  still: boolean;
+}) {
+  return (
+    <div className={s.planBoxes} role="radiogroup" aria-label="Plan">
+      {STUDIO_PLAN_IDS.map((id) => {
+        const on = id === plan;
+        return (
+          <button key={id} type="button" role="radio" aria-checked={on} className={`${s.planBox} ${on ? s.planBoxOn : ''}`} onClick={() => onPlan(id)}>
+            <span className={s.boxFilm} aria-hidden>
+              {on && !still ? (
+                <video autoPlay muted loop playsInline poster={`${PLAN_FILM[id]}.jpg`}>
+                  <source src={`${PLAN_FILM[id]}.mp4`} type="video/mp4" />
+                </video>
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={`${PLAN_FILM[id]}.jpg`} alt="" />
+              )}
+              <span className={s.boxTick} aria-hidden>
+                ✓
+              </span>
+            </span>
+            <b className={s.boxName}>{PLAN_SHORT[id]}</b>
+            <span className={s.boxCost}>
+              {studioUsd(studioPriceUsd(id, billing, raised))}
+              <small>/{billing === 'year' ? 'year' : 'month'}</small>
+            </span>
+            <span className={s.boxLogos} aria-hidden>
+              {PLAN_LOGOS[id].map((f) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img key={f} src={`/site/logos/${f}.svg`} alt="" width={16} height={16} />
+              ))}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Pay for the plan now — a bank transfer and its receipt, as the Billing page takes them — or take the free day instead. */
 function PayCard({
   uid,
   plan,
@@ -320,7 +448,12 @@ function PayCard({
   onTrial: () => void;
 }) {
   const raised = useStudioPriceRaised();
+  const reduced = useReducedMotion();
+  const saving = useSaveData();
+  const still = reduced || saving;
   const [accounts, setAccounts] = useState<ReceivingAccounts | null>(null);
+  /** Bank transfer, or a card — the card gateway is not open yet, so picking it says so. */
+  const [how, setHow] = useState<'transfer' | 'card'>('transfer');
   const [method, setMethod] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -338,13 +471,27 @@ function PayCard({
 
   const amount = studioPriceUsd(plan, billing, raised);
   const amountPkr = studioPkr(amount);
-  const methods: Method[] = accounts
+  // The bank comes first (owner): it is the account in the company's name.
+  const offered: (Method | null)[] = accounts
     ? [
-        accounts.easypaisaNumber ? { key: 'ep', label: 'EasyPaisa', value: accounts.easypaisaNumber } : null,
-        accounts.jazzcashNumber ? { key: 'jc', label: 'JazzCash', value: accounts.jazzcashNumber } : null,
-        accounts.bankIban ? { key: 'bank', label: accounts.bankName ? `Bank — ${accounts.bankName}` : 'Bank transfer', value: accounts.bankIban } : null,
-      ].filter((m): m is Method => m !== null)
+        accounts.bankIban
+          ? {
+              key: 'bank',
+              label: accounts.bankName ? `Bank — ${accounts.bankName}` : 'Bank transfer',
+              value: accounts.bankIban,
+              title: STUDIO_BANK_TITLE,
+              mark: <BankMark />,
+            }
+          : null,
+        accounts.easypaisaNumber
+          ? { key: 'ep', label: 'EasyPaisa', value: accounts.easypaisaNumber, title: accounts.accountTitle ?? '', mark: <WalletMark name="easypaisa" bg="#1f9d55" /> }
+          : null,
+        accounts.jazzcashNumber
+          ? { key: 'jc', label: 'JazzCash', value: accounts.jazzcashNumber, title: accounts.accountTitle ?? '', mark: <WalletMark name="JazzCash" bg="#d0021b" /> }
+          : null,
+      ]
     : [];
+  const methods = offered.filter((m): m is Method => m !== null);
   const picked = methods.find((m) => m.key === method) ?? methods[0];
   const ready = Boolean(file) && txnId.trim().length >= 6 && agreed && methods.length > 0;
 
@@ -366,7 +513,7 @@ function PayCard({
       const screenshotPath = `studioSignup/${uid}/payments/${Date.now()}-${file.name.replace(/[^\w.-]/g, '')}`;
       await uploadBytes(ref(storage, screenshotPath), file, { contentType: file.type || 'image/jpeg' });
       await studioApi.submitPayment({ plan, billing, txnId: txnId.trim(), screenshotPath });
-      // The listener on studioPayments moves the page on to "being checked".
+      // The listener on studioPayments keeps this page here, on "thank you — waiting for confirmation".
     } catch (e) {
       setError(e instanceof Error ? e.message : 'That did not work.');
     } finally {
@@ -376,31 +523,47 @@ function PayCard({
 
   return (
     <div className={s.card}>
-      <div style={{ display: 'grid', gap: 4 }}>
-        <h1 className={s.cardTitle} style={{ fontSize: 24 }}>
-          Pay for your plan
-        </h1>
-        <p className={s.signedAs}>
-          Send the amount by EasyPaisa, JazzCash or bank transfer and upload the receipt. Our AI reads it the moment it
-          arrives; a person approves it, usually within a few hours, and your plan starts then.
+      <div className={s.vexaSays}>
+        <span className={s.vexaFig} aria-hidden>
+          {/* A cut-out with its own alpha: next/image would only re-encode it. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/site/vexa.webp" alt="" width={854} height={853} draggable={false} />
+        </span>
+        <p className={s.vexaBubble}>
+          Hi, I&rsquo;m <b>Vexa</b>. Here is what you are buying — pick your plan, send the money, and I start work the
+          moment it is approved.
         </p>
       </div>
+
       {rejected ? (
         <p className={s.error} role="alert">
           Your last payment was not received{rejected.note ? `: ${rejected.note}` : ''}. Send it again, or try Vexa free first.
         </p>
       ) : null}
 
-      <div className={s.field} role="radiogroup" aria-label="Plan">
-        Your plan
-        <div className={s.plans}>
-          {STUDIO_PLAN_IDS.map((id) => (
-            <button key={id} type="button" role="radio" aria-checked={id === plan} className={s.planChip} onClick={() => onPlan(id)}>
-              {STUDIO_PLANS[id].name} · {studioUsd(studioPriceUsd(id, billing, raised))}
-            </button>
-          ))}
-        </div>
+      <div style={{ display: 'grid', gap: 4 }}>
+        <h1 className={s.cardTitle} style={{ fontSize: 24 }}>
+          What you are buying
+        </h1>
+        <p className={s.signedAs}>Three plans. Tap one to see what it does for you.</p>
       </div>
+
+      <PlanBoxes plan={plan} onPlan={onPlan} billing={billing} raised={raised} still={still} />
+
+      <div key={plan} className={s.gets}>
+        <b>{STUDIO_PLANS[plan].name}</b>
+        <ul>
+          {STUDIO_PLANS[plan].includes.slice(0, 5).map((line) => (
+            <li key={line}>
+              <span className={s.getsTick} aria-hidden>
+                ✓
+              </span>
+              {line}
+            </li>
+          ))}
+        </ul>
+      </div>
+
       <div className={s.field} role="radiogroup" aria-label="Billing">
         Billing
         <div className={s.plans}>
@@ -412,68 +575,145 @@ function PayCard({
         </div>
       </div>
 
-      <div className={s.field}>
-        Send Rs {amountPkr.toLocaleString('en-PK')} ({studioUsd(amount)} for {billing === 'year' ? 'a year' : '30 days'}) to
-        {accounts === null ? (
-          <p className={s.sub}>Loading the receiving accounts…</p>
-        ) : !methods.length ? (
-          <p className={s.error}>Payment details are being set up. Email business@velocityrides.app and we will send them — or try Vexa free below.</p>
-        ) : (
-          <div className={a.box}>
-            <div className={a.methods} role="radiogroup" aria-label="Pay with">
-              {methods.map((m) => (
-                <button key={m.key} type="button" role="radio" aria-checked={picked?.key === m.key} className={a.method} onClick={() => setMethod(m.key)}>
-                  {m.label}
-                </button>
-              ))}
-            </div>
-            {picked ? (
-              <div className={a.account}>
-                <span>
-                  <code>{picked.value}</code>
-                  {accounts.accountTitle ? <small>{accounts.accountTitle}</small> : null}
-                </span>
-                <button type="button" className={a.copy} onClick={() => copy(picked)}>
-                  {copied === picked.key ? 'Copied ✓' : 'Copy'}
-                </button>
-              </div>
-            ) : null}
-          </div>
-        )}
+      <div className={s.total}>
+        <span>To pay today</span>
+        <strong key={`${plan}-${billing}`}>
+          Rs {amountPkr.toLocaleString('en-PK')}
+          <small>
+            {studioUsd(amount)} for {billing === 'year' ? 'a year' : '30 days'}
+          </small>
+        </strong>
       </div>
 
-      <label className={`${a.drop} ${file ? a.dropDone : ''}`} style={{ position: 'relative' }}>
-        <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-        <b>{file ? `✓ ${file.name}` : 'Add the receipt screenshot'}</b>
-        <span>{file ? 'Tap to choose a different picture' : 'A photo or screenshot of the transfer, up to 10 MB'}</span>
-      </label>
-      <FieldError message={tried && !file ? 'Add the screenshot of your transfer receipt — a photo of the screen is fine.' : null} />
-      <label className={s.field}>
-        Transaction ID
-        <input
-          className={s.input}
-          value={txnId}
-          onChange={(e) => setTxnId(e.target.value)}
-          placeholder="From the receipt, e.g. 0123456789"
-          aria-invalid={tried && txnId.trim().length < 6}
-          aria-describedby="start-txn-error"
-        />
-        <FieldError id="start-txn-error" message={tried && txnId.trim().length < 6 ? 'Type the transaction ID printed on the receipt — at least 6 characters.' : null} />
-      </label>
-      <label className={a.agree}>
-        <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
-        <span>I sent Rs {amountPkr.toLocaleString('en-PK')} to the account shown, and the receipt and transaction ID above are from that transfer.</span>
-      </label>
-      <FieldError message={tried && !agreed ? 'Tick this to confirm the transfer is yours.' : null} />
-      {error ? (
-        <p className={s.error} role="alert">
-          {error}
-        </p>
-      ) : null}
-      <button type="button" className={s.primary} onClick={send} disabled={busy}>
-        {busy ? <span className={s.spinner} aria-hidden /> : null}
-        {busy ? 'Sending — our AI is reading the receipt…' : 'Submit payment'}
-      </button>
+      <div style={{ display: 'grid', gap: 4 }}>
+        <h2 className={s.cardTitle} style={{ fontSize: 20 }}>
+          Pay for your plan
+        </h2>
+        <p className={s.signedAs}>Two ways to pay. A person approves it, usually within a few hours, and your plan starts then.</p>
+      </div>
+
+      <div className={s.payWays} role="radiogroup" aria-label="How to pay">
+        <button
+          type="button"
+          role="radio"
+          aria-checked={how === 'transfer'}
+          className={`${s.payWay} ${how === 'transfer' ? s.payWayOn : ''}`}
+          onClick={() => setHow('transfer')}
+        >
+          <span className={s.wayIcon} aria-hidden>
+            <BankMark />
+          </span>
+          <b>Bank transfer</b>
+          <small>Bank account, EasyPaisa or JazzCash — upload the receipt</small>
+          <span className={s.wayMarks} aria-hidden>
+            <WalletMark name="easypaisa" bg="#1f9d55" />
+            <WalletMark name="JazzCash" bg="#d0021b" />
+          </span>
+        </button>
+        <button type="button" role="radio" aria-checked={how === 'card'} className={`${s.payWay} ${how === 'card' ? s.payWayOn : ''}`} onClick={() => setHow('card')}>
+          <span className={s.wayIcon} aria-hidden>
+            <CardMark />
+          </span>
+          <b>
+            Debit or credit card <i className={s.soon}>Opening soon</i>
+          </b>
+          <small>Pay online in one go, no receipt to upload</small>
+          <span className={s.wayMarks} aria-hidden>
+            <VisaMark />
+            <MastercardMark />
+          </span>
+        </button>
+      </div>
+
+      {how === 'card' ? (
+        <div className={s.soonBox}>
+          <span className={s.soonArt} aria-hidden>
+            <VisaMark />
+            <MastercardMark />
+          </span>
+          <b>Card payments are not open yet</b>
+          <p>
+            We are finishing the card gateway with our bank. Until it is live, send the money by bank transfer or mobile
+            wallet — it is approved the same day and your plan starts from that moment.
+          </p>
+          <button type="button" className={s.primary} onClick={() => setHow('transfer')}>
+            Pay by bank transfer
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className={s.field}>
+            Send Rs {amountPkr.toLocaleString('en-PK')} to
+            {accounts === null ? (
+              <p className={s.sub}>Loading the receiving accounts…</p>
+            ) : !methods.length ? (
+              <p className={s.error}>Payment details are being set up. Email business@velocityrides.app and we will send them — or try Vexa free below.</p>
+            ) : (
+              <div className={s.payBox}>
+                <div className={s.payMethods} role="radiogroup" aria-label="Pay with">
+                  {methods.map((m) => (
+                    <button key={m.key} type="button" role="radio" aria-checked={picked?.key === m.key} className={s.payMethod} onClick={() => setMethod(m.key)}>
+                      {m.mark}
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+                {picked ? (
+                  <div className={s.acct}>
+                    <span>
+                      <code>{picked.value}</code>
+                      {picked.title ? <small>{picked.title}</small> : null}
+                    </span>
+                    <button type="button" className={s.copyBtn} onClick={() => copy(picked)}>
+                      {copied === picked.key ? 'Copied ✓' : 'Copy'}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </div>
+
+          <label className={`${a.drop} ${file ? a.dropDone : ''}`} style={{ position: 'relative' }}>
+            <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+            <span className={s.dropArt} aria-hidden>
+              <svg viewBox="0 0 24 24" width={28} height={28} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3.5" y="3.5" width="17" height="17" rx="3" />
+                <path d="M3.9 16.2 8.6 11.6l3.5 3.4 2.8-2.6 5.2 4.6" />
+                <circle cx="9" cy="8.6" r="1.6" />
+              </svg>
+            </span>
+            <b>{file ? `✓ ${file.name}` : 'Add the receipt screenshot'}</b>
+            <span>{file ? 'Tap to choose a different picture' : 'A photo or screenshot of the transfer, up to 10 MB'}</span>
+          </label>
+          <FieldError message={tried && !file ? 'Add the screenshot of your transfer receipt — a photo of the screen is fine.' : null} />
+          <label className={s.field}>
+            Transaction ID
+            <input
+              className={s.input}
+              value={txnId}
+              onChange={(e) => setTxnId(e.target.value)}
+              placeholder="From the receipt, e.g. 0123456789"
+              aria-invalid={tried && txnId.trim().length < 6}
+              aria-describedby="start-txn-error"
+            />
+            <FieldError id="start-txn-error" message={tried && txnId.trim().length < 6 ? 'Type the transaction ID printed on the receipt — at least 6 characters.' : null} />
+          </label>
+          <label className={a.agree}>
+            <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
+            <span>I sent Rs {amountPkr.toLocaleString('en-PK')} to the account shown, and the receipt and transaction ID above are from that transfer.</span>
+          </label>
+          <FieldError message={tried && !agreed ? 'Tick this to confirm the transfer is yours.' : null} />
+          {error ? (
+            <p className={s.error} role="alert">
+              {error}
+            </p>
+          ) : null}
+          <button type="button" className={s.primary} onClick={send} disabled={busy}>
+            {busy ? <span className={s.spinner} aria-hidden /> : null}
+            {busy ? 'Sending — we are reading your receipt…' : 'Submit payment'}
+          </button>
+        </>
+      )}
 
       <p className={s.fine}>
         Want to see Vexa work first?{' '}
@@ -486,19 +726,52 @@ function PayCard({
   );
 }
 
-/** The payment is in; a person is checking it. The page moves on by itself once it is approved. */
+/**
+ * The receipt is in and the page stays here: thank you, and waiting for the
+ * transaction to be confirmed. It moves on by itself once an admin approves it.
+ */
 function WaitingCard({ payment }: { payment: StudioPaymentDoc }) {
   return (
-    <div className={s.card} style={{ maxWidth: 480, justifySelf: 'center', width: '100%' }}>
-      <div className={s.head}>
+    <div className={s.card} style={{ maxWidth: 520, justifySelf: 'center', width: '100%' }}>
+      <div className={s.thanks}>
+        <span className={s.thanksArt} aria-hidden>
+          <svg viewBox="0 0 24 24" width={34} height={34} fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="m4.5 12.5 4.6 4.6L19.5 6.8" />
+          </svg>
+        </span>
         <h1 className={s.title} style={{ fontSize: 30 }}>
-          Payment received
+          Thank you!
         </h1>
         <p className={s.sub}>
-          We have your receipt for the <strong style={{ color: '#1c1b1b' }}>{STUDIO_PLANS[payment.plan].name}</strong> plan
-          ({studioUsd(payment.amountUsd)}{payment.billing === 'year' ? ' a year' : ' a month'}), sent {when(payment.createdAtMs)}. A
-          person checks the money arrived, usually within a few hours. This page moves on by itself the moment it is
-          approved — you can close it and log in later.
+          Waiting for your transaction to be confirmed. We have your receipt for the{' '}
+          <strong style={{ color: '#1c1b1b' }}>{STUDIO_PLANS[payment.plan].name}</strong> plan ({studioUsd(payment.amountUsd)}
+          {payment.billing === 'year' ? ' a year' : ' a month'}), sent {when(payment.createdAtMs)}.
+        </p>
+      </div>
+
+      <ol className={s.track} aria-label="Where your payment is">
+        <li className={s.trackDone}>
+          <span aria-hidden>✓</span>
+          Receipt received
+        </li>
+        <li className={s.trackOn}>
+          <span aria-hidden />
+          Being checked by a person
+        </li>
+        <li>
+          <span aria-hidden />
+          Your plan starts
+        </li>
+      </ol>
+
+      <div className={s.vexaSays}>
+        <span className={s.vexaFig} aria-hidden>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/site/vexa.webp" alt="" width={854} height={853} draggable={false} />
+        </span>
+        <p className={s.vexaBubble}>
+          Someone checks the money arrived, usually within a few hours. This page opens your console by itself the moment
+          it is approved — you can close it and log in later.
         </p>
       </div>
     </div>
