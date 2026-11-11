@@ -147,8 +147,13 @@ interface Session {
 export async function recordCardPayment(session: Session): Promise<'approved' | 'ignored' | 'already'> {
   const id = typeof session.id === 'string' ? session.id : '';
   if (!/^cs_[A-Za-z0-9_]{8,200}$/.test(id)) {
-    logger.error('stripe: session id not usable as a document id', { id });
-    return 'ignored';
+    // A completed checkout we cannot read at all — most likely the endpoint was
+    // created with Stripe's "thin" payload, which sends ids instead of the
+    // session. Thrown rather than shrugged off: a 500 makes Stripe retry and
+    // turns the endpoint red in the dashboard, where a silent 200 would leave a
+    // charged card with no plan and nothing to see.
+    logger.error('stripe: completed session carries no id we can use — is the endpoint on the Snapshot payload?', { id });
+    throw new Error('stripe: unreadable checkout session');
   }
   if (session.payment_status !== 'paid') return 'ignored';
   const meta = session.metadata ?? {};

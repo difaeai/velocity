@@ -93,8 +93,11 @@ describe('a card payment Stripe has proved', () => {
     expect((await db().collection('studioPayments').get()).empty).toBe(true);
   });
 
-  it('refuses a session id that could not be a document id', async () => {
-    expect(await recordCardPayment(paidSession({ id: 'cs_test_../../admin' }))).toBe('ignored');
-    expect(await recordCardPayment(paidSession({ id: 'pi_123' }))).toBe('ignored');
+  it('shouts rather than shrugs when the session cannot be read', async () => {
+    // A path of our own choosing, never one from the gateway.
+    await expect(recordCardPayment(paidSession({ id: 'cs_test_../../admin' }))).rejects.toThrow(/unreadable/);
+    // What an endpoint on Stripe's "thin" payload would deliver: no session, only ids.
+    await expect(recordCardPayment({ ...paidSession(), id: undefined })).rejects.toThrow(/unreadable/);
+    expect((await db().collection('studioPayments').get()).empty).toBe(true);
   });
 });
