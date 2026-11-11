@@ -34,6 +34,7 @@ import { ref, uploadBytes } from 'firebase/storage';
 import { auth, db, storage } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth';
 import { SOCIAL_PLATFORMS, studioApi, type SocialPlatform, type StudioPaymentDoc } from '@/lib/api';
+import { useStudioMoney } from '@/lib/useStudioMoney';
 import { useStudioPriceRaised } from '@/lib/useStudioPriceRaised';
 import {
   STUDIO_BANK_TITLE,
@@ -41,7 +42,6 @@ import {
   STUDIO_PLANS,
   STUDIO_TRIAL_HOURS,
   STUDIO_YEAR_DISCOUNT_PCT,
-  studioPkr,
   studioPriceUsd,
   studioUsd,
   type StudioBilling,
@@ -448,6 +448,7 @@ function PayCard({
   onTrial: () => void;
 }) {
   const raised = useStudioPriceRaised();
+  const money = useStudioMoney();
   const reduced = useReducedMotion();
   const saving = useSaveData();
   const still = reduced || saving;
@@ -470,7 +471,9 @@ function PayCard({
   }, []);
 
   const amount = studioPriceUsd(plan, billing, raised);
-  const amountPkr = studioPkr(amount);
+  const local = money(amount);
+  // The transfer itself is named in money that is owed to the penny: rupees here, dollars where the local figure is only a guide.
+  const owed = local.exact ? local.text : studioUsd(amount);
   // The bank comes first (owner): it is the account in the company's name.
   const offered: (Method | null)[] = accounts
     ? [
@@ -578,7 +581,7 @@ function PayCard({
       <div className={s.total}>
         <span>To pay today</span>
         <strong key={`${plan}-${billing}`}>
-          Rs {amountPkr.toLocaleString('en-PK')}
+          {local.exact ? local.text : `about ${local.text}`}
           <small>
             {studioUsd(amount)} for {billing === 'year' ? 'a year' : '30 days'}
           </small>
@@ -643,7 +646,7 @@ function PayCard({
       ) : (
         <>
           <div className={s.field}>
-            Send Rs {amountPkr.toLocaleString('en-PK')} to
+            Send {owed} to
             {accounts === null ? (
               <p className={s.sub}>Loading the receiving accounts…</p>
             ) : !methods.length ? (
@@ -700,7 +703,7 @@ function PayCard({
           </label>
           <label className={a.agree}>
             <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
-            <span>I sent Rs {amountPkr.toLocaleString('en-PK')} to the account shown, and the receipt and transaction ID above are from that transfer.</span>
+            <span>I sent {owed} to the account shown, and the receipt and transaction ID above are from that transfer.</span>
           </label>
           <FieldError message={tried && !agreed ? 'Tick this to confirm the transfer is yours.' : null} />
           {error ? (

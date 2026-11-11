@@ -102,13 +102,14 @@ export const STUDIO_PLAN_IDS: StudioPlanId[] = ['research', 'content', 'all'];
 export const STUDIO_FROM_USD = Math.min(...STUDIO_PLAN_IDS.map((id) => STUDIO_PLANS[id].usd));
 
 /**
- * The title on Velocity's bank account: the company, not a person (owner,
- * 2026-11-11). The EasyPaisa and JazzCash numbers beside it are personal, and
- * keep the `accountTitle` from `config/settlementAccounts`.
+ * The title on Velocity's bank account, exactly as the bank prints it: the one
+ * word, not the company's long legal name (owner, 2026-11-11). The EasyPaisa
+ * and JazzCash numbers beside it are personal, and keep the `accountTitle`
+ * from `config/settlementAccounts`.
  * shortcut: in code rather than in that document — move it there if the
  * company's bank account is ever held in another name.
  */
-export const STUDIO_BANK_TITLE = 'Berreto (Private) Limited';
+export const STUDIO_BANK_TITLE = 'Berreto';
 
 /** Paid a month at a time, or a year up front for less. */
 export type StudioBilling = 'month' | 'year';
@@ -140,6 +141,64 @@ export const STUDIO_CREDIT_PACKS = [5, 10, 20] as const;
 
 // shortcut: one fixed rate for the PKR a customer is asked to send; mirrored in backend studio/plans.ts. Read it from config when the rupee moves.
 export const PKR_PER_USD = 280;
+
+/** A price in the visitor's own money. `exact` is false when a floating rate makes it a guide, not the amount owed. */
+export interface StudioMoney {
+  text: string;
+  exact: boolean;
+}
+
+/**
+ * The money each place is quoted in. Every plan is priced in dollars; Pakistan
+ * is quoted in the rupees it is actually asked to send, the pegged Gulf
+ * currencies convert exactly, and a floating currency is a guide shown beside
+ * the dollars that are really charged. Everywhere else sees dollars.
+ *
+ * shortcut: fixed rates, read 2026-11-11 — the pegs hold, EUR and GBP drift,
+ * which is why those two are never presented as the amount owed. Move them to
+ * `config` or an FX feed if the drift starts to matter.
+ */
+const MONEY: readonly { code: string; per: number; exact: boolean; zones: readonly string[] }[] = [
+  { code: 'PKR', per: PKR_PER_USD, exact: true, zones: ['Asia/Karachi'] },
+  { code: 'AED', per: 3.6725, exact: true, zones: ['Asia/Dubai'] },
+  { code: 'SAR', per: 3.75, exact: true, zones: ['Asia/Riyadh'] },
+  { code: 'GBP', per: 0.74, exact: false, zones: ['Europe/London'] },
+  {
+    code: 'EUR',
+    per: 0.87,
+    exact: false,
+    // The euro's own clocks. A country that keeps its own money (Zurich, Prague, Warsaw…) is not here, and sees dollars.
+    zones: [
+      'Europe/Dublin', 'Europe/Lisbon', 'Europe/Madrid', 'Europe/Paris', 'Europe/Brussels', 'Europe/Amsterdam',
+      'Europe/Luxembourg', 'Europe/Berlin', 'Europe/Rome', 'Europe/Vienna', 'Europe/Ljubljana', 'Europe/Bratislava',
+      'Europe/Zagreb', 'Europe/Athens', 'Europe/Nicosia', 'Europe/Helsinki', 'Europe/Tallinn', 'Europe/Riga',
+      'Europe/Vilnius', 'Europe/Malta', 'Europe/Monaco', 'Europe/Andorra', 'Europe/San_Marino', 'Europe/Vatican',
+      'Europe/Podgorica', 'Atlantic/Canary', 'Atlantic/Madeira', 'Atlantic/Azores',
+    ],
+  },
+];
+
+/**
+ * `usd` as the money of whoever is looking, from the IANA zone their browser
+ * keeps (`useStudioMoney` reads it). An unknown zone — and the server, which
+ * cannot know — gets dollars, which is what the plan is priced in anyway.
+ */
+export const studioMoney = (usd: number, zone: string): StudioMoney => {
+  const m = MONEY.find((x) => x.zones.includes(zone));
+  if (!m) return { text: studioUsd(usd), exact: true };
+  if (m.code === 'PKR') return { text: `Rs ${studioPkr(usd).toLocaleString('en-PK')}`, exact: true };
+  const amount = Math.round(usd * m.per * 100) / 100;
+  return {
+    text: new Intl.NumberFormat('en', {
+      style: 'currency',
+      currency: m.code,
+      currencyDisplay: 'narrowSymbol',
+      // No ".00" on a round figure, as the dollar price is written.
+      minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+    }).format(amount),
+    exact: m.exact,
+  };
+};
 
 /** `workspaces/{id}` as the console reads it. */
 export interface StudioWorkspace {
