@@ -5,11 +5,13 @@
  * Plans page — `?plan=content&billing=year`, `?credits=5`, or an AI agents
  * package from the Sales page (`?agents=1&numbers=1&calls=20&min=2&wa=300`).
  *
- * There is no card gateway yet: the customer sends the money to the receiving
- * accounts on file (the same `config/settlementAccounts` the driver top-ups
- * use), then tells us with the receipt screenshot and the transaction ID —
- * both. Our AI reads the receipt the moment it arrives; an admin checks the
- * money arrived and approves, and the plan (or the credits) starts then.
+ * A plan can be paid by card (Stripe Checkout, `studio/cardPay.ts`), which
+ * needs no admin: the gateway proves it and the plan switches on. Otherwise —
+ * and always for credits and agent packages — the customer sends the money to
+ * the receiving accounts on file (the same `config/settlementAccounts` the
+ * driver top-ups use), then tells us with the receipt screenshot and the
+ * transaction ID — both. Our OCR reads the receipt the moment it arrives; an
+ * admin checks the money arrived and approves, and it starts then.
  */
 
 import { Suspense, useEffect, useState } from 'react';
@@ -54,6 +56,8 @@ interface ReceivingAccounts {
   bankName?: string;
   bankIban?: string;
   accountTitle?: string;
+  /** Admin → Receiving accounts: whether a card may be offered at all. */
+  cardLive?: boolean;
 }
 
 type Method = { key: string; label: string; value: string; title: string };
@@ -138,6 +142,9 @@ function Checkout() {
   const kind: 'agents' | 'credits' | 'plan' = agentPkg ? 'agents' : credits ? 'credits' : 'plan';
   // A workspace on a plan no longer sold (ads only) is offered the whole team.
   const chosen = plan ?? (STUDIO_PLAN_IDS.includes(ws.plan) ? ws.plan : 'all');
+  // Back from Stripe: the redirect beats its webhook by a second or two, and the
+  // listener above is what ends the wait — the card payment arrives approved.
+  const cardWait = params.get('paid') === 'card' && !payments.some((pay) => pay.method === 'card');
   const P = STUDIO_PLANS[chosen];
   const amount = kind === 'agents' ? (agentQuote?.usd ?? 0) : kind === 'credits' ? (credits ?? 0) * STUDIO_CREDIT_DAY_USD : studioPriceUsd(chosen, billing, raised);
   const amountPkr = kind === 'agents' ? (agentQuote?.pkr ?? 0) : studioPkr(amount);
@@ -202,6 +209,18 @@ function Checkout() {
     });
   }
 
+  async function payByCard() {
+    setBusy(true);
+    setError(null);
+    try {
+      const { url } = await studioApi.cardCheckout({ plan: chosen, billing, where: 'billing' });
+      window.location.assign(url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'The card page would not open. Send a transfer instead.');
+      setBusy(false);
+    }
+  }
+
   const ready = Boolean(file) && txnId.trim().length >= 6 && agreed && amount > 0 && methods.length > 0;
 
   return (
@@ -227,6 +246,15 @@ function Checkout() {
               AI calling agents come with the {STUDIO_PLANS.all.name} plan. Pay for it first, then add the package from the
               Sales page.
             </p>
+          ) : null}
+
+          {cardWait ? (
+            <div className={a.box} style={{ marginBottom: 12 }}>
+              <p style={{ fontSize: 14, lineHeight: 1.55, margin: 0 }}>
+                <strong>Confirming your card payment.</strong> It takes a few seconds. Your plan switches on by itself —
+                you can close this page, and we email you either way.
+              </p>
+            </div>
           ) : null}
 
           <h2 className={a.label}>{kind === 'credits' ? 'How many days' : kind === 'agents' ? 'Package' : 'Plan details'}</h2>
@@ -273,6 +301,17 @@ function Checkout() {
           ) : null}
 
           <h2 className={a.label}>Payment method</h2>
+          {kind === 'plan' && accounts?.cardLive ? (
+            <div className={a.box} style={{ marginBottom: 12 }}>
+              <p style={{ fontSize: 14, lineHeight: 1.55, margin: 0 }}>
+                <strong>Pay {studioUsd(amount)} by card.</strong> Visa or Mastercard from any country, taken on
+                Stripe&rsquo;s own page. It switches on the moment it goes through — no receipt, nobody to wait for.
+              </p>
+              <button type="button" className={a.btn} disabled={busy} onClick={() => void payByCard()} style={{ marginTop: 12 }}>
+                {busy ? 'Opening the card page…' : `Pay ${studioUsd(amount)} by card`}
+              </button>
+            </div>
+          ) : null}
           {accounts === null ? (
             <SkeletonRows rows={2} />
           ) : !methods.length ? (

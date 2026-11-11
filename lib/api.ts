@@ -408,6 +408,8 @@ export const adminApi = {
       bankName?: string;
       bankIban?: string;
       accountTitle?: string;
+      /** Whether Studio may offer a card. The Stripe keys are a separate deploy secret. */
+      cardLive?: boolean;
     },
     { ok: boolean }
   >('adminSetSettlementAccounts'),
@@ -1795,6 +1797,8 @@ export interface StudioPaymentDoc {
   note: string | null;
   /** What the AI check read off the receipt. Null while it runs; absent on payments sent before it existed. */
   analysis?: StudioPaymentAnalysis | null;
+  /** How it was paid. Absent on every payment sent before cards were taken: those were all transfers. */
+  method?: 'card';
   /** A month of AI agents, or credit days, rather than a plan; `plan` is then the plan the workspace already had. */
   kind?: 'agents' | 'credits';
   agents?: AgentPackage;
@@ -2292,6 +2296,14 @@ export const studioApi = {
   touch: callable<Record<string, never>, { ok: boolean }>('studioTouch'),
   /** This customer's own time at today's price, and whether the higher price applies yet. */
   priceClock: callable<Record<string, never>, { leftMs: number; raised: boolean }>('studioPriceClock'),
+  /**
+   * A Stripe Checkout page for the plan picked, paid by card from any country.
+   * The price is worked out on the server; `where` only chooses which of our own
+   * pages Stripe returns to. Approval needs no admin: the gateway proves it.
+   */
+  cardCheckout: callable<{ plan: StudioPlanId; billing?: StudioBilling; where?: 'start' | 'billing' }, { url: string }>(
+    'studioCardCheckout',
+  ),
   sendEmailCode: callable<Record<string, never>, { ok: boolean; sentTo?: string; alreadyVerified?: boolean }>(
     'studioSendEmailCode',
   ),

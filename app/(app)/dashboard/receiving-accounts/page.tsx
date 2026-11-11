@@ -77,9 +77,12 @@ const FIELDS = [
 
 type Key = (typeof FIELDS)[number]['key'];
 type Values = Partial<Record<Key, string>>;
+/** The card switch is not an account, so it lives beside the fields rather than in them. */
+type Settlement = Values & { cardLive?: boolean };
 
 export default function ReceivingAccountsPage() {
-  const [saved, setSaved] = useState<Values | null>(null);
+  const [saved, setSaved] = useState<Settlement | null>(null);
+  const [cardLive, setCardLive] = useState(false);
   const [form, setForm] = useState<Values>({});
   const seeded = useRef(false);
   const [busy, setBusy] = useState(false);
@@ -90,8 +93,9 @@ export default function ReceivingAccountsPage() {
     return onSnapshot(
       doc(db, 'config', 'settlementAccounts'),
       (s) => {
-        const d = (s.exists() ? s.data() : {}) as Values;
+        const d = (s.exists() ? s.data() : {}) as Settlement;
         setSaved(d);
+        setCardLive(d.cardLive === true);
         // Seed the editable copy once only, so a live update from another admin
         // cannot overwrite what is being typed here mid-edit.
         if (!seeded.current) {
@@ -129,6 +133,22 @@ export default function ReceivingAccountsPage() {
       setDone(true);
       setTimeout(() => setDone(false), 3000);
     } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveCardLive(next: boolean) {
+    setError(null);
+    setCardLive(next);
+    setBusy(true);
+    try {
+      await adminApi.adminSetSettlementAccounts({ cardLive: next });
+      setDone(true);
+      setTimeout(() => setDone(false), 3000);
+    } catch (e) {
+      setCardLive(!next);
       setError(e instanceof Error ? e.message : 'Could not save.');
     } finally {
       setBusy(false);
@@ -212,6 +232,26 @@ export default function ReceivingAccountsPage() {
             )}
           </div>
         </div>
+      </Card>
+
+      <Card style={{ maxWidth: 560, marginTop: 16 }}>
+        <div style={{ fontWeight: 800, marginBottom: 4 }}>Card payments (Velocity Studio)</div>
+        <p style={{ color: colors.muted, fontSize: 12.5, lineHeight: 1.6, marginTop: 0 }}>
+          Lets Studio customers pay by debit or credit card, from any country, through Stripe. Leave
+          it off and the sign-up page says &ldquo;Opening soon&rdquo; and takes bank transfers only.
+          This switch alone is not enough: the Stripe keys have to be in the deploy secrets too, and
+          without them the card button refuses with a message.
+        </p>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={cardLive}
+            disabled={busy}
+            onChange={(e) => void saveCardLive(e.target.checked)}
+            style={{ width: 18, height: 18, accentColor: colors.primary }}
+          />
+          Card payments are open
+        </label>
       </Card>
 
       <p style={{ color: colors.muted, fontSize: 12, marginTop: 16, maxWidth: 560, lineHeight: 1.6 }}>
