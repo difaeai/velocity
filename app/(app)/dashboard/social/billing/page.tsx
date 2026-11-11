@@ -30,6 +30,7 @@ import {
   type StudioPaymentDoc,
 } from '@/lib/api';
 import {
+  STUDIO_BANK_TITLE,
   STUDIO_CREDIT_DAY_USD,
   STUDIO_CREDIT_PACKS,
   STUDIO_PLAN_IDS,
@@ -55,7 +56,7 @@ interface ReceivingAccounts {
   accountTitle?: string;
 }
 
-type Method = { key: string; label: string; value: string };
+type Method = { key: string; label: string; value: string; title: string };
 
 export default function CheckoutPage() {
   return (
@@ -147,11 +148,14 @@ function Checkout() {
   const daysLeft = nowMs > 0 ? Math.floor((ws.paidUntilMs - nowMs) / 86_400_000) : 0;
   const switchUntil = kind === 'plan' && chosen !== ws.plan && daysLeft > 0 ? studioPaidAfter(ws, chosen, billing, nowMs) : null;
 
+  // The bank comes first, and carries the company's title; the wallets are personal.
   const methods: Method[] = accounts
     ? [
-        accounts.easypaisaNumber ? { key: 'ep', label: 'EasyPaisa', value: accounts.easypaisaNumber } : null,
-        accounts.jazzcashNumber ? { key: 'jc', label: 'JazzCash', value: accounts.jazzcashNumber } : null,
-        accounts.bankIban ? { key: 'bank', label: accounts.bankName ? `Bank — ${accounts.bankName}` : 'Bank transfer', value: accounts.bankIban } : null,
+        accounts.bankIban
+          ? { key: 'bank', label: accounts.bankName ? `Bank — ${accounts.bankName}` : 'Bank transfer', value: accounts.bankIban, title: STUDIO_BANK_TITLE }
+          : null,
+        accounts.easypaisaNumber ? { key: 'ep', label: 'EasyPaisa', value: accounts.easypaisaNumber, title: accounts.accountTitle ?? '' } : null,
+        accounts.jazzcashNumber ? { key: 'jc', label: 'JazzCash', value: accounts.jazzcashNumber, title: accounts.accountTitle ?? '' } : null,
       ].filter((m): m is Method => m !== null)
     : [];
   const picked = methods.find((m) => m.key === method) ?? methods[0];
@@ -287,7 +291,7 @@ function Checkout() {
                   <span>
                     <small>Send Rs {amountPkr.toLocaleString('en-PK')} to</small>
                     <code>{picked.value}</code>
-                    {accounts.accountTitle ? <small>{accounts.accountTitle}</small> : null}
+                    {picked.title ? <small>{picked.title}</small> : null}
                   </span>
                   <button type="button" className={a.copy} onClick={() => copy(picked)}>
                     {copied === picked.key ? 'Copied ✓' : 'Copy'}

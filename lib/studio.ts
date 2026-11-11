@@ -101,6 +101,15 @@ export const STUDIO_PLAN_IDS: StudioPlanId[] = ['research', 'content', 'all'];
 /** The "From $… a month" the pages quote: the cheapest plan on sale. */
 export const STUDIO_FROM_USD = Math.min(...STUDIO_PLAN_IDS.map((id) => STUDIO_PLANS[id].usd));
 
+/**
+ * The title on Velocity's bank account: the company, not a person (owner,
+ * 2026-11-11). The EasyPaisa and JazzCash numbers beside it are personal, and
+ * keep the `accountTitle` from `config/settlementAccounts`.
+ * shortcut: in code rather than in that document — move it there if the
+ * company's bank account is ever held in another name.
+ */
+export const STUDIO_BANK_TITLE = 'Berreto (Private) Limited';
+
 /** Paid a month at a time, or a year up front for less. */
 export type StudioBilling = 'month' | 'year';
 export const STUDIO_YEAR_DISCOUNT_PCT = 3;
