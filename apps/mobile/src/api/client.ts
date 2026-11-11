@@ -1115,6 +1115,14 @@ export const api = {
     },
     SharedPoolSeat
   >('joinSharedPool'),
+  /**
+   * Wake a ride-sharing function before it is needed — the search as the screen
+   * opens, the join as a rider reads a ride's dialog. Same scheme as
+   * `warmSignIn`: the search and the booking are the two waits the owner can
+   * see, and both were starting a fresh instance nearly every time.
+   */
+  warmShared: (name: 'getSharedPools' | 'getSharedRideFare' | 'createSharedPool' | 'joinSharedPool') =>
+    callable<{ warm: true }, { warm: true }>(name)({ warm: true }),
   /** Give back a booked seat — free, no driver has committed. */
   leaveSharedPool: callable<{ poolId: string }, { ok: boolean }>('leaveSharedPool'),
   /** The driver sets off to collect a shared car's riders; each is asked to confirm. */

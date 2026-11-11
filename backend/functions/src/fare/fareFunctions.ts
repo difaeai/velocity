@@ -12,6 +12,7 @@ import { loadFuelPrices, loadPricingConfig } from '../pricing/config';
 import { describeFuelAdjustment, fuelFactorFor, withFuelAdjustedRates } from '../pricing/fuel';
 import { riderPeakLabel } from '../pricing/peak';
 import { peakFactorForZone } from '../pricing/zoneFactor';
+import { isWarmPing, warmUp } from '../lib/warmup';
 
 const REGION = 'asia-south1';
 const db = () => getFirestore();
@@ -295,6 +296,8 @@ export const getPoolingQuote = onCall({ region: REGION }, async (req) => {
  */
 export const getSharedRideFare = onCall({ region: REGION }, async (req) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  // A screenful of ready routes asks for a fare each: woken as the screen opens.
+  if (isWarmPing(req.data)) return warmUp();
   const d = (req.data ?? {}) as Record<string, unknown>;
   const rideType = typeof d.rideType === 'string' ? d.rideType : 'mini';
   const pickup = d.pickup as { lat?: unknown; lng?: unknown } | undefined;

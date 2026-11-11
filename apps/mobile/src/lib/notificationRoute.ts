@@ -16,6 +16,9 @@ export function routeForNotification(data: Record<string, unknown> | null | unde
   if (screen === 'request-detail' && str('tripId')) return `/driver/request-detail/${str('tripId')}`;
   // Daily-route pool alert → straight to the join screen for that pool.
   if (screen === 'pool-join' && str('code')) return `/passenger/pool-join/${str('code')}`;
+  // "Time to book your ride" before a saved route's own time (backend:
+  // dailyRoutes/reminders.ts) → the ride-sharing screen, where they book it.
+  if (screen === 'daily-travel') return '/passenger/daily-travel';
   // The "see it on your phone" demo. No adId, no click to record — it is the
   // sample offer, rendered from a constant.
   if (screen === 'business-offer-demo') return '/passenger/offer/demo';
