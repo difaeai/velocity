@@ -377,6 +377,8 @@ export { runCommuteRideFormation } from './commute/formRides';
 // Saved daily routes as areas: "Locations people are traveling to".
 export { getTravelAreas } from './dailyRoutes/travelAreas';
 export { getRouteMates, inviteRouteMates, getMyRideInvites, declineRideInvite } from './dailyRoutes/routeMates';
+// "Time to book your ride", before each of a saved route's own two times.
+export { runRouteReminders } from './dailyRoutes/reminders';
 // Shared pools: a route that fills a car, sends it, and is empty again for the
 // next riders two minutes later — the "Corporate & Students" screen.
 export {

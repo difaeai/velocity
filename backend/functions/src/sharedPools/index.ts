@@ -53,6 +53,7 @@ import { assertCommissionClear, getCommissionSettings } from '../domain/commissi
 import { pktDayKey } from '../domain/dailyTarget';
 import { assertVehicleConfirmed } from '../domain/vehicleCheck';
 import { assertFaceCheckedIn } from '../domain/faceCheckIn';
+import { isWarmPing, warmUp } from '../lib/warmup';
 import { sharedRideFare } from '../fare/sharedRideFare';
 import { ACTIVE_STATUSES, assertRiderCanBook, broadcastTripToNearbyDrivers, haversineKm, lockInBid } from '../trips';
 import { generateShareCode, writeTripDocuments } from '../trips/poolTripFactory';
@@ -410,6 +411,8 @@ const MAX_CARDS = 40;
  */
 export const getSharedPools = onCall(async (req) => {
   const ctx = requireAuth(req);
+  // Sent as the screen opens, so the rider's GO meets a warm instance.
+  if (isWarmPing(req.data)) return warmUp();
   const parsed = listSchema.safeParse(req.data);
   if (!parsed.success) invalid('Invalid search.');
   const { city, from, at, mine, all } = parsed.data;
@@ -1089,6 +1092,8 @@ async function newPool(uid: string, d: z.infer<typeof createSchema>, driver?: Po
 /** Start a pool and take its first seat. */
 export const createSharedPool = onCall(async (req) => {
   const ctx = requireAuth(req);
+  // Before the rate limit: a wake-up must never spend one of the rider's ten.
+  if (isWarmPing(req.data)) return warmUp();
   await rateLimit(ctx.uid, 'createSharedPool', 10, 3600);
   const parsed = createSchema.safeParse(req.data);
   if (!parsed.success) invalid(parsed.error.issues[0]?.message ?? 'Invalid shared ride.');
@@ -1108,6 +1113,8 @@ export const createSharedPool = onCall(async (req) => {
  */
 export const joinSharedPool = onCall(async (req) => {
   const ctx = requireAuth(req);
+  // Before the rate limit: a wake-up must never spend one of the rider's ten.
+  if (isWarmPing(req.data)) return warmUp();
   await rateLimit(ctx.uid, 'joinSharedPool', 10, 60);
   const parsed = z.object({ poolId: docId, pickup: place.nullish(), dropoff: place.nullish() }).safeParse(req.data);
   if (!parsed.success) invalid('Choose a shared ride.');
