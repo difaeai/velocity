@@ -8,9 +8,10 @@
  *    a workspace, a one-day trial of that plan, the eight agents, and a brief
  *    written from their answers. Their account is tied to it by a `ws` custom
  *    claim, which is what every rule and every desk call checks.
- * 2. **Paying.** There is no card gateway yet (the user chose manual payment):
- *    the customer pays by bank transfer / EasyPaisa / JazzCash to the receiving
- *    accounts on file, then sends the screenshot AND the transaction ID. A
+ * 2. **Paying.** Two ways. By card, anywhere in the world, through Stripe
+ *    Checkout (`cardPay.ts`) — proved by the gateway, so it approves itself.
+ *    Or by bank transfer / EasyPaisa / JazzCash to the receiving accounts on
+ *    file, sending the screenshot AND the transaction ID. A
  *    transaction ID can be claimed once, ever — the same bookkeeping defence the
  *    driver top-ups use — and the receipt is read on the spot by our own OCR
  *    (`paymentCheck.ts`) so the admin sees what it says before opening it.
@@ -271,13 +272,16 @@ export const studioSubmitPayment = onCall({ timeoutSeconds: 120, memory: '1GiB' 
   return { ok: true, paymentId: paymentRef.id };
 });
 
-export const adminDecideStudioPayment = onCall(async (req) => {
-  const ctx = requireAdmin(req);
-  const parsed = z
-    .object({ paymentId: z.string().min(1).max(64).regex(/^[^/]+$/), approve: z.boolean(), note: text(300).optional() })
-    .safeParse(req.data ?? {});
-  if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
-  const { paymentId, approve, note } = parsed.data;
+/**
+ * Approve or reject one payment: the plan starts (or, with no workspace yet, is
+ * parked on the person), or the transaction ID and receipt are freed so an
+ * honest mistake can be sent again.
+ *
+ * `by` is the admin who decided it, or `stripe` when the card gateway's own
+ * signed webhook already proved the money arrived (`cardPay.ts`) — the only
+ * caller that is not a person.
+ */
+export async function decideStudioPayment(paymentId: string, approve: boolean, by: string, note?: string) {
   const card = await rateCard();
 
   return db.runTransaction(async (tx) => {
@@ -301,7 +305,7 @@ export const adminDecideStudioPayment = onCall(async (req) => {
     if (pay.status !== 'pending') throw new HttpsError('failed-precondition', `Already ${pay.status}.`);
 
     const now = Date.now();
-    const decided = { status: approve ? 'approved' : 'rejected', decidedAtMs: now, decidedBy: ctx.uid, note: note ?? null };
+    const decided = { status: approve ? 'approved' : 'rejected', decidedAtMs: now, decidedBy: by, note: note ?? null };
     if (!approve) {
       tx.update(payRef, decided);
       if (pay.txnKey) tx.delete(db.doc(`studioTxnRefs/${pay.txnKey}`));
@@ -323,7 +327,7 @@ export const adminDecideStudioPayment = onCall(async (req) => {
     if (pay.kind === 'agents' && pay.agents) {
       const until = extendPaid(ws.agentPlan?.paidUntilMs ?? 0, now, PERIOD_MS);
       tx.update(payRef, decided);
-      tx.update(wsRef, { agentPlan: planFrom(pay.agents, card, until, ctx.uid, now, pay.amountUsd) });
+      tx.update(wsRef, { agentPlan: planFrom(pay.agents, card, until, by, now, pay.amountUsd) });
       return { ok: true, status: 'approved', paidUntilMs: until };
     }
     // Credit days: added to the balance; `studio/credits.ts` spends them when the team would stop.
@@ -350,6 +354,16 @@ export const adminDecideStudioPayment = onCall(async (req) => {
     });
     return { ok: true, status: 'approved', paidUntilMs };
   });
+}
+
+export const adminDecideStudioPayment = onCall(async (req) => {
+  const ctx = requireAdmin(req);
+  const parsed = z
+    .object({ paymentId: z.string().min(1).max(64).regex(/^[^/]+$/), approve: z.boolean(), note: text(300).optional() })
+    .safeParse(req.data ?? {});
+  if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
+  const { paymentId, approve, note } = parsed.data;
+  return decideStudioPayment(paymentId, approve, ctx.uid, note);
 });
 
 const DAY_MS = 86_400_000;

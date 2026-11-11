@@ -266,7 +266,8 @@ export default function StudioPage() {
         <div className={s.footer}>
           <span>Vexa — Your Social Media Virtual Assistant. A product of Velocity Rides, by Berreto (Private) Limited</span>
           <span>
-            <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a> · <a href="mailto:business@velocityrides.app">business@velocityrides.app</a>
+            <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a> · <a href="/support">Support</a> ·{' '}
+            <a href="mailto:business@velocityrides.app">business@velocityrides.app</a>
           </span>
         </div>
       </footer>

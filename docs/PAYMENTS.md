@@ -337,3 +337,39 @@ server-to-server inquiry). For those, going live is **configuration only**:
 A provider appears in the app's top-up picker automatically once its
 credentials are non-empty (`getPaymentOptions`). Until then, the **mock**
 provider keeps the full wallet UX testable end-to-end.
+
+## Velocity Studio paid by card (Stripe)
+
+Everything above is the **rider/driver** side: rupees, Pakistani wallets, and
+money that lands in the platform's own merchant accounts. Velocity Studio is
+sold in dollars to businesses anywhere, so it has its own, much smaller rail —
+`backend/functions/src/studio/cardPay.ts`.
+
+- **Stripe Checkout, hosted.** `studioCardCheckout` creates a session and
+  returns its URL; the customer pays on Stripe's page. No card number, and no
+  PCI surface, ever reaches this repo. There is no Stripe SDK either: creating
+  a session is one form POST, and verifying a webhook is one HMAC.
+- **One-off charges, not subscriptions.** Each payment buys one month or one
+  year, exactly like the transfer beside it, so the price keeps coming from our
+  own price clock (`studio/priceClock.ts`) rather than a fixed Stripe Price, and
+  no card is kept on file to be charged again. Renewal stays a decision the
+  customer makes.
+- **The signature is the authentication.** `studioStripeWebhook` is public by
+  necessity. `studio/stripeSignature.ts` checks the `stripe-signature` header
+  against `STRIPE_WEBHOOK_SECRET` — timestamp inside five minutes, HMAC over
+  `timestamp.body`, compared in constant time — and a request that fails gets a
+  400 and changes nothing. It is tested on its own, because it is the only thing
+  between a stranger's POST and a free plan.
+- **The record is `studioPayments/{checkout session id}`**, written when the
+  money arrives and never before: an abandoned session leaves nothing behind,
+  and Stripe's retries of the same event land on the same document, which is
+  what makes a replay harmless. Approval then runs down the same
+  `decideStudioPayment` path an admin's approval takes, with `decidedBy:
+  'stripe'` — no admin, because the gateway already proved it.
+- **Two switches, both needed.** `STRIPE_ENV` (the keys) decides whether a card
+  *can* be taken; `config/settlementAccounts.cardLive`, from the admin's
+  Receiving accounts page, decides whether the option is *offered*. With the
+  switch on and no keys the button refuses with a message, which is the right
+  way round: the money cannot be taken by accident.
+- **Plans only.** A pack of credit days or a month of AI calling agents is still
+  paid by transfer.

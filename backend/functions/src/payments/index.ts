@@ -589,6 +589,8 @@ const settlementSchema = z.object({
   bankName: z.string().max(80).optional(),
   bankIban: z.string().max(40).optional(),
   accountTitle: z.string().max(80).optional(),
+  /** Whether the Studio pay step may offer a card at all. The key itself is a deploy secret (studio/cardPay.ts). */
+  cardLive: z.boolean().optional(),
 });
 
 /**

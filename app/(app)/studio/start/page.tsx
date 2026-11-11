@@ -19,11 +19,12 @@
  * The pay step shows what the money buys before it asks for any: Vexa herself,
  * the three plans as small boxes with their reels and the networks each works
  * on, and then the two ways to pay — a transfer to the company's bank account,
- * or a card, which is not open yet and says so rather than pretending. The
- * mobile wallets are the rides side's, not Vexa's (owner, 2026-11-11). Once the
- * receipt is in, the page
- * stays here on "thank you — waiting for your transaction to be confirmed"
- * until an admin approves it.
+ * or a card from any country through Stripe Checkout. The mobile wallets are
+ * the rides side's, not Vexa's (owner, 2026-11-11). The card is offered only
+ * while the admin's Receiving accounts page says `cardLive`; until then it says
+ * "Opening soon" rather than pretending. A card needs no admin — it comes back
+ * approved. A transfer leaves the page here on "thank you — waiting for your
+ * transaction to be confirmed" until a person approves it.
  */
 
 import { Suspense, useEffect, useRef, useState } from 'react';
@@ -167,6 +168,9 @@ function Start() {
               ) : stage === 3 ? (
                 prepay?.status === 'pending' ? (
                   <WaitingCard payment={prepay} />
+                ) : params.get('paid') === 'card' && !prepay ? (
+                  // Back from Stripe a moment before its webhook lands; the listener above moves on by itself.
+                  <CardWaitCard onGiveUp={() => router.replace(`/studio/start${keep}`)} />
                 ) : (
                   <PayCard
                     uid={user.uid}
@@ -306,6 +310,8 @@ function VerifyCard({ email, onVerified, onSignOut }: { email: string | null; on
 interface ReceivingAccounts {
   bankName?: string;
   bankIban?: string;
+  /** Admin → Receiving accounts: whether a card may be offered at all (the Stripe keys are a deploy secret). */
+  cardLive?: boolean;
 }
 
 /** The reel each plan is sold with, without its extension: `.mp4` plays, `.jpg` is its poster. The pricing page shows the same three. */
@@ -473,6 +479,19 @@ function PayCard({
     });
   }
 
+  async function payByCard() {
+    setBusy(true);
+    setError(null);
+    try {
+      const { url } = await studioApi.cardCheckout({ plan, billing, where: 'start' });
+      // Stripe's own page; it brings them back to ?paid=card, where the webhook has usually landed already.
+      window.location.assign(url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'The card page would not open. Pay by bank transfer instead.');
+      setBusy(false);
+    }
+  }
+
   async function send() {
     // What is missing is said at its field, not by a button that stays grey.
     setTried(true);
@@ -582,7 +601,7 @@ function PayCard({
             <CardMark />
           </span>
           <b>
-            Debit or credit card <i className={s.soon}>Opening soon</i>
+            Debit or credit card {accounts?.cardLive ? null : <i className={s.soon}>Opening soon</i>}
           </b>
           <small>Pay online in one go, no receipt to upload</small>
           <span className={s.wayMarks} aria-hidden>
@@ -592,7 +611,28 @@ function PayCard({
         </button>
       </div>
 
-      {how === 'card' ? (
+      {how === 'card' && accounts?.cardLive ? (
+        <div className={s.soonBox}>
+          <span className={s.soonArt} aria-hidden>
+            <VisaMark />
+            <MastercardMark />
+          </span>
+          <b>Pay {studioUsd(amount)} by card</b>
+          <p>
+            Stripe takes the payment on its own page, so we never see your card. Any country&rsquo;s Visa or Mastercard
+            works, your bank converts from dollars, and your plan starts the moment it goes through — nobody to wait
+            for.
+          </p>
+          <button type="button" className={s.primary} disabled={busy} onClick={() => void payByCard()}>
+            {busy ? 'Opening the card page…' : `Pay ${studioUsd(amount)} by card`}
+          </button>
+          {error ? (
+            <p className={s.error} role="alert">
+              {error}
+            </p>
+          ) : null}
+        </div>
+      ) : how === 'card' ? (
         <div className={s.soonBox}>
           <span className={s.soonArt} aria-hidden>
             <VisaMark />
@@ -689,6 +729,44 @@ function PayCard({
  * The receipt is in and the page stays here: thank you, and waiting for the
  * transaction to be confirmed. It moves on by itself once an admin approves it.
  */
+/** Back from the card page, waiting for Stripe's webhook — seconds, normally. */
+function CardWaitCard({ onGiveUp }: { onGiveUp: () => void }) {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => setSlow(true), 20_000);
+    return () => clearTimeout(id);
+  }, []);
+  return (
+    <div className={s.card} style={{ maxWidth: 520, justifySelf: 'center', width: '100%' }}>
+      <div className={s.thanks}>
+        <span className={s.thanksArt} aria-hidden>
+          <svg viewBox="0 0 24 24" width={34} height={34} fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="m4.5 12.5 4.6 4.6L19.5 6.8" />
+          </svg>
+        </span>
+        <h1 className={s.title} style={{ fontSize: 30 }}>
+          Thank you!
+        </h1>
+        <p className={s.sub}>
+          Confirming your card payment with the bank. This page opens the next step by itself — it usually takes a few
+          seconds.
+        </p>
+      </div>
+      {slow ? (
+        <>
+          <p className={s.sub}>
+            Still here? If the payment went through, your plan is safe and we will email you. Nothing is charged twice
+            by going back.
+          </p>
+          <button type="button" className={s.link} onClick={onGiveUp}>
+            Go back to paying
+          </button>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 function WaitingCard({ payment }: { payment: StudioPaymentDoc }) {
   return (
     <div className={s.card} style={{ maxWidth: 520, justifySelf: 'center', width: '100%' }}>

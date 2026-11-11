@@ -626,6 +626,8 @@ export { studioCreditSweep, studioUsage } from './studio/credits';
 export { studioTouch, studioSendEmailCode, studioVerifyEmailCode } from './studio/emailCode';
 export { adminSetStudioMailer } from './studio/mailer';
 export { studioPriceClock } from './studio/priceClock';
+// Velocity Studio paid by card, from any country: Stripe Checkout out, its signed webhook back.
+export { studioCardCheckout, studioStripeWebhook } from './studio/cardPay';
 
 // The sales agent — find businesses, write to each, follow up twice, and draft an answer to every reply;
 // its calling agents write a call script per business for the person who dials
