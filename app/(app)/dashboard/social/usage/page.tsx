@@ -84,7 +84,7 @@ export default function UsagePage() {
                 ? 'Your plan has run out — a credit day starts within half an hour.'
                 : 'Your plan has run out. Pay for a plan or add credits to start your team again.'
               : trial
-                ? `left of your free trial — until ${when(until)}.`
+                ? `left of your trial day — until ${when(until)}.`
                 : `left — paid until ${when(until)}.`}
           </p>
         </section>

@@ -149,8 +149,12 @@ describe('priceUsd', () => {
 });
 
 describe('startTerms', () => {
-  it('gives a free day when nothing was paid up front', () => {
-    expect(startTerms(null, NOW)).toEqual({ trialEndsAtMs: NOW + TRIAL_MS, paidUntilMs: 0, accessUntilMs: NOW + TRIAL_MS });
+  it('gives the day that was paid for, and no paid time with it', () => {
+    const trial = startTerms({ plan: 'all', billing: 'month', paymentId: 'p0', atMs: NOW, trial: true }, NOW);
+    expect(trial).toEqual({ trialEndsAtMs: NOW + TRIAL_MS, paidUntilMs: 0, accessUntilMs: NOW + TRIAL_MS });
+    // A day of the whole team is still the whole team, for that day.
+    expect(canUse({ ...trial, plan: 'all' }, 'ads', NOW)).toBe(true);
+    expect(canUse({ ...trial, plan: 'all' }, 'ads', NOW + TRIAL_MS + 1)).toBe(false);
   });
 
   it('starts a prepaid workspace paid, with no trial, for a month or a year', () => {

@@ -26,7 +26,7 @@ import { useReducedMotion } from './useReducedMotion';
 import site from './site.module.css';
 import s from './studioStory.module.css';
 import VOICE from './siteVoice.json';
-import { STUDIO_CREDIT_DAY_USD, STUDIO_TRIAL_HOURS } from '@/lib/studio';
+import { STUDIO_CREDIT_DAY_USD, STUDIO_TRIAL_HOURS, STUDIO_TRIAL_USD, studioUsd } from '@/lib/studio';
 
 type Cue = 'tick' | 'pop' | 'chime' | 'whoosh' | 'send';
 type StepKey = 'content' | 'ads' | 'comments' | 'sales' | 'you';
@@ -130,10 +130,10 @@ const STEPS: Step[] = [
     nav: '🏠 Dashboard',
     page: 'Dashboard',
     title: 'You watch it all, from one dashboard',
-    body: `Your first ${STUDIO_TRIAL_HOURS} hours are free. Then pick a plan — and add credits, $${STUDIO_CREDIT_DAY_USD} a day, whenever you want more days.`,
+    body: `Your first ${STUDIO_TRIAL_HOURS} hours cost $${STUDIO_TRIAL_USD}. Then pick a plan — and add credits, $${STUDIO_CREDIT_DAY_USD} a day, whenever you want more days.`,
     points: [
-      'No card to start',
-      'Pay by bank transfer',
+      `A day for $${STUDIO_TRIAL_USD} to see it work`,
+      'Pay by card or bank transfer',
       'Credits used only on days your plan does not cover',
     ],
     film: '/site/step1',
@@ -285,7 +285,7 @@ export function StudioStory() {
                 {i === LAST ? (
                   <div className={s.cta}>
                     <Link href="/studio/signup" className={`${site.btn} ${site.btnLime}`}>
-                      Start free for {STUDIO_TRIAL_HOURS} hours <ArrowRight />
+                      Try a day for {studioUsd(STUDIO_TRIAL_USD)} <ArrowRight />
                     </Link>
                   </div>
                 ) : null}

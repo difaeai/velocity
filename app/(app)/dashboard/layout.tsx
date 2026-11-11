@@ -460,13 +460,13 @@ function StudioShell({ email, name, signOut, children }: ShellProps) {
         ) : null}
         {over && !ws.suspended && !credits ? (
           <Banner tone="stop" href={UPGRADE} cta="Pay now">
-            {ws.paidUntilMs ? 'Your plan has run out.' : 'Your free day is over.'} Pay for a plan or add credits ($1 a day)
+            {ws.paidUntilMs ? 'Your plan has run out.' : 'Your day is over.'} Pay for a plan or add credits ($1 a day)
             and the desk opens again once the payment is approved.
           </Banner>
         ) : null}
         {over && !ws.suspended && credits ? (
           <Banner tone="info" href={USAGE} cta="See credits">
-            {ws.paidUntilMs ? 'Your plan has run out' : 'Your free day is over'} — your team carries on with your credits, $1 a
+            {ws.paidUntilMs ? 'Your plan has run out' : 'Your day is over'} — your team carries on with your credits, $1 a
             day ({credits} day{credits === 1 ? '' : 's'} left).
           </Banner>
         ) : null}

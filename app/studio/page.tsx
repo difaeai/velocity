@@ -5,7 +5,7 @@ import { VelocityMark } from '@/components/BrandMark';
 import { ArrowRight, Clock, Handshake, Megaphone, Mic, Sparkle, TrendingUp } from '@/components/site/Icons';
 import { Vexa } from '@/components/site/Assistant';
 import { StudioFaq, StudioPricing } from '@/components/site/StudioSections';
-import { STUDIO_FROM_USD, STUDIO_TRIAL_HOURS } from '@/lib/studio';
+import { STUDIO_FROM_USD, STUDIO_TRIAL_HOURS, STUDIO_TRIAL_USD, studioUsd } from '@/lib/studio';
 import site from '@/components/site/site.module.css';
 
 import s from './studio.module.css';
@@ -96,13 +96,15 @@ export default function StudioPage() {
             </p>
             <div className={s.heroActions}>
               <Link href="/studio/signup" className={`${site.btn} ${site.btnLime}`}>
-                Start free for {STUDIO_TRIAL_HOURS} hours <ArrowRight />
+                Try a day for {studioUsd(STUDIO_TRIAL_USD)} <ArrowRight />
               </Link>
               <a href="#pricing" className={`${site.btn} ${site.btnGhost}`}>
                 See plans
               </a>
             </div>
-            <p className={s.heroNote}>No card. From ${STUDIO_FROM_USD}/month after the free day.</p>
+            <p className={s.heroNote}>
+              One day for {studioUsd(STUDIO_TRIAL_USD)}. From ${STUDIO_FROM_USD}/month after it.
+            </p>
           </div>
 
           <div className={s.mock} aria-label="What your dashboard looks like">
@@ -253,10 +255,12 @@ export default function StudioPage() {
       <section className={`${s.closing} ${site.deep}`}>
         <div className={site.wrap}>
           <h2 className={site.h2}>Connect your account. Watch the magic.</h2>
-          <p className={`${site.lead} ${site.center}`}>The first {STUDIO_TRIAL_HOURS} hours are on us.</p>
+          <p className={`${site.lead} ${site.center}`}>
+            The first {STUDIO_TRIAL_HOURS} hours cost {studioUsd(STUDIO_TRIAL_USD)}.
+          </p>
           <div className={s.heroActions} style={{ justifyContent: 'center' }}>
             <Link href="/studio/signup" className={`${site.btn} ${site.btnLime}`}>
-              Start free <ArrowRight />
+              Try a day for {studioUsd(STUDIO_TRIAL_USD)} <ArrowRight />
             </Link>
           </div>
         </div>

@@ -24,7 +24,7 @@ import {
   txnKey,
 } from '../index';
 import { studioSendEmailCode, studioTouch, studioVerifyEmailCode } from '../emailCode';
-import { PERIOD_MS, TRIAL_MS, YEAR_MS, type Workspace } from '../plans';
+import { PERIOD_MS, PKR_PER_USD, TRIAL_MS, TRIAL_USD, YEAR_MS, type Workspace } from '../plans';
 import { PRICE_GRACE_MS, PRICE_WINDOW_MS, studioPriceClock } from '../priceClock';
 import { HOUSE, deskWorkspace, inWorkspace, liveWorkspaces, sdb, wsPath } from '../../social/workspace';
 
@@ -51,7 +51,37 @@ function asUser<T>(data: T, uid: string, claims: Record<string, unknown> = {}): 
 /** Google sign-in, or an address proved with the code: what Firebase puts on the token. */
 const VERIFIED = { email: 'owner@bakehouse.test', email_verified: true };
 
+/**
+ * Nothing starts unpaid any more, not even the day (owner, 2026-11-11), so a
+ * sign-up here stands on an approved trial payment — what `decideStudioPayment`
+ * leaves behind once the dollar has arrived.
+ */
+async function approvedTrial(uid = OWNER, plan = 'content'): Promise<string> {
+  const payRef = db().collection('studioPayments').doc();
+  const now = Date.now();
+  await payRef.set({
+    wid: null,
+    uid,
+    plan,
+    billing: 'month',
+    kind: 'trial',
+    amountUsd: 1,
+    status: 'approved',
+    txnKey: null,
+    createdAtMs: now,
+    decidedAtMs: now,
+    decidedBy: ADMIN,
+    note: null,
+  });
+  await db()
+    .doc(`studioUsers/${uid}`)
+    .set({ prepaid: { plan, billing: 'month', paymentId: payRef.id, atMs: now, trial: true } }, { merge: true });
+  return payRef.id;
+}
+
 async function signUp(plan = 'content'): Promise<string> {
+  // Only when the test has not already paid for something itself — a paid plan must stay the one that wins.
+  if (!(await db().doc(`studioUsers/${OWNER}`).get()).get('prepaid')) await approvedTrial(OWNER, plan);
   const res = (await studioCreateWorkspace.run(asUser({ ...SIGN_UP, plan }, OWNER, VERIFIED))) as {
     workspaceId: string;
   };
@@ -240,16 +270,47 @@ describe('paying', () => {
     expect((await db().doc(`studioPayments/${res.paymentId}`).get()).data()).toMatchObject({ wid, business: 'Bake House' });
   });
 
-  it('a rejected pre-payment frees the way for another, and a sign-up without one gets its free day', async () => {
+  it('a rejected pre-payment frees the way for another, and nothing starts until one is approved', async () => {
     const res = (await studioSubmitPayment.run(asUser(prepay('content', 'EP-777888'), OWNER, VERIFIED))) as { paymentId: string };
     await adminDecideStudioPayment.run(asUser({ paymentId: res.paymentId, approve: false, note: 'Nothing arrived' }, ADMIN, { role: 'admin' }));
     expect((await db().doc(`studioUsers/${OWNER}`).get()).get('prepaid')).toBeUndefined();
     await expect(studioSubmitPayment.run(asUser(prepay('content', 'EP-777889'), OWNER, VERIFIED))).resolves.toMatchObject({ ok: true });
 
+    // Nothing is free any more, not even the day (owner, 2026-11-11).
+    await expect(studioCreateWorkspace.run(asUser(SIGN_UP, OWNER, VERIFIED))).rejects.toThrow(/before your team starts/);
+    expect((await db().collection('workspaces').get()).empty).toBe(true);
+  });
+
+  it('a dollar buys one day of the plan, and no paid time with it', async () => {
+    const res = (await studioSubmitPayment.run(
+      asUser({ ...prepay('all', 'EP-TRIAL-1'), trial: true }, OWNER, VERIFIED),
+    )) as { paymentId: string };
+    expect((await db().doc(`studioPayments/${res.paymentId}`).get()).data()).toMatchObject({
+      kind: 'trial',
+      plan: 'all',
+      amountUsd: TRIAL_USD,
+      amountPkr: TRIAL_USD * PKR_PER_USD,
+    });
+
+    await adminDecideStudioPayment.run(asUser({ paymentId: res.paymentId, approve: true }, ADMIN, { role: 'admin' }));
+    expect((await db().doc(`studioUsers/${OWNER}`).get()).get('prepaid')).toMatchObject({ plan: 'all', trial: true });
+
     const wid = await signUp('content');
     const ws = (await db().doc(`workspaces/${wid}`).get()).data()!;
+    // A day of the whole team, because that is the plan the dollar was paid against.
+    expect(ws.plan).toBe('all');
     expect(ws.paidUntilMs).toBe(0);
     expect(ws.trialEndsAtMs - ws.createdAtMs).toBe(TRIAL_MS);
+    expect(ws.accessUntilMs).toBe(ws.trialEndsAtMs);
+  });
+
+  it('refuses the trial day to a workspace that already exists', async () => {
+    const wid = await signUp('content');
+    await expect(
+      studioSubmitPayment.run(
+        asUser({ plan: 'all', trial: true, txnId: 'EP-TRIAL-2', screenshotPath: `workspaces/${wid}/payments/t.jpg` }, OWNER, { ...VERIFIED, ws: wid }),
+      ),
+    ).rejects.toThrow(/only for a new workspace/);
   });
 
   it('before a workspace exists only a plan can be paid for, and only from a proved address', async () => {

@@ -423,7 +423,7 @@ function Checkout() {
               : kind === 'agents'
                 ? 'The package starts when the payment is approved and runs for 30 days.'
                 : onTrial
-                  ? 'Your free trial keeps running until the payment is approved. Then your paid time starts — nothing stops in between.'
+                  ? 'Your trial day keeps running until the payment is approved. Then your paid time starts — nothing stops in between.'
                   : 'Paying early never loses a day: the new time is added to the end of what you already have.'}
           </p>
 
