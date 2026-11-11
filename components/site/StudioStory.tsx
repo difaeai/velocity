@@ -133,7 +133,7 @@ const STEPS: Step[] = [
     body: `Your first ${STUDIO_TRIAL_HOURS} hours are free. Then pick a plan — and add credits, $${STUDIO_CREDIT_DAY_USD} a day, whenever you want more days.`,
     points: [
       'No card to start',
-      'Pay by bank transfer, EasyPaisa or JazzCash',
+      'Pay by bank transfer',
       'Credits used only on days your plan does not cover',
     ],
     film: '/site/step1',

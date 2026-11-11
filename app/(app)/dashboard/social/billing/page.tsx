@@ -49,12 +49,10 @@ import { useStudioPriceRaised } from '@/lib/useStudioPriceRaised';
 import a from '../account.module.css';
 import { FieldError, SkeletonRows, SuccessState } from '@/components/states';
 
+/** Only the bank account: Vexa is not paid by mobile wallet (owner, 2026-11-11). */
 interface ReceivingAccounts {
-  easypaisaNumber?: string;
-  jazzcashNumber?: string;
   bankName?: string;
   bankIban?: string;
-  accountTitle?: string;
 }
 
 type Method = { key: string; label: string; value: string; title: string };
@@ -153,14 +151,12 @@ function Checkout() {
   const daysLeft = nowMs > 0 ? Math.floor((ws.paidUntilMs - nowMs) / 86_400_000) : 0;
   const switchUntil = kind === 'plan' && chosen !== ws.plan && daysLeft > 0 ? studioPaidAfter(ws, chosen, billing, nowMs) : null;
 
-  // The bank comes first, and carries the company's title; the wallets are personal.
+  // The one account Vexa is paid into, under the title the bank prints.
   const methods: Method[] = accounts
     ? [
         accounts.bankIban
           ? { key: 'bank', label: accounts.bankName ? `Bank — ${accounts.bankName}` : 'Bank transfer', value: accounts.bankIban, title: STUDIO_BANK_TITLE }
           : null,
-        accounts.easypaisaNumber ? { key: 'ep', label: 'EasyPaisa', value: accounts.easypaisaNumber, title: accounts.accountTitle ?? '' } : null,
-        accounts.jazzcashNumber ? { key: 'jc', label: 'JazzCash', value: accounts.jazzcashNumber, title: accounts.accountTitle ?? '' } : null,
       ].filter((m): m is Method => m !== null)
     : [];
   const picked = methods.find((m) => m.key === method) ?? methods[0];

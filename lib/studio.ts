@@ -103,9 +103,9 @@ export const STUDIO_FROM_USD = Math.min(...STUDIO_PLAN_IDS.map((id) => STUDIO_PL
 
 /**
  * The title on Velocity's bank account, exactly as the bank prints it: the one
- * word, not the company's long legal name (owner, 2026-11-11). The EasyPaisa
- * and JazzCash numbers beside it are personal, and keep the `accountTitle`
- * from `config/settlementAccounts`.
+ * word, not the company's long legal name (owner, 2026-11-11). It is the only
+ * way Vexa is paid: the mobile wallets in `config/settlementAccounts` are the
+ * rides side's.
  * shortcut: in code rather than in that document — move it there if the
  * company's bank account is ever held in another name.
  */

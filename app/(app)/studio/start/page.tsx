@@ -18,14 +18,15 @@
  *
  * The pay step shows what the money buys before it asks for any: Vexa herself,
  * the three plans as small boxes with their reels and the networks each works
- * on, and then the two ways to pay — bank transfer (the company's bank account
- * first, then the EasyPaisa and JazzCash wallets) or a card, which is not open
- * yet and says so rather than pretending. Once the receipt is in, the page
+ * on, and then the two ways to pay — a transfer to the company's bank account,
+ * or a card, which is not open yet and says so rather than pretending. The
+ * mobile wallets are the rides side's, not Vexa's (owner, 2026-11-11). Once the
+ * receipt is in, the page
  * stays here on "thank you — waiting for your transaction to be confirmed"
  * until an admin approves it.
  */
 
-import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
@@ -301,14 +302,11 @@ function VerifyCard({ email, onVerified, onSignOut }: { email: string | null; on
   );
 }
 
+/** Only the bank account: Vexa is not paid by mobile wallet (owner, 2026-11-11). */
 interface ReceivingAccounts {
-  easypaisaNumber?: string;
-  jazzcashNumber?: string;
   bankName?: string;
   bankIban?: string;
-  accountTitle?: string;
 }
-type Method = { key: string; label: string; value: string; title: string; mark: ReactNode };
 
 /** The reel each plan is sold with, without its extension: `.mp4` plays, `.jpg` is its poster. The pricing page shows the same three. */
 const PLAN_FILM: Record<string, string> = {
@@ -366,15 +364,6 @@ function MastercardMark() {
       <circle cx="27.5" cy="16" r="8" fill="#f79e1b" />
       <path d="M24 10.2a8 8 0 0 0 0 11.6 8 8 0 0 0 0-11.6Z" fill="#ff5f00" />
     </svg>
-  );
-}
-
-/** A mobile wallet's name in its own colour — the mark people look for on a pay sheet. */
-function WalletMark({ name, bg }: { name: string; bg: string }) {
-  return (
-    <span className={s.walletMark} style={{ background: bg }}>
-      {name}
-    </span>
   );
 }
 
@@ -455,8 +444,7 @@ function PayCard({
   const [accounts, setAccounts] = useState<ReceivingAccounts | null>(null);
   /** Bank transfer, or a card — the card gateway is not open yet, so picking it says so. */
   const [how, setHow] = useState<'transfer' | 'card'>('transfer');
-  const [method, setMethod] = useState<string | null>(null);
-  const [copied, setCopied] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [txnId, setTxnId] = useState('');
   const [agreed, setAgreed] = useState(false);
@@ -474,34 +462,14 @@ function PayCard({
   const local = money(amount);
   // The transfer itself is named in money that is owed to the penny: rupees here, dollars where the local figure is only a guide.
   const owed = local.exact ? local.text : studioUsd(amount);
-  // The bank comes first (owner): it is the account in the company's name.
-  const offered: (Method | null)[] = accounts
-    ? [
-        accounts.bankIban
-          ? {
-              key: 'bank',
-              label: accounts.bankName ? `Bank — ${accounts.bankName}` : 'Bank transfer',
-              value: accounts.bankIban,
-              title: STUDIO_BANK_TITLE,
-              mark: <BankMark />,
-            }
-          : null,
-        accounts.easypaisaNumber
-          ? { key: 'ep', label: 'EasyPaisa', value: accounts.easypaisaNumber, title: accounts.accountTitle ?? '', mark: <WalletMark name="easypaisa" bg="#1f9d55" /> }
-          : null,
-        accounts.jazzcashNumber
-          ? { key: 'jc', label: 'JazzCash', value: accounts.jazzcashNumber, title: accounts.accountTitle ?? '', mark: <WalletMark name="JazzCash" bg="#d0021b" /> }
-          : null,
-      ]
-    : [];
-  const methods = offered.filter((m): m is Method => m !== null);
-  const picked = methods.find((m) => m.key === method) ?? methods[0];
-  const ready = Boolean(file) && txnId.trim().length >= 6 && agreed && methods.length > 0;
+  const iban = accounts?.bankIban ?? null;
+  const ready = Boolean(file) && txnId.trim().length >= 6 && agreed && Boolean(iban);
 
-  function copy(m: Method) {
-    void navigator.clipboard?.writeText(m.value).then(() => {
-      setCopied(m.key);
-      setTimeout(() => setCopied(null), 1500);
+  function copy() {
+    if (!iban) return;
+    void navigator.clipboard?.writeText(iban).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
     });
   }
 
@@ -607,11 +575,7 @@ function PayCard({
             <BankMark />
           </span>
           <b>Bank transfer</b>
-          <small>Bank account, EasyPaisa or JazzCash — upload the receipt</small>
-          <span className={s.wayMarks} aria-hidden>
-            <WalletMark name="easypaisa" bg="#1f9d55" />
-            <WalletMark name="JazzCash" bg="#d0021b" />
-          </span>
+          <small>Send it from your bank app, then upload the receipt</small>
         </button>
         <button type="button" role="radio" aria-checked={how === 'card'} className={`${s.payWay} ${how === 'card' ? s.payWayOn : ''}`} onClick={() => setHow('card')}>
           <span className={s.wayIcon} aria-hidden>
@@ -636,8 +600,8 @@ function PayCard({
           </span>
           <b>Card payments are not open yet</b>
           <p>
-            We are finishing the card gateway with our bank. Until it is live, send the money by bank transfer or mobile
-            wallet — it is approved the same day and your plan starts from that moment.
+            We are finishing the card gateway with our bank. Until it is live, send the money by bank transfer — it is
+            approved the same day and your plan starts from that moment.
           </p>
           <button type="button" className={s.primary} onClick={() => setHow('transfer')}>
             Pay by bank transfer
@@ -648,30 +612,22 @@ function PayCard({
           <div className={s.field}>
             Send {owed} to
             {accounts === null ? (
-              <p className={s.sub}>Loading the receiving accounts…</p>
-            ) : !methods.length ? (
+              <p className={s.sub}>Loading the receiving account…</p>
+            ) : !iban ? (
               <p className={s.error}>Payment details are being set up. Email business@velocityrides.app and we will send them — or try Vexa free below.</p>
             ) : (
-              <div className={s.payBox}>
-                <div className={s.payMethods} role="radiogroup" aria-label="Pay with">
-                  {methods.map((m) => (
-                    <button key={m.key} type="button" role="radio" aria-checked={picked?.key === m.key} className={s.payMethod} onClick={() => setMethod(m.key)}>
-                      {m.mark}
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-                {picked ? (
-                  <div className={s.acct}>
-                    <span>
-                      <code>{picked.value}</code>
-                      {picked.title ? <small>{picked.title}</small> : null}
-                    </span>
-                    <button type="button" className={s.copyBtn} onClick={() => copy(picked)}>
-                      {copied === picked.key ? 'Copied ✓' : 'Copy'}
-                    </button>
-                  </div>
-                ) : null}
+              <div className={s.acct}>
+                <span>
+                  <small className={s.acctBank}>
+                    <BankMark />
+                    {accounts.bankName ?? 'Bank transfer'}
+                  </small>
+                  <code>{iban}</code>
+                  <small>{STUDIO_BANK_TITLE}</small>
+                </span>
+                <button type="button" className={s.copyBtn} onClick={copy}>
+                  {copied ? 'Copied ✓' : 'Copy'}
+                </button>
               </div>
             )}
           </div>
@@ -965,7 +921,7 @@ function PlatformsCard({
         <p className={s.fine}>
           No card needed. After {STUDIO_TRIAL_HOURS} hours, pick a plan —{' '}
           {billing === 'year' ? `${studioUsd(studioPriceUsd(plan, 'year', raised))} a year` : `$${studioPriceUsd(plan, 'month', raised)} a month`} for{' '}
-          {STUDIO_PLANS[plan].name} — or add credits at $1 a day. Pay by bank transfer, EasyPaisa or JazzCash.
+          {STUDIO_PLANS[plan].name} — or add credits at $1 a day. Pay by bank transfer.
         </p>
       )}
     </div>
