@@ -240,6 +240,11 @@ service firebase.storage {
       allow read: if ownsWorkspace(wid) || isAdmin();
       allow create: if ownsWorkspace(wid) && underSize(10) && isImage();
     }
+    // The sign-up's pay-first path: the receipt sent before a workspace exists, under the person's own uid.
+    match /studioSignup/{uid}/payments/{fileName} {
+      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == uid);
+      allow create: if isSignedIn() && request.auth.uid == uid && underSize(10) && isImage();
+    }
 
     // Everything else is denied.
     match /{allPaths=**} {

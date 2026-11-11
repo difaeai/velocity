@@ -858,9 +858,10 @@ service cloud.firestore {
 
     // ----- studioPayments/{id} ----------------------------------------------
     // A customer's "I paid" — a transaction ID or a screenshot — waiting for an
-    // admin. The customer sees their own; the money decision is a callable.
+    // admin. The customer sees their own, also the one sent at sign-up before
+    // the workspace existed (wid null); the money decision is a callable.
     match /studioPayments/{paymentId} {
-      allow read: if isAdmin() || (isSignedIn() && resource.data.wid == request.auth.token.ws);
+      allow read: if isAdmin() || (isSignedIn() && (resource.data.uid == request.auth.uid || resource.data.wid == request.auth.token.ws));
       allow write: if false;
     }
 

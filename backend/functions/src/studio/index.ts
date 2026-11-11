@@ -14,6 +14,10 @@
  *    transaction ID can be claimed once, ever — the same bookkeeping defence the
  *    driver top-ups use — and the receipt is read on the spot by our own OCR
  *    (`paymentCheck.ts`) so the admin sees what it says before opening it.
+ *    Sign-up asks for the payment before the business (owner, 2026-11-10): a
+ *    plan can be paid for with no workspace yet (`wid: null`); approval parks it
+ *    on `studioUsers/{uid}.prepaid`, and the workspace made next starts on that
+ *    plan, paid, with no trial. The free day is the way past paying.
  * 3. **Approving.** An admin checks the money arrived and approves: the plan is
  *    set to what was paid for and a month (or a year) is added; days still paid
  *    on another plan carry over at their worth (`paidAfter`). Credits add days
@@ -31,7 +35,7 @@ import { auth, db, FieldValue } from '../lib/firebase';
 import { isDocId, requireAdmin, requireAuth } from '../lib/guards';
 import { seedTeam } from '../social/employees';
 import { freshLaunch, stateRef } from '../social/launch';
-import { EMPTY_BRIEF } from '../social/types';
+import { EMPTY_BRIEF, PLATFORMS } from '../social/types';
 import { inWorkspace, sdb, workspaceRef } from '../social/workspace';
 import { signInMethod, touchStudioUser } from './emailCode';
 import { checkStudioPayment } from './paymentCheck';
@@ -47,14 +51,15 @@ import {
   PKR_PER_USD,
   PLAN_IDS,
   PLANS,
-  TRIAL_MS,
   YEAR_MS,
   extendPaid,
   paidAfter,
   pricePkr,
   priceUsd,
+  startTerms,
   type Billing,
   type PlanId,
+  type Prepaid,
   type Workspace,
 } from './plans';
 
@@ -81,6 +86,7 @@ const signUpSchema = z.object({
   language: text(80).min(2),
   differences: text(1200).optional().default(''),
   plan: z.enum(PLAN_IDS as [PlanId, ...PlanId[]]),
+  platforms: z.array(z.enum(PLATFORMS)).max(PLATFORMS.length).optional().default([]),
 });
 
 /** The brief's first box, written from the sign-up answers so the team knows the business on day one. */
@@ -114,15 +120,16 @@ export const studioCreateWorkspace = onCall(async (req) => {
   if (!owned.empty) throw new HttpsError('already-exists', 'This account already has a Vexa workspace.');
 
   const now = Date.now();
+  // Paid before describing the business: that plan, paid, no trial — whatever plan the page sent.
+  const userRef = db.doc(`studioUsers/${ctx.uid}`);
+  const prepaid = ((await userRef.get()).get('prepaid') as Prepaid | undefined) ?? null;
   const ref = db.collection('workspaces').doc();
   const workspace: Workspace = {
     name: s.businessName,
     ownerUid: ctx.uid,
     ownerEmail: (ctx.token.email as string | undefined) ?? null,
-    plan: s.plan,
-    trialEndsAtMs: now + TRIAL_MS,
-    paidUntilMs: 0,
-    accessUntilMs: now + TRIAL_MS,
+    plan: prepaid?.plan ?? s.plan,
+    ...startTerms(prepaid, now),
     createdAtMs: now,
     brand: {
       name: s.businessName,
@@ -133,8 +140,14 @@ export const studioCreateWorkspace = onCall(async (req) => {
       differences: s.differences,
       website: s.website,
     },
+    platforms: s.platforms,
   };
   await ref.set(workspace);
+  if (prepaid) {
+    await userRef.update({ prepaid: FieldValue.delete() });
+    // Now the payment has a workspace: the customer's Billing page and the admin's list show it under the business.
+    await db.doc(`studioPayments/${prepaid.paymentId}`).update({ wid: ref.id, business: s.businessName });
+  }
 
   await inWorkspace(ref.id, async () => {
     await sdb.doc('system/socialAutomation').set({
@@ -167,8 +180,11 @@ export const txnKey = (txnId: string): string => txnId.toUpperCase().replace(/[^
 // 1GiB and two minutes: the receipt is read by Tesseract on this function's CPU.
 export const studioSubmitPayment = onCall({ timeoutSeconds: 120, memory: '1GiB' }, async (req) => {
   const ctx = requireAuth(req);
-  const wid = ctx.token.ws;
-  if (typeof wid !== 'string') throw new HttpsError('failed-precondition', 'Sign up for Vexa first.');
+  // No workspace yet: the sign-up's pay-first path. A plan only, from a proved address.
+  const wid = typeof ctx.token.ws === 'string' ? ctx.token.ws : null;
+  if (!wid && ctx.token.email_verified !== true) {
+    throw new HttpsError('failed-precondition', 'Verify your email first — type the code we sent you.');
+  }
   const parsed = z
     .object({
       plan: z.enum(PLAN_IDS as [PlanId, ...PlanId[]]).optional(),
@@ -188,26 +204,35 @@ export const studioSubmitPayment = onCall({ timeoutSeconds: 120, memory: '1GiB' 
     .safeParse(req.data ?? {});
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Choose a plan.');
   const { billing, agents, credits, txnId, screenshotPath } = parsed.data;
+  if (!wid && (agents || credits)) throw new HttpsError('failed-precondition', 'Sign up for Vexa first.');
   const key = txnKey(txnId);
   // Both, always: the ID is what can be claimed once, the screenshot what the check reads.
   if (!screenshotPath || key.length < 6) {
     throw new HttpsError('invalid-argument', 'Upload the payment screenshot and type the transaction ID (at least 6 letters or digits).');
   }
-  if (!screenshotPath.startsWith(`workspaces/${wid}/payments/`)) {
-    throw new HttpsError('permission-denied', 'Upload the screenshot from the Billing page.');
+  if (!screenshotPath.startsWith(wid ? `workspaces/${wid}/payments/` : `studioSignup/${ctx.uid}/payments/`)) {
+    throw new HttpsError('permission-denied', `Upload the screenshot from the ${wid ? 'Billing' : 'sign-up'} page.`);
   }
 
-  const ws = (await workspaceRef(wid).get()).data() as Workspace | undefined;
-  if (!ws || ws.ownerUid !== ctx.uid) throw new HttpsError('permission-denied', 'This workspace is not yours.');
+  const ws = wid ? ((await workspaceRef(wid).get()).data() as Workspace | undefined) : undefined;
+  if (wid && (!ws || ws.ownerUid !== ctx.uid)) throw new HttpsError('permission-denied', 'This workspace is not yours.');
+  if (!wid) {
+    // One transfer at a time before the workspace exists: a second would buy nothing until the first is decided and used.
+    const earlier = await db.collection('studioPayments').where('uid', '==', ctx.uid).where('wid', '==', null).get();
+    if (earlier.docs.some((d) => d.get('status') !== 'rejected')) {
+      throw new HttpsError('already-exists', 'We already have a payment from you. Once it is approved, tell us about your business to start.');
+    }
+  }
   // The agents work from the Sales page, so a package on any other plan would be money for nothing.
-  if (agents && !PLANS[ws.plan].can.includes('sales')) {
+  if (agents && ws && !PLANS[ws.plan].can.includes('sales')) {
     throw new HttpsError(
       'failed-precondition',
       'AI calling agents come with the Social Media Manager + Meta & Google Ad Expert plan. Upgrade first, then add the package.',
     );
   }
   // An agent package keeps the plan the workspace already has; its price comes from the rate card, never the client.
-  const plan = parsed.data.plan ?? ws.plan;
+  const plan = parsed.data.plan ?? ws?.plan;
+  if (!plan) throw new HttpsError('invalid-argument', 'Choose a plan.');
   const agentQuote = agents ? quote(agents, await rateCard()) : null;
   const raised = !agents && !credits && (await customerPriceRaised(ctx.uid, Date.now()));
 
@@ -221,8 +246,8 @@ export const studioSubmitPayment = onCall({ timeoutSeconds: 120, memory: '1GiB' 
     tx.set(paymentRef, {
       wid,
       uid: ctx.uid,
-      business: ws.name,
-      email: ws.ownerEmail,
+      business: ws?.name ?? null,
+      email: ws?.ownerEmail ?? (ctx.token.email as string | undefined) ?? null,
       plan,
       billing: agents || credits ? 'month' : billing,
       amountUsd: agentQuote ? agentQuote.priceUsd : credits ? credits * CREDIT_DAY_USD : priceUsd(plan, billing, raised),
@@ -259,7 +284,8 @@ export const adminDecideStudioPayment = onCall(async (req) => {
     const payRef = db.doc(`studioPayments/${paymentId}`);
     const pay = (await tx.get(payRef)).data() as
       | {
-          wid: string;
+          wid: string | null;
+          uid: string;
           plan: PlanId;
           billing?: Billing;
           status: string;
@@ -281,6 +307,13 @@ export const adminDecideStudioPayment = onCall(async (req) => {
       if (pay.txnKey) tx.delete(db.doc(`studioTxnRefs/${pay.txnKey}`));
       if (pay.imageSha) tx.delete(db.doc(`studioReceiptHashes/${pay.imageSha}`));
       return { ok: true, status: 'rejected' };
+    }
+    // Paid before the business was described: parked on the person; the workspace made next starts on it.
+    if (!pay.wid) {
+      tx.update(payRef, decided);
+      const prepaid: Prepaid = { plan: pay.plan, billing: pay.billing ?? 'month', paymentId, atMs: now };
+      tx.set(db.doc(`studioUsers/${pay.uid}`), { prepaid }, { merge: true });
+      return { ok: true, status: 'approved' };
     }
 
     const wsRef = workspaceRef(pay.wid);

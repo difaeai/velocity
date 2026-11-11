@@ -75,7 +75,7 @@ export default function StudioPaymentsPage() {
               <div key={p.id} style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                 <span style={{ minWidth: 110, color: colors.muted }}>{day(p.createdAtMs)}</span>
                 <span style={{ flex: 1 }}>
-                  {p.business} · {studioPaymentLabel(p, STUDIO_PLANS[p.plan].name)}
+                  {p.business ?? 'New sign-up'} · {studioPaymentLabel(p, STUDIO_PLANS[p.plan].name)}
                   {p.billing === 'year' ? ' · a year' : ''} · {studioUsd(p.amountUsd)}
                   {p.txnId ? ` · ${p.txnId}` : ''}
                 </span>
@@ -135,7 +135,7 @@ function PendingRow({ payment: p }: { payment: StudioPaymentDoc }) {
       ) : null}
       <div style={{ display: 'grid', gap: 8, fontSize: 13.5, minWidth: 0 }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <strong>{p.business}</strong>
+          <strong>{p.business ?? 'New sign-up — paid before describing the business'}</strong>
           <span style={{ color: colors.muted }}>{p.email ?? 'no email'}</span>
           <VerdictBadge analysis={a} />
         </div>

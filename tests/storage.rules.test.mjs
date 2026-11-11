@@ -46,6 +46,16 @@ await testEnv.withSecurityRulesDisabled(async (ctx) => {
   await put(s, 'travelMateChat/user1/a1b2c3.jpg', 'image/jpeg');
 });
 
+// The receipt a sign-up sends before it has a workspace: an image from its own uid, read back by it and admins.
+test('sign-up payment receipts: an image under your own uid, read by you and admins', async () => {
+  await assertSucceeds(put(owner, 'studioSignup/user1/payments/1-receipt.jpg', 'image/jpeg'));
+  await assertFails(put(owner, 'studioSignup/user1/payments/2-receipt.pdf', 'application/pdf'));
+  await assertFails(put(stranger, 'studioSignup/user1/payments/3-receipt.jpg', 'image/jpeg'));
+  await assertSucceeds(read(owner, 'studioSignup/user1/payments/1-receipt.jpg'));
+  await assertSucceeds(read(admin, 'studioSignup/user1/payments/1-receipt.jpg'));
+  await assertFails(read(stranger, 'studioSignup/user1/payments/1-receipt.jpg'));
+});
+
 // A private chat photo opens by its random name, but listing someone's folder
 // would hand out every attachment they ever sent.
 test('chat attachments: open by name, never listed', async () => {

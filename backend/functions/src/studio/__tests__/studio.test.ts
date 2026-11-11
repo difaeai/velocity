@@ -38,6 +38,7 @@ const SIGN_UP = {
   market: 'Lahore, Pakistan',
   language: 'Urdu and English',
   plan: 'content',
+  platforms: ['instagram', 'facebook'],
 };
 
 /** A request carrying custom claims, the way a refreshed ID token does. */
@@ -86,6 +87,7 @@ describe('signing up', () => {
     expect(ws.ownerUid).toBe(OWNER);
     expect(ws.trialEndsAtMs - ws.createdAtMs).toBe(24 * 3600_000);
     expect(ws.brand.name).toBe('Bake House');
+    expect(ws.platforms).toEqual(['instagram', 'facebook']);
 
     const settings = (await db().doc(`workspaces/${wid}/system/socialAutomation`).get()).data()!;
     expect(settings.brief.about).toContain('Bake House');
@@ -211,6 +213,55 @@ describe('whose desk a call reaches', () => {
 describe('paying', () => {
   it('normalises a transaction ID so spacing and case cannot make it new', () => {
     expect(txnKey(' txn 12-ab ')).toBe('TXN12AB');
+  });
+
+  /** The sign-up page's payment: no workspace yet, the receipt under the person's own uid. */
+  const prepay = (plan: string, txnId: string) => ({ plan, txnId, screenshotPath: `studioSignup/${OWNER}/payments/${txnId}.jpg` });
+
+  it('a plan paid before the business is described starts the workspace on it, paid, with no trial', async () => {
+    const res = (await studioSubmitPayment.run(asUser(prepay('all', 'EP-111222'), OWNER, VERIFIED))) as { paymentId: string };
+    expect((await db().doc(`studioPayments/${res.paymentId}`).get()).data()).toMatchObject({ wid: null, uid: OWNER, business: null, plan: 'all' });
+    expect(sent.checked).toEqual([res.paymentId]);
+    // One transfer at a time until it is decided.
+    await expect(studioSubmitPayment.run(asUser(prepay('all', 'EP-333444'), OWNER, VERIFIED))).rejects.toThrow(/already have a payment/);
+
+    await adminDecideStudioPayment.run(asUser({ paymentId: res.paymentId, approve: true }, ADMIN, { role: 'admin' }));
+    expect((await db().doc(`studioUsers/${OWNER}`).get()).get('prepaid')).toMatchObject({ plan: 'all', billing: 'month', paymentId: res.paymentId });
+
+    const before = Date.now();
+    // The page's plan does not matter: they paid for the whole team.
+    const wid = await signUp('content');
+    const ws = (await db().doc(`workspaces/${wid}`).get()).data()!;
+    expect(ws.plan).toBe('all');
+    expect(ws.paidUntilMs).toBeGreaterThanOrEqual(before + PERIOD_MS);
+    expect(ws.trialEndsAtMs).toBeLessThanOrEqual(ws.createdAtMs);
+    expect(ws.accessUntilMs).toBe(ws.paidUntilMs);
+    expect((await db().doc(`studioUsers/${OWNER}`).get()).get('prepaid')).toBeUndefined();
+    expect((await db().doc(`studioPayments/${res.paymentId}`).get()).data()).toMatchObject({ wid, business: 'Bake House' });
+  });
+
+  it('a rejected pre-payment frees the way for another, and a sign-up without one gets its free day', async () => {
+    const res = (await studioSubmitPayment.run(asUser(prepay('content', 'EP-777888'), OWNER, VERIFIED))) as { paymentId: string };
+    await adminDecideStudioPayment.run(asUser({ paymentId: res.paymentId, approve: false, note: 'Nothing arrived' }, ADMIN, { role: 'admin' }));
+    expect((await db().doc(`studioUsers/${OWNER}`).get()).get('prepaid')).toBeUndefined();
+    await expect(studioSubmitPayment.run(asUser(prepay('content', 'EP-777889'), OWNER, VERIFIED))).resolves.toMatchObject({ ok: true });
+
+    const wid = await signUp('content');
+    const ws = (await db().doc(`workspaces/${wid}`).get()).data()!;
+    expect(ws.paidUntilMs).toBe(0);
+    expect(ws.trialEndsAtMs - ws.createdAtMs).toBe(TRIAL_MS);
+  });
+
+  it('before a workspace exists only a plan can be paid for, and only from a proved address', async () => {
+    await expect(
+      studioSubmitPayment.run(asUser({ credits: 5, txnId: 'EP-555666', screenshotPath: `studioSignup/${OWNER}/payments/c.jpg` }, OWNER, VERIFIED)),
+    ).rejects.toThrow(/Sign up for Vexa first/);
+    await expect(
+      studioSubmitPayment.run(asUser(prepay('all', 'EP-555667'), OWNER, { email: 'owner@bakehouse.test', email_verified: false })),
+    ).rejects.toThrow(/Verify your email/);
+    await expect(
+      studioSubmitPayment.run(asUser({ plan: 'all', txnId: 'EP-555668', screenshotPath: 'studioSignup/somebody-else/payments/c.jpg' }, OWNER, VERIFIED)),
+    ).rejects.toThrow(/sign-up page/);
   });
 
   it('approving sets the paid plan and adds a month; the same ID cannot be sent twice', async () => {
