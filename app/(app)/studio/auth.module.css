@@ -900,15 +900,6 @@ textarea.input {
   letter-spacing: 0.02em;
   text-transform: uppercase;
 }
-.walletMark {
-  display: inline-block;
-  padding: 3px 8px;
-  border-radius: 6px;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.01em;
-}
 
 /* The card gateway is not open yet, and says so. */
 .soonBox {
@@ -947,38 +938,6 @@ textarea.input {
 }
 
 /* Where to send it. */
-.payBox {
-  display: grid;
-  gap: 12px;
-  padding: 14px;
-  border-radius: 14px;
-  background: #fff;
-  border: 1px solid var(--line);
-}
-.payMethods {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.payMethod {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  border: 1.5px solid var(--line-hi);
-  background: #fff;
-  border-radius: 999px;
-  padding: 6px 13px 6px 9px;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text);
-  cursor: pointer;
-}
-.payMethod[aria-checked='true'] {
-  border-color: var(--green);
-  background: #e7f0ea;
-  color: var(--green);
-}
 .acct {
   display: flex;
   align-items: center;
@@ -987,6 +946,19 @@ textarea.input {
   padding: 14px;
   border-radius: 12px;
   background: #eef3f0;
+}
+.acctBank {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  color: var(--green);
+  font-size: 12.5px;
+  font-weight: 800;
+}
+.acctBank svg {
+  width: 18px;
+  height: 18px;
 }
 .acct code {
   font-family: var(--font-mono), ui-monospace, monospace;

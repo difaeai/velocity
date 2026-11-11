@@ -49,7 +49,7 @@ export default function UpgradePage() {
       <header className={a.hero}>
         <h1 className={a.h1}>Plans that grow with your business</h1>
         <p className={a.lead}>
-          One Vexa, three ways to hire her. Pay by bank transfer, EasyPaisa or JazzCash — your plan switches on as soon
+          One Vexa, three ways to hire her. Pay by bank transfer — your plan switches on as soon
           as the payment is approved.
         </p>
         <div className={a.toggle} role="radiogroup" aria-label="Pay for">

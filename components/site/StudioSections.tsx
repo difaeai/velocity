@@ -37,7 +37,7 @@ export const STUDIO_FAQ = [
   },
   {
     q: 'How do I pay?',
-    a: `By bank transfer, EasyPaisa or JazzCash, for a month or for a year at ${STUDIO_YEAR_DISCOUNT_PCT}% less. Send the payment, then upload the screenshot or type the transaction ID — your plan switches on as soon as it is checked.`,
+    a: `By bank transfer, for a month or for a year at ${STUDIO_YEAR_DISCOUNT_PCT}% less. Send the payment, then upload the screenshot or type the transaction ID — your plan switches on as soon as it is checked.`,
   },
   {
     q: 'Can I stop?',
@@ -59,7 +59,7 @@ export function StudioPricing({ heading = 'Pay for what you use. Nothing else.' 
         </div>
         <PriceCountdown />
         <StudioPlans />
-        <p className={s.payNote}>Pay by bank transfer, EasyPaisa or JazzCash.</p>
+        <p className={s.payNote}>Pay by bank transfer.</p>
       </div>
     </section>
   );
