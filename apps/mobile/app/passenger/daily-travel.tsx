@@ -5,14 +5,17 @@
  *
  *   1. The top row: "Ride sharing", the city in the middle, then +.
  *   2. Where to (drop-off), then where from (pickup — the phone's location
- *      until the rider types).
- *   3. Small animated boxes, two to a row (2026-10-30): the pickup alone (the
- *      phone's location as soon as it lands, 2026-11-02) shows what leaves from
- *      there; with a drop-off too, the related ones — the rider's exact route
- *      first, then further, then further still — and All shows every ride in
- *      the city. No pickup and no All, no boxes. Each has a picture on top
- *      (the driver's car, nearby cars, or its route drawn as a map), from → to,
- *      fare, "2 seats available", a pulsing "Available" and a ♀/♂ badge.
+ *      until the rider types), then GO — dead until both are in, and the only
+ *      thing that puts rides on the screen (owner, 2026-11-11). Nothing is
+ *      searched as the screen opens or while somebody types, which is most of
+ *      what made the screen feel slow.
+ *   3. Big cards, one to a row, two of them a screenful (owner, 2026-11-11;
+ *      two to a row until then): with a drop-off, the related ones — the
+ *      rider's exact route first, then further, then further still — and All
+ *      shows every ride in the city without a GO, ranked around the phone's
+ *      pickup. Each has a wide picture on top (the driver's car, nearby cars,
+ *      or its route drawn as a map), then its four named lines — Pick up:,
+ *      Drop off:, Fare:, Passengers: — a pulsing "Available" and a ♀/♂ badge.
  *      Tap a box: a dialog with only fare, seats, from and to, Join in green
  *      and Cancel see-through (Leave there for a rider in it). A car that fills
  *      stays two minutes; then the route is an empty car again.
@@ -20,11 +23,14 @@
  *      (2026-11-02, src/domain/sharingRoutes): an empty car until its first
  *      Join creates it. A search shows the rider's exact route first (its Join
  *      creates it), then every other ride, the closest to their route first.
- *      Over the boxes (2026-11-05): My Routes (the rider's own commute: pickup,
- *      drop-off and office timings; the trip there or home, by the clock or by
- *      the rider's pick), Leaving from your pickup, All (favourites
- *      on top) and Favourites — a heart, or a double tap, keeps a route there.
- *      The picture is the route on a real map, a car driving it.
+ *      Over the boxes (2026-11-05): My Routes (the rider's own daily trip:
+ *      pickup, drop-off, the time they go and the time they come back home,
+ *      Save — which also turns on the reminder before each one — and its own
+ *      GO; the trip there or home, by the clock or by the rider's pick),
+ *      Leaving from your pickup, All (favourites on top) and Favourites — a
+ *      heart, or a double tap, keeps a route there. My Routes is drawn as the
+ *      website's Vexa log-in: lime, a shine across it, stars (owner,
+ *      2026-11-11). The picture is the route on a real map, a car driving it.
  *   4. + (top right) opens the box that starts one, in this order: institution
  *      and location name, drop-off, pickup, start time — then its fare and the
  *      seats still free.
@@ -132,8 +138,19 @@ const errorText = (e: unknown) => (e instanceof FirebaseError ? e.message : 'Ple
 /** A box: a real shared ride, or a `ready` route nobody has joined yet — its first Join creates it. */
 type Box = SharedPool & { ready?: true };
 
-/** Ready routes' boxes at a time; "Show more" adds as many again. */
-const PAGE = 20;
+/**
+ * Boxes at a time; "Show more" adds as many again. Six, not twenty (owner,
+ * 2026-11-11: the boxes are now a screenful of two): each one costs a map
+ * photograph and a fare call, so a shorter page is a faster screen.
+ */
+const PAGE = 6;
+
+/**
+ * A card's picture, width ÷ height. Wide and shallow so a whole card — picture,
+ * the four named lines and its time — is about half the screen, which is what
+ * "two cards in front of me" (owner, 2026-11-11) comes to.
+ */
+const BOX_PIC_ASPECT = 2.6;
 
 /** Each ready route's fare ladder, kept a while: the box only shows what Join would cost. */
 const routeFares = new Map<string, { atMs: number; perSeat: number[] }>();
@@ -241,22 +258,31 @@ export default function DailyTravelScreen() {
   // The row over the boxes. All and Favourites both need every ride in the city.
   const [mode, setModeState] = useState<Mode>('pickup');
   const all = mode === 'all' || mode === 'favs';
+  // GO (owner, 2026-11-11): the route the rider pressed GO on. Nothing is
+  // searched while they are still typing, and nothing at all when the screen
+  // opens — the boxes answer one press, which is also why the screen is quick.
+  const [went, setWent] = useState<{ from: Place; to: Place } | null>(null);
   function setMode(m: Mode) {
-    if (m !== mode) setPools(null);
+    if (m !== mode) {
+      setPools(null);
+      // My Routes searches the rider's own saved route: the search box's GO
+      // does not carry into it, nor its GO back out.
+      if ((m === 'mine') !== (mode === 'mine')) setWent(null);
+    }
     setModeState(m);
   }
-  // My Routes: the rider's own route, searched instead of the box at the top.
+  // My Routes: the rider's own saved route, searched instead of the box at the top.
   const routes = useDailyRoutes(user?.uid);
   const myRoute = routes?.find((r) => r.id === MY_ROUTE_GO) ?? null;
   const myRouteBack = routes?.find((r) => r.id === MY_ROUTE_BACK) ?? null;
-  // To the office or back home: the rider's pick, else by the office timings' clock.
+  // Going there or coming back home: the rider's pick, else by their own two times.
   const [legPick, setLegPick] = useState<'go' | 'back' | null>(null);
   const homeward = (legPick ?? legByClock(myRoute?.time, myRouteBack?.time, new Date())) === 'back';
-  const qFrom = mode === 'mine' ? (homeward ? myRoute?.dropoff : myRoute?.pickup) ?? null : from;
-  const qTo = mode === 'mine' ? (homeward ? myRoute?.pickup : myRoute?.dropoff) ?? null : to;
-  // The owner: no pickup and no All, no boxes (2026-10-30) — but the pickup
-  // alone, the phone's location included, lists what leaves from there (2026-11-02).
-  const listing = all || !!qFrom;
+  // All and Favourites are a press of their own: they list the city straight
+  // away, ranked around the phone's pickup. Everything else waits for GO.
+  const qFrom = all ? from : went?.from ?? null;
+  const qTo = all ? to : went?.to ?? null;
+  const listing = all || !!(qFrom && qTo);
 
   const loadPools = useCallback(() => {
     const n = ++searchSeq.current;
@@ -271,7 +297,7 @@ export default function DailyTravelScreen() {
       .catch(() => n === searchSeq.current && setPools((prev) => prev ?? []));
   }, [city, qFrom, qTo, all, listing]);
 
-  /** My Routes, saved as two daily routes: there at the start time, home at the finish. */
+  /** My Routes, saved as two daily routes: there at the go time, home at the back time. */
   function saveMyRoute(pickup: Place, dropoff: Place, start: string, end: string) {
     if (!user) return;
     const batch = writeBatch(db);
@@ -287,7 +313,16 @@ export default function DailyTravelScreen() {
       );
     leg(MY_ROUTE_GO, !!myRoute, 'My route', pickup, dropoff, start);
     leg(MY_ROUTE_BACK, !!myRouteBack, 'My route home', dropoff, pickup, end);
-    batch.commit().catch((e) => Alert.alert('Could not save your route', errorText(e)));
+    batch
+      .commit()
+      .then(() =>
+        Alert.alert(
+          'Route saved',
+          `Both times are set — ${clockLabel(start)} there and ${clockLabel(end)} back. ` +
+            'We will remind you before each one, and tell you when people are going your way.',
+        ),
+      )
+      .catch((e) => Alert.alert('Could not save your route', errorText(e)));
   }
 
   // ── Favourites (owner, 2026-11-05): a heart or a double tap, no searching again ──
@@ -316,6 +351,13 @@ export default function DailyTravelScreen() {
   // On focus and on every new search — and seats fill and cars leave while the rider watches.
   useFocusEffect(loadPools);
   useForegroundInterval(loadPools, 20_000);
+  // The wait the owner sees is a cold start, not the work (see `warmShared`):
+  // wake the search and the fare as the screen opens, and keep them awake while
+  // it is open. The join is woken when a ride's dialog opens, below.
+  useForegroundInterval(() => {
+    api.warmShared('getSharedPools').catch(() => {});
+    api.warmShared('getSharedRideFare').catch(() => {});
+  }, 5 * 60_000);
   // One beat for every box's car photos, so they turn over together.
   const [carBeat, setCarBeat] = useState(0);
   useForegroundInterval(() => setCarBeat((b) => b + 1), 2800);
@@ -350,7 +392,11 @@ export default function DailyTravelScreen() {
     // first, then from further away. All: the rider's favourites on top.
     if (all || !qTo) return pickupOrder(qFrom, boxes, all ? isFav : undefined);
     if (!qFrom) return pools;
-    const onIt = pools.filter((p) => !p.nearby);
+    // The exact ones first (owner, 2026-11-11): of the rides on the route, the
+    // ones leaving from and arriving at the rider's own two places lead.
+    const onIt = pools
+      .filter((p) => !p.nearby)
+      .sort((a, b) => routeGap(qFrom, qTo, a) - routeGap(qFrom, qTo, b));
     const km = distanceMeters(qFrom.lat, qFrom.lng, qTo.lat, qTo.lng) / 1000;
     // Their own route, as createSharedPool would take it (0.5–80 km).
     const exact = { pickup: qFrom, dropoff: qTo };
@@ -459,8 +505,11 @@ export default function DailyTravelScreen() {
         setSheet(null);
         // Back to every ride in the city, the new one first among the rider's own,
         // with an empty drop-off box — never the new ride's address left in it.
+        // All, not the search: there is no GO to press after a ride is made.
         setPools(null);
         setTo(null);
+        setWent(null);
+        setModeState('all');
         setRouteKey((k) => k + 1);
         announce(res);
       }
@@ -592,19 +641,36 @@ export default function DailyTravelScreen() {
             from={from}
             onTo={(p) => {
               // A new search shows its own boxes, never the last one's under its heading.
-              if (p !== to) setPools(null);
-              // Choosing a drop-off is asking for the relevant ones, not All.
-              if (p && all) setModeState('pickup');
+              if (p !== to) {
+                setPools(null);
+                setWent(null);
+              }
               setTo(p);
             }}
             onFrom={(p) => {
-              if (p !== from) setPools(null);
+              if (p !== from) {
+                setPools(null);
+                setWent(null);
+              }
               setFromEdited(true);
               setFrom(p);
             }}
           />
         )}
-        {mode !== 'mine' && to && !from ? <Text style={styles.hint}>Type your pickup, or turn on location.</Text> : null}
+        {/* GO (owner, 2026-11-11): dead until both places are in, and the only
+            thing that puts boxes on the screen. */}
+        {mode === 'mine' ? null : (
+          <GoButton
+            ready={!!(from && to)}
+            onPress={() => {
+              if (!from || !to) return;
+              Keyboard.dismiss();
+              setPools(null);
+              if (all) setModeState('pickup');
+              setWent({ from, to });
+            }}
+          />
+        )}
 
         {/* 3. The owner's row (2026-11-05), My Routes on the left; then the boxes:
             leaving from the pickup, with a drop-off the rider's exact route first,
@@ -615,18 +681,24 @@ export default function DailyTravelScreen() {
           contentContainerStyle={styles.modeRow}
           keyboardShouldPersistTaps="handled"
         >
-          {MODES.map(([m, label]) => (
-            <Pressable
-              key={m}
-              style={({ pressed }) => [styles.allChip, mode === m && styles.allChipOn, pressed && { opacity: 0.85 }]}
-              onPress={() => setMode(m)}
-              hitSlop={6}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: mode === m }}
-            >
-              <Text style={[styles.allChipTxt, mode === m && styles.allChipTxtOn]}>{label}</Text>
-            </Pressable>
-          ))}
+          {MODES.map(([m, label]) =>
+            // My Routes is the one the owner wants seen: the Vexa log-in button,
+            // on a phone (2026-11-11).
+            m === 'mine' ? (
+              <MagicChip key={m} label={label} on={mode === m} flow={flow} onPress={() => setMode(m)} />
+            ) : (
+              <Pressable
+                key={m}
+                style={({ pressed }) => [styles.allChip, mode === m && styles.allChipOn, pressed && { opacity: 0.85 }]}
+                onPress={() => setMode(m)}
+                hitSlop={6}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: mode === m }}
+              >
+                <Text style={[styles.allChipTxt, mode === m && styles.allChipTxtOn]}>{label}</Text>
+              </Pressable>
+            ),
+          )}
         </ScrollView>
         {mode === 'mine' ? (
           // Mounted once the saved route has landed, so its selectors start from it.
@@ -639,8 +711,17 @@ export default function DailyTravelScreen() {
               back={myRouteBack}
               homeward={homeward}
               onSave={saveMyRoute}
+              onGo={(route) => {
+                Keyboard.dismiss();
+                setPools(null);
+                setWent(route);
+              }}
               onLeg={(home) => {
-                if (home !== homeward) setPools(null);
+                if (home !== homeward) {
+                  setPools(null);
+                  // The rides already up are for the other way: swap their ends over.
+                  if (went) setWent({ from: went.to, to: went.from });
+                }
                 setLegPick(home ? 'back' : 'go');
               }}
             />
@@ -649,8 +730,8 @@ export default function DailyTravelScreen() {
         {!listing ? (
           <Text style={styles.hint}>
             {mode === 'mine'
-              ? 'Choose your pickup and drop-off — the shared rides on your route show here.'
-              : `Enter your pickup location to see the shared rides leaving from there — or tap All for every ride in ${cityName}.`}
+              ? 'Save your route, then press GO — the shared rides on it show here.'
+              : `Add your pickup and drop-off, then press GO — or tap All for every ride in ${cityName}.`}
           </Text>
         ) : shown === null || listed === null ? (
           <ActivityIndicator color={colors.primary} style={{ marginTop: 16 }} />
@@ -676,7 +757,11 @@ export default function DailyTravelScreen() {
                     beat={carBeat}
                     flow={flow}
                     fav={isFav(p)}
-                    onPress={() => setOpened(p)}
+                    onPress={() => {
+                      // Woken while the rider reads the dialog, so Join meets a warm instance.
+                      api.warmShared(p.ready ? 'createSharedPool' : 'joinSharedPool').catch(() => {});
+                      setOpened(p);
+                    }}
                     onFav={() => toggleFav(p)}
                   />
                 ))}
@@ -724,8 +809,8 @@ export default function DailyTravelScreen() {
         open={sheet !== null}
         edit={sheet?.edit ?? null}
         cityName={cityName}
-        from={qFrom}
-        to={qTo}
+        from={qFrom ?? from}
+        to={qTo ?? to}
         busy={busy === 'sheet'}
         onClose={() => setSheet(null)}
         onSubmit={(form) => void submit(form)}
@@ -748,6 +833,30 @@ function FareLadder({ ladder, at }: { ladder: number[]; at: number }) {
   );
 }
 
+/**
+ * One named thing about a ride (owner, 2026-11-11: "pick up: drop off: fare:
+ * passengers:"), label on the left so the four line up down the card.
+ */
+function Fact({
+  label,
+  value,
+  danger,
+  children,
+}: {
+  label: string;
+  value: string;
+  danger?: boolean;
+  children?: React.ReactNode;
+}) {
+  return (
+    <View style={styles.fact}>
+      <Text style={styles.factLabel}>{label}</Text>
+      <Text style={[styles.factValue, danger && { color: colors.danger }]} numberOfLines={1}>{value}</Text>
+      {children}
+    </View>
+  );
+}
+
 /** "2 seats available" — the owner's words, never "2 of 4". */
 const seatsText = (p: SharedPool) =>
   p.state === 'full'
@@ -755,6 +864,14 @@ const seatsText = (p: SharedPool) =>
     : p.seatsLeft === 0
       ? 'No seats available'
       : `${p.seatsLeft} ${p.seatsLeft === 1 ? 'seat' : 'seats'} available`;
+
+/** Who is in it and what is left — the "Passengers:" line. */
+const ridersText = (p: SharedPool) =>
+  p.state === 'full' || p.seatsLeft === 0
+    ? `${p.riders} aboard · full`
+    : p.riders === 0
+      ? `None yet · ${seatsText(p)}`
+      : `${p.riders} aboard · ${seatsText(p)}`;
 
 /** Seats to be had: the owner's blinking green light and "Available" (2026-10-30). */
 const isAvailable = (p: SharedPool) => p.state !== 'full' && p.seatsLeft > 0;
@@ -999,12 +1116,12 @@ function MapSnapper({ route, onDone }: { route: RouteEnds; onDone: (shot: MapSho
 }
 
 /** A place's name over its end of a mapped route, kept inside the picture. */
-function PlaceTag({ at, k, width, name }: { at: XY; k: number; width: number; name: string }) {
+function PlaceTag({ at, kx, ky, width, name }: { at: XY; kx: number; ky: number; width: number; name: string }) {
   const w = 76;
   return (
     <View
       pointerEvents="none"
-      style={[styles.placeTag, { width: w, left: Math.min(Math.max(at.x * k - w / 2, 2), width - w - 2), top: Math.max(at.y * k - 21, 2) }]}
+      style={[styles.placeTag, { width: w, left: Math.min(Math.max(at.x * kx - w / 2, 2), width - w - 2), top: Math.max(at.y * ky - 21, 2) }]}
     >
       <Text style={styles.placeTagTxt} numberOfLines={1}>{name}</Text>
     </View>
@@ -1022,10 +1139,13 @@ function RouteArt({
   seed,
   phase,
   route,
+  aspect = 1.6,
 }: {
   seed: string;
   phase?: Animated.Value | Animated.AnimatedInterpolation<number>;
   route?: RouteEnds;
+  /** The frame's width ÷ height. The drawing is a 160×100 box stretched to fill it. */
+  aspect?: number;
 }) {
   const n = seedOf(seed);
   const [dark, light] = ART_TONES[n % ART_TONES.length]!;
@@ -1034,7 +1154,10 @@ function RouteArt({
     route && MAPS_AVAILABLE && width > 0 ? `${fareKey(route)}@${Math.round(width)}` : null,
   );
   const curve = useMemo(() => (shot ? mapCurve(n, shot.a, shot.b) : artCurve(n)), [n, shot]);
-  const k = width / 160;
+  // Viewbox units to pixels. Separately for each axis: a wide frame is not
+  // 160×100 scaled, it is 160×100 stretched, and the car must follow the road.
+  const kx = width / 160;
+  const ky = width / (aspect * 100);
   const pts = RUNNER_STEPS.map(curve.at);
   // Which way the road points at each step, so the car turns with it — never
   // the long way round where a westward route crosses ±180°.
@@ -1054,7 +1177,7 @@ function RouteArt({
       {shot ? (
         <Image source={{ uri: shot.uri }} resizeMode="cover" accessible={false} style={StyleSheet.absoluteFill} />
       ) : null}
-      <Svg width="100%" height="100%" viewBox="0 0 160 100">
+      <Svg width="100%" height="100%" viewBox="0 0 160 100" preserveAspectRatio="none">
         <Defs>
           <LinearGradient id={`${id}bg`} x1="0" y1="1" x2="1" y2="0">
             <Stop offset="0" stopColor={dark} />
@@ -1088,8 +1211,8 @@ function RouteArt({
       </Svg>
       {shot && route ? (
         <>
-          <PlaceTag at={shot.a} k={k} width={width} name={placeName(route.pickup)} />
-          <PlaceTag at={shot.b} k={k} width={width} name={placeName(route.dropoff)} />
+          <PlaceTag at={shot.a} kx={kx} ky={ky} width={width} name={placeName(route.pickup)} />
+          <PlaceTag at={shot.b} kx={kx} ky={ky} width={width} name={placeName(route.dropoff)} />
         </>
       ) : null}
       {phase && width > 0 ? (
@@ -1101,8 +1224,8 @@ function RouteArt({
             {
               opacity: phase.interpolate({ inputRange: [0, 0.06, 0.9, 1], outputRange: [0, 1, 1, 0] }),
               transform: [
-                { translateX: phase.interpolate({ inputRange: RUNNER_STEPS, outputRange: pts.map((p) => p.x * k - CAR_W / 2) }) },
-                { translateY: phase.interpolate({ inputRange: RUNNER_STEPS, outputRange: pts.map((p) => p.y * k - CAR_H / 2) }) },
+                { translateX: phase.interpolate({ inputRange: RUNNER_STEPS, outputRange: pts.map((p) => p.x * kx - CAR_W / 2) }) },
+                { translateY: phase.interpolate({ inputRange: RUNNER_STEPS, outputRange: pts.map((p) => p.y * ky - CAR_H / 2) }) },
                 { rotate: phase.interpolate({ inputRange: RUNNER_STEPS, outputRange: turns }) },
               ],
             },
@@ -1127,6 +1250,7 @@ function RideCars({
   seed,
   route,
   phase,
+  wide,
   children,
 }: {
   photos: string[];
@@ -1136,6 +1260,8 @@ function RideCars({
   seed: string;
   route?: RouteEnds;
   phase?: Animated.Value | Animated.AnimatedInterpolation<number>;
+  /** On a full-width card: wide and shallow instead of the dialog's 1.6. */
+  wide?: boolean;
   /** Drawn over the photo, inside its rounded frame. */
   children?: React.ReactNode;
 }) {
@@ -1165,7 +1291,7 @@ function RideCars({
       }}
     >
       {/* A frame the photo fills: a bundled image would otherwise take its own pixel height. */}
-      <View style={styles.carFrame}>
+      <View style={[styles.carFrame, wide && styles.carFrameWide]}>
         {count > 0 ? (
           <Animated.Image
             source={{ uri: photos[shown % count] }}
@@ -1174,7 +1300,7 @@ function RideCars({
             style={[StyleSheet.absoluteFill, { width: '100%', height: '100%', opacity: fade }]}
           />
         ) : (
-          <RouteArt seed={seed} phase={phase} route={route} />
+          <RouteArt seed={seed} phase={phase} route={route} aspect={wide ? BOX_PIC_ASPECT : 1.6} />
         )}
         {children}
       </View>
@@ -1283,7 +1409,7 @@ function PoolBox({
         <StatusTag open={open} />
         {p.riderGender ? <GenderBadge gender={p.riderGender} /> : null}
         <View style={styles.boxCar}>
-          <RideCars photos={p.carPhotos ?? []} beat={beat} arrive={arrive} seed={p.id} route={p} phase={open ? phase : undefined}>
+          <RideCars wide photos={p.carPhotos ?? []} beat={beat} arrive={arrive} seed={p.id} route={p} phase={open ? phase : undefined}>
             {open ? (
               <Animated.View
                 pointerEvents="none"
@@ -1310,24 +1436,14 @@ function PoolBox({
             </Pressable>
           </RideCars>
         </View>
-        <View>
-          <View style={styles.boxLine}>
-            <PickupDotIcon size={12} color={colors.text} accent={colors.primary} />
-            <Text style={styles.boxPlace} numberOfLines={1}>{from}</Text>
-          </View>
-          <View style={styles.routeDots}>
-            <View style={styles.routeDot} />
-            <View style={styles.routeDot} />
-          </View>
-          <View style={styles.boxLine}>
-            <DestinationPinIcon size={12} color={colors.text} accent={colors.primary} />
-            <Text style={styles.boxPlace} numberOfLines={1}>{to}</Text>
-          </View>
-        </View>
-        <View style={styles.boxFoot}>
+        {/* Named, in the owner's order (2026-11-11), so nobody has to guess what
+            they are joining: pick up, drop off, fare, passengers. */}
+        <Fact label="Pick up:" value={from} />
+        <Fact label="Drop off:" value={to} />
+        <Fact label="Fare:" value={`${fareText(p)} per seat`} />
+        <Fact label="Passengers:" value={ridersText(p)} danger={!open}>
           <SeatIcons taken={p.state === 'full' ? p.seatsTotal : p.riders} total={p.seatsTotal} />
-          <Text style={[styles.boxSeats, !open && { color: colors.danger }]} numberOfLines={1}>{seatsText(p)}</Text>
-        </View>
+        </Fact>
         {/* Two rides on one route differ by their time. */}
         <View style={styles.boxTimeRow}>
           <ClockIcon />
@@ -1335,6 +1451,101 @@ function PoolBox({
         </View>
       </Pressable>
     </Animated.View>
+  );
+}
+
+/** Where each star sits on the chip, and where in the clock it twinkles. */
+const MAGIC_STARS: { at: number; top?: number; bottom?: number; left?: number; right?: number }[] = [
+  { at: 0, top: -4, left: 10 },
+  { at: 0.34, top: -2, right: 16 },
+  { at: 0.58, bottom: -3, left: 34 },
+  { at: 0.8, bottom: -2, right: 8 },
+];
+
+/**
+ * My Routes, the way the owner asked for it (2026-11-11): the Vexa log-in
+ * button from the website, on a phone — "shiny and BOLD". Lime, a shine
+ * sweeping across it, four stars twinkling at its corners and a sparkle in
+ * front of the words. It rides the screen's one `flow` clock, so it costs the
+ * same as the boxes' own animation: nothing extra.
+ *
+ * The website's turning ring of light is a conic gradient, which React Native
+ * has no equivalent of; the lime glow breathing round the edge stands in.
+ */
+function MagicChip({
+  label,
+  on,
+  flow,
+  onPress,
+}: {
+  label: string;
+  on: boolean;
+  flow: Animated.Value;
+  onPress: () => void;
+}) {
+  const shine = flow.interpolate({ inputRange: [0, 0.45, 1], outputRange: [-70, 190, 190] });
+  const star = (at: number) =>
+    Animated.modulo(Animated.add(flow, at), 1).interpolate({
+      inputRange: [0, 0.2, 0.4, 1],
+      outputRange: [0, 1, 0, 0],
+    });
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.magicChip, pressed && { opacity: 0.9, transform: [{ scale: 0.97 }] }]}
+      onPress={onPress}
+      hitSlop={6}
+      accessibilityRole="tab"
+      accessibilityState={{ selected: on }}
+    >
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.magicGlow, { opacity: flow.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.2, 0.9, 0.2] }) }]}
+      />
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.magicShine, { transform: [{ translateX: shine }, { rotate: '18deg' }] }]}
+      />
+      {MAGIC_STARS.map(({ at, ...where }, i) => (
+        <Animated.View key={i} pointerEvents="none" style={[styles.magicStar, where, { opacity: star(at) }]}>
+          <SparkleIcon size={8} color="#ffffff" />
+        </Animated.View>
+      ))}
+      <SparkleIcon size={13} color="#0b1a00" />
+      <Text style={styles.magicChipTxt}>{label}</Text>
+    </Pressable>
+  );
+}
+
+/** A four-pointed sparkle, drawn — the website's Vexa log-in has the same one. */
+function SparkleIcon({ size, color }: { size: number; color: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M12 0 L14.6 9.4 L24 12 L14.6 14.6 L12 24 L9.4 14.6 L0 12 L9.4 9.4 Z" fill={color} />
+    </Svg>
+  );
+}
+
+/**
+ * GO (owner, 2026-11-11). Dead until both places are in, and the only thing
+ * that puts rides on the screen — nothing is searched while somebody types.
+ */
+function GoButton({ ready, onPress }: { ready: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.searchGo, !ready && styles.searchGoOff, pressed && ready && { opacity: 0.88 }]}
+      onPress={onPress}
+      disabled={!ready}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: !ready }}
+      accessibilityLabel={ready ? 'Go — show the shared rides on this route' : 'Go. Add your pickup and drop-off first'}
+    >
+      <Text style={[styles.searchGoTxt, !ready && styles.searchGoOffTxt]}>GO</Text>
+      {ready ? (
+        <ArrowIcon size={18} color="#0b1a00" />
+      ) : (
+        <Text style={styles.searchGoHint}>Add your pickup and drop-off</Text>
+      )}
+    </Pressable>
   );
 }
 
@@ -1602,11 +1813,14 @@ function RouteFields({
 }
 
 /**
- * My Routes (owner, 2026-11-05): the rider's own commute as real selectors —
- * pickup and drop-off searched like the box at the top, then office timings.
- * Saved the moment both ends are set (and again on every change), so the boxes
- * below follow it and the daily-route alerts know it, there and back. Once
- * saved, To office / Back home picks which trip the boxes are for.
+ * My Routes (owner, 2026-11-05): the rider's own daily trip as real selectors —
+ * pickup and drop-off searched like the box at the top, then the two times.
+ *
+ * The times are generic (owner, 2026-11-11: not everyone goes to an office):
+ * the time they go, and the time they come back home. **Save** writes both —
+ * and turns on the reminder before each one (backend dailyRoutes/reminders) —
+ * and **GO** is what puts rides on the screen, dead until both places are in.
+ * Once saved, Go / Back home picks which of the two the rides are for.
  */
 function MyRoutePanel({
   cityName,
@@ -1614,6 +1828,7 @@ function MyRoutePanel({
   back,
   homeward,
   onSave,
+  onGo,
   onLeg,
 }: {
   cityName: string;
@@ -1622,6 +1837,7 @@ function MyRoutePanel({
   /** The boxes are for the trip home. */
   homeward: boolean;
   onSave: (pickup: Place, dropoff: Place, start: string, end: string) => void;
+  onGo: (route: { from: Place; to: Place }) => void;
   onLeg: (homeward: boolean) => void;
 }) {
   const [v, setV] = useState({
@@ -1630,11 +1846,8 @@ function MyRoutePanel({
     start: go?.time ?? '09:00',
     end: back?.time ?? '17:00',
   });
-  function set(next: Partial<typeof v>) {
-    const n = { ...v, ...next };
-    setV(n);
-    if (n.from && n.to) onSave(n.from, n.to, n.start, n.end);
-  }
+  const set = (next: Partial<typeof v>) => setV((prev) => ({ ...prev, ...next }));
+  const ready = !!(v.from && v.to);
   return (
     <View style={styles.mineBox}>
       <RouteFields
@@ -1645,11 +1858,30 @@ function MyRoutePanel({
         onFrom={(p) => set({ from: p })}
         onTo={(p) => set({ to: p })}
       />
-      <Text style={styles.sheetLabel}>OFFICE TIMINGS</Text>
+      <Text style={styles.sheetLabel}>YOUR TIMES</Text>
       <View style={styles.choiceRow}>
-        <TimeSelect label="Start" value={v.start} onChange={(start) => set({ start })} />
-        <TimeSelect label="Finish" value={v.end} onChange={(end) => set({ end })} />
+        <TimeSelect label="Go to time" value={v.start} onChange={(start) => set({ start })} />
+        <TimeSelect label="Back to home time" value={v.end} onChange={(end) => set({ end })} />
       </View>
+      <Pressable
+        style={({ pressed }) => [styles.saveBtn, !ready && styles.saveBtnOff, pressed && ready && { opacity: 0.85 }]}
+        onPress={() => v.from && v.to && onSave(v.from, v.to, v.start, v.end)}
+        disabled={!ready}
+        accessibilityRole="button"
+        accessibilityState={{ disabled: !ready }}
+      >
+        <Text style={[styles.saveTxt, !ready && styles.searchGoOffTxt]}>
+          {ready ? 'Save route & remind me' : 'Add your pickup and drop-off to save'}
+        </Text>
+      </Pressable>
+      <GoButton
+        ready={ready}
+        onPress={() => {
+          if (!v.from || !v.to) return;
+          // Whichever way it is going now: home again swaps the two ends over.
+          onGo(homeward ? { from: v.to, to: v.from } : { from: v.from, to: v.to });
+        }}
+      />
       {go ? (
         <View style={styles.modeRow}>
           {[false, true].map((home) => (
@@ -1662,7 +1894,7 @@ function MyRoutePanel({
               accessibilityState={{ selected: homeward === home }}
             >
               <Text style={[styles.allChipTxt, homeward === home && styles.allChipTxtOn]}>
-                {home ? `Back home · ${clockLabel(v.end) ?? ''}` : `To office · ${clockLabel(v.start) ?? ''}`}
+                {home ? `Back home · ${clockLabel(v.end) ?? ''}` : `Go · ${clockLabel(v.start) ?? ''}`}
               </Text>
             </Pressable>
           ))}
@@ -2173,10 +2405,45 @@ const styles = themed(() => StyleSheet.create({
   allChipOn: { backgroundColor: colors.btnBg, borderColor: colors.btnBg },
   allChipTxt: { fontSize: 13, fontWeight: '900', color: colors.text },
   allChipTxtOn: { color: colors.btnText },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 12 },
-  boxWrap: { width: '48.5%' },
+
+  /** My Routes: the website's Vexa log-in, shiny and bold (owner, 2026-11-11). */
+  magicChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 7, overflow: 'hidden',
+    paddingHorizontal: 16, paddingVertical: 9, borderRadius: 16,
+    backgroundColor: colors.primary,
+  },
+  magicChipTxt: { fontSize: 13.5, fontWeight: '900', letterSpacing: 0.3, color: '#0b1a00' },
+  /** The lime breathing round the edge — the website's turning ring, as a phone can draw it. */
+  magicGlow: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 16,
+    borderWidth: 2, borderColor: '#f2ffb0',
+  },
+  /** The light sweeping across it. */
+  magicShine: { position: 'absolute', top: -20, bottom: -20, width: 26, backgroundColor: 'rgba(255,255,255,0.55)' },
+  magicStar: { position: 'absolute' },
+
+  /** GO: nothing is searched until it is pressed, and it is dead until it can be. */
+  searchGo: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    borderRadius: 14, paddingVertical: 13, backgroundColor: colors.primary,
+  },
+  searchGoOff: { backgroundColor: colors.glassLime, borderWidth: 1, borderColor: colors.glassLimeBorder },
+  searchGoTxt: { fontSize: 16, fontWeight: '900', letterSpacing: 1.2, color: '#0b1a00' },
+  searchGoOffTxt: { color: colors.muted },
+  searchGoHint: { fontSize: 12, fontWeight: '700', color: colors.muted },
+
+  /** Save, under My Routes' two times: it is what turns the reminders on. */
+  saveBtn: {
+    alignItems: 'center', borderRadius: 14, paddingVertical: 12,
+    borderWidth: 1.5, borderColor: colors.primary, backgroundColor: colors.glassLime,
+  },
+  saveBtnOff: { borderColor: colors.border },
+  saveTxt: { fontSize: 14, fontWeight: '900', color: colors.text },
+  /** One ride to a row (owner, 2026-11-11): two big cards fill the screen, the rest are a scroll away. */
+  grid: { gap: 12 },
+  boxWrap: { width: '100%' },
   box: {
-    borderRadius: 20, padding: 10, gap: 6, overflow: 'hidden',
+    borderRadius: 20, padding: 10, gap: 5, overflow: 'hidden',
     backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
   },
   boxYours: { borderColor: colors.primary },
@@ -2202,17 +2469,18 @@ const styles = themed(() => StyleSheet.create({
   genderBadgeTxt: { color: '#ffffff', fontSize: 15, fontWeight: '900', lineHeight: 18 },
   /** A real car's photo: the driver's own, or one of the cars nearby. */
   carFrame: { width: '100%', aspectRatio: 1.6, borderRadius: 12, overflow: 'hidden', backgroundColor: colors.background },
+  /** On a full-width card: wide and shallow, so two whole cards still fit the screen. */
+  carFrameWide: { aspectRatio: BOX_PIC_ASPECT },
   carDots: { flexDirection: 'row', justifyContent: 'center', gap: 4, marginTop: 5 },
   carDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.border },
   carDotOn: { width: 12, backgroundColor: colors.primary },
   carCaption: { fontSize: 11.5, fontWeight: '800', color: colors.muted, textAlign: 'center', marginTop: 6 },
   liveRing: { position: 'absolute', width: 12, height: 12, borderRadius: 6, backgroundColor: GO },
   liveCore: { width: 10, height: 10, borderRadius: 5, backgroundColor: GO },
-  boxLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  boxPlace: { flex: 1, fontSize: 12.5, fontWeight: '800', color: colors.text },
-  /** The dotted line from pickup to drop-off, a lime dot running down it. */
-  routeDots: { paddingLeft: 5, paddingVertical: 2, gap: 2 },
-  routeDot: { width: 2, height: 2, borderRadius: 1, backgroundColor: colors.muted },
+  /** "Pick up:", "Drop off:", "Fare:", "Passengers:" — the label column keeps the four lined up. */
+  fact: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  factLabel: { width: 78, fontSize: 12, fontWeight: '700', color: colors.muted },
+  factValue: { flexShrink: 1, fontSize: 13.5, fontWeight: '800', color: colors.text },
   /** The car driving a drawn route. */
   artCar: { position: 'absolute', left: 0, top: 0, width: CAR_W, height: CAR_H },
   /** A mapped route's place name, over its end. */
@@ -2226,8 +2494,6 @@ const styles = themed(() => StyleSheet.create({
     position: 'absolute', top: 6, right: 6, width: 26, height: 26, borderRadius: 13,
     alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)',
   },
-  boxFoot: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  boxSeats: { flexShrink: 1, fontSize: 12, fontWeight: '800', color: colors.text },
   boxTimeRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   boxTime: { flexShrink: 1, fontSize: 11, fontWeight: '700', color: colors.muted },
   /** A box with seats: its border breathing lime. */
