@@ -385,3 +385,96 @@
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
 }
+
+/* ── Vexa's own site (owner, 2026-11-12) ────────────────────────────────── */
+
+/* The header travels with the page now that the page is long, and sits above
+   the pinned scroll film (whose scenes stack up to z-index 5). */
+.topBar {
+  position: sticky;
+  top: 0;
+  z-index: 90;
+  /* It travels over the light sections too, so it is darker than the glass
+     elsewhere — at 30% the links disappeared against the white pricing. */
+  background: var(--glass-sheen), rgba(4, 18, 12, 0.86);
+}
+
+.hero {
+  padding-block: clamp(48px, 7vw, 90px) clamp(64px, 8vw, 110px);
+}
+
+.topCta {
+  padding: 9px 16px;
+  font-size: 14px;
+}
+
+.topSound {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--line-hi);
+  background: var(--card);
+  color: var(--text-mut);
+}
+
+.topSound:hover {
+  color: var(--text);
+}
+
+.topSound[aria-pressed='false'] {
+  color: var(--text-dim);
+}
+
+/* ── the privacy policy, on the page ───────────────────────────────────── */
+.policy {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+  counter-reset: clause;
+}
+
+.policyItem {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--card);
+  padding: 20px 22px;
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-rim);
+}
+
+.policyItem h3 {
+  font-size: 18px;
+  margin: 0 0 8px;
+  counter-increment: clause;
+}
+
+.policyItem h3::before {
+  content: counter(clause, decimal-leading-zero) " ";
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  color: var(--lime);
+  letter-spacing: 0.12em;
+  vertical-align: 2px;
+}
+
+.policyItem p {
+  margin: 0;
+  color: var(--text-mut);
+  font-size: 14.5px;
+  line-height: 1.6;
+}
+
+.policyMore {
+  margin-top: 22px;
+  text-align: center;
+  color: var(--text-mut);
+  font-size: 15px;
+}
+
+.policyMore a {
+  color: var(--text);
+  text-decoration: underline;
+}

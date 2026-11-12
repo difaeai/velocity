@@ -15,8 +15,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: SITE, lastModified, changeFrequency: 'weekly', priority: 1 },
     // The ride app's own page — the homepage before the homepage became the studio's.
     { url: `${SITE}/rides`, lastModified, changeFrequency: 'weekly', priority: 0.9 },
-    // Velocity Studio's sales page — the desk sold to other businesses.
-    { url: `${SITE}/studio`, lastModified, changeFrequency: 'weekly', priority: 0.8 },
+    // Vexa's own site — /studio serves the same page, and /vexa is its canonical.
+    { url: `${SITE}/vexa`, lastModified, changeFrequency: 'weekly', priority: 0.9 },
     { url: TERMS_URL, lastModified, changeFrequency: 'yearly', priority: 0.3 },
     { url: PRIVACY_URL, lastModified, changeFrequency: 'yearly', priority: 0.3 },
     { url: DELETE_ACCOUNT_URL, lastModified, changeFrequency: 'yearly', priority: 0.3 },

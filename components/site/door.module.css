@@ -1,0 +1,125 @@
+/* The front door: two live websites, side by side, and nothing else.
+   This module is not scoped under .site — the two halves bring their own
+   theme — so the few colours it needs are written out here. */
+
+.door {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  /* The gap is the divider: the container's own colour showing through. */
+  gap: 1px;
+  background: rgba(255, 255, 255, 0.14);
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.pane {
+  position: relative;
+  overflow: hidden;
+  background: #04120c;
+  /* The site, then the door bar under it — so the bar never covers the page's
+     own sticky things (the install bar on one side, Vexa on the other). */
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+/* The way in: a bar of its own across the foot of each half. */
+.open {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 13px 18px;
+  border-top: 1px solid rgba(204, 255, 0, 0.35);
+  background: rgba(4, 18, 12, 0.92);
+  backdrop-filter: blur(18px) saturate(180%);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  color: #eaf4ee;
+  text-align: center;
+  text-decoration: none;
+  animation: breathe 3.6s ease-in-out infinite;
+}
+
+.open:hover {
+  background: #ccff00;
+  color: #0b1400;
+  animation: none;
+}
+
+.open:focus-visible {
+  outline: 3px solid #ccff00;
+  outline-offset: -3px;
+}
+
+.openName {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-weight: 800;
+  font-size: clamp(15px, 1.3vw, 18px);
+  line-height: 1.1;
+}
+
+.openCta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #ccff00;
+}
+
+.open:hover .openCta {
+  color: #0b1400;
+}
+
+.openCta svg {
+  width: 14px;
+  height: 14px;
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    background: rgba(4, 18, 12, 0.92);
+  }
+  50% {
+    background: rgba(18, 40, 8, 0.92);
+  }
+}
+
+/* Only ever read aloud: the door's own heading, for search engines and screen
+   readers, which cannot see inside the two frames. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* A phone has no two columns: the ride app on top, Vexa under it, half the
+   screen each. */
+@media (max-width: 860px) {
+  .door {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .open {
+    animation: none;
+  }
+}

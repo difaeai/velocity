@@ -73,7 +73,7 @@ const RIDE_LINKS = [
   { href: '#app', label: 'The app' },
   { href: '#earn', label: 'Earn' },
   { href: '#safety', label: 'Safety' },
-  { href: '/', label: 'Vexa — Social Media Virtual Assistant' },
+  { href: '/vexa', label: 'Vexa — Social Media Virtual Assistant' },
 ];
 
 /**
