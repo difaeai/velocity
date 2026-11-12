@@ -245,12 +245,14 @@
   font-size: 15px;
 }
 
-.topLinks a,
-.topLinks button {
+/* The pages only: the lime login button beside them keeps its own dark ink,
+   which this rule used to grey out. */
+.topPages a,
+.topPages button {
   color: var(--text-mut);
 }
 
-.topLinks button {
+.topPages button {
   padding: 0;
   border: 0;
   background: none;
@@ -258,8 +260,8 @@
   cursor: pointer;
 }
 
-.topLinks a:hover,
-.topLinks button:hover {
+.topPages a:hover,
+.topPages button:hover {
   color: var(--text);
 }
 
@@ -269,8 +271,30 @@
   gap: 18px;
 }
 
+/* The front door shows this page in a box about 700px wide, and she is the
+   point of the hero — so the two columns hold down to a phone's width, with
+   the writing set smaller, instead of dropping her below the fold. */
+@media (min-width: 680px) and (max-width: 1080px) {
+  .heroGrid h1 {
+    font-size: clamp(30px, 4.4vw, 46px);
+  }
+
+  .heroGrid p {
+    font-size: 15.5px;
+  }
+
+  .heroActions {
+    margin-top: 22px;
+  }
+}
+
+@media (max-width: 679px) {
+  .heroGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @media (max-width: 940px) {
-  .heroGrid,
   .steps {
     grid-template-columns: minmax(0, 1fr);
   }

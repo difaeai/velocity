@@ -1,6 +1,10 @@
 import type { Metadata } from 'next';
 
+import RidesSite from './rides/page';
+import VexaSite from './studio/page';
 import { DoorPane } from '@/components/site/DoorPane';
+import { MixHome } from '@/components/site/MixHome';
+import { readSiteTemplate } from '@/lib/siteTemplate';
 import door from '@/components/site/door.module.css';
 import {
   SITE_URL as SITE,
@@ -26,7 +30,15 @@ import { STUDIO_PLAN_IDS, STUDIO_PLANS } from '@/lib/studio';
  * apps; the FAQ's lives on /vexa, where the questions are actually shown.
  *
  * The page never scrolls — the halves do.
+ *
+ * Which of the four front pages this is comes from the console (Website), read
+ * on the server in lib/siteTemplate.ts: the door, one of the two sites on its
+ * own — at this address, not at /rides or /vexa, so the chosen one really is
+ * the website — or the older "mix" page. The choice is re-read every half
+ * minute, so saving it in the console shows up without a deploy.
  */
+
+export const revalidate = 30;
 export const metadata: Metadata = {
   title: { absolute: 'Velocity — Velocity Rides and Vexa' },
   description:
@@ -83,7 +95,15 @@ const JSON_LD = {
   ],
 };
 
-export default function Door() {
+export default async function Home() {
+  const template = await readSiteTemplate();
+  if (template === 'vexa') return <VexaSite />;
+  if (template === 'rides') return <RidesSite />;
+  if (template === 'mix') return <MixHome />;
+  return <Door />;
+}
+
+function Door() {
   return (
     <div className={door.door}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }} />
