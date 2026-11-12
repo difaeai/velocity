@@ -38,84 +38,6 @@
   color: var(--text-dim);
 }
 
-/* ── the console mock: what a customer sees, drawn in CSS ───────────────── */
-.mock {
-  border: 1px solid var(--line-hi);
-  border-radius: var(--r-lg);
-  background: linear-gradient(180deg, var(--ink-2), var(--ink));
-  box-shadow: var(--shadow-lg);
-  padding: 18px;
-  display: grid;
-  gap: 14px;
-}
-
-.mockBar {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  font-family: var(--font-mono), monospace;
-  font-size: 11.5px;
-  letter-spacing: 0.08em;
-  color: var(--text-mut);
-  text-transform: uppercase;
-}
-
-.mockDot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--lime);
-  box-shadow: 0 0 0 4px rgba(204, 255, 0, 0.15);
-}
-
-.mockAsk {
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  padding: 12px 14px;
-  font-size: 14px;
-  color: var(--text);
-  background: var(--card);
-}
-
-.mockBoxes {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.mockBox {
-  border-radius: 12px;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  background: var(--card);
-}
-
-.mockThumb {
-  aspect-ratio: 4 / 5;
-  display: grid;
-  place-items: end start;
-  padding: 10px;
-  font-family: var(--font-display), sans-serif;
-  font-weight: 800;
-  font-size: 13px;
-  line-height: 1.15;
-  color: #fff;
-}
-
-.mockMeta {
-  display: flex;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 8px 10px;
-  font-size: 11px;
-  color: var(--text-mut);
-}
-
-.mockLive {
-  color: var(--lime);
-  font-weight: 700;
-}
-
 /* ── how it works ──────────────────────────────────────────────────────── */
 .steps {
   display: grid;
@@ -323,12 +245,28 @@
   font-size: 15px;
 }
 
-.topLinks a {
+.topLinks a,
+.topLinks button {
   color: var(--text-mut);
 }
 
-.topLinks a:hover {
+.topLinks button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.topLinks a:hover,
+.topLinks button:hover {
   color: var(--text);
+}
+
+.topPages {
+  display: flex;
+  align-items: center;
+  gap: 18px;
 }
 
 @media (max-width: 940px) {
@@ -336,19 +274,53 @@
   .steps {
     grid-template-columns: minmax(0, 1fr);
   }
-  .topHide {
-    display: none;
+
+  .topInner {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+
+  .topLinks {
+    gap: 12px;
+  }
+
+  .topPages {
+    gap: 14px;
+    font-size: 14px;
   }
 }
 
-@media (max-width: 480px) {
-  .mockBoxes {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+/* A phone: the brand and the way in on one line, the four pages under them. */
+/* A phone cannot hold the name, the way in and four pages on one line, so the
+   bar gives them three tight ones rather than hiding any of them. */
+@media (max-width: 620px) {
+  .topBar {
+    padding-block: 10px;
   }
-  .mockBoxes > :nth-child(3) {
-    display: none;
+
+  .topInner {
+    row-gap: 6px;
+  }
+
+  .topLinks {
+    flex-wrap: wrap;
+  }
+
+  /* The way in, small enough to sit beside the name on one line. */
+  .topLinks > a {
+    padding: 8px 14px;
+    font-size: 13.5px;
+  }
+
+  .topPages {
+    order: 3;
+    width: 100%;
+    gap: 10px;
+    justify-content: space-between;
+    font-size: 13px;
   }
 }
+
 
 /* ── Liquid glass (owner, 2026-11-07) — the tokens are site.module.css's. ── */
 .topBar {
@@ -357,8 +329,6 @@
 }
 
 .topBar,
-.mockAsk,
-.mockBox,
 .step,
 .agent,
 .make,
@@ -369,8 +339,6 @@
   box-shadow: var(--glass-rim);
 }
 
-.mockAsk,
-.mockBox,
 .step,
 .agent,
 .make,
@@ -384,4 +352,168 @@
   padding-inline: 24px;
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
+}
+
+/* ── Vexa's own site (owner, 2026-11-12) ────────────────────────────────── */
+
+/* The header travels with the page now that the page is long, and sits above
+   the pinned scroll film (whose scenes stack up to z-index 5). */
+.topBar {
+  position: sticky;
+  top: 0;
+  z-index: 90;
+  /* It travels over the light sections too, so it is darker than the glass
+     elsewhere — at 30% the links disappeared against the white pricing. */
+  background: var(--glass-sheen), rgba(4, 18, 12, 0.86);
+}
+
+.hero {
+  padding-block: clamp(48px, 7vw, 90px) clamp(64px, 8vw, 110px);
+}
+
+.topSound {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--line-hi);
+  background: var(--card);
+  color: var(--text-mut);
+}
+
+.topSound:hover {
+  color: var(--text);
+}
+
+.topSound[aria-pressed='false'] {
+  color: var(--text-dim);
+}
+
+/* ── the privacy policy, on the page ───────────────────────────────────── */
+.policy {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+  counter-reset: clause;
+}
+
+.policyItem {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--card);
+  padding: 20px 22px;
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-rim);
+}
+
+.policyItem h3 {
+  font-size: 18px;
+  margin: 0 0 8px;
+  counter-increment: clause;
+}
+
+.policyItem h3::before {
+  content: counter(clause, decimal-leading-zero) " ";
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  color: var(--lime);
+  letter-spacing: 0.12em;
+  vertical-align: 2px;
+}
+
+.policyItem p {
+  margin: 0;
+  color: var(--text-mut);
+  font-size: 14.5px;
+  line-height: 1.6;
+}
+
+.policyMore {
+  margin-top: 22px;
+  text-align: center;
+  color: var(--text-mut);
+  font-size: 15px;
+}
+
+.policyMore a {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+/* ── the hero, arriving (owner, 2026-11-12) ─────────────────────────────
+   The words come in one line after another, the light behind them drifts,
+   and Vexa rises into place (components/site/assistant.module.css). */
+
+.heroCopy > * {
+  animation: heroIn 760ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.heroCopy > :nth-child(1) {
+  animation-delay: 60ms;
+}
+.heroCopy > :nth-child(2) {
+  animation-delay: 170ms;
+}
+.heroCopy > :nth-child(3) {
+  animation-delay: 290ms;
+}
+.heroCopy > :nth-child(4) {
+  animation-delay: 400ms;
+}
+.heroCopy > :nth-child(5) {
+  animation-delay: 500ms;
+}
+
+@keyframes heroIn {
+  from {
+    opacity: 0;
+    translate: 0 20px;
+    filter: blur(7px);
+  }
+}
+
+/* A second light, low and to her left, drifting against the first. */
+.hero::after {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  left: -8%;
+  bottom: -30%;
+  width: min(620px, 80vw);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(18, 161, 94, 0.22), transparent 62%);
+  animation: drift 18s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.heroGlow {
+  animation: drift 22s ease-in-out infinite reverse;
+}
+
+.heroGrid {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes drift {
+  0%,
+  100% {
+    translate: 0 0;
+    scale: 1;
+  }
+  50% {
+    translate: 6% -4%;
+    scale: 1.12;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .heroCopy > *,
+  .hero::after,
+  .heroGlow {
+    animation: none;
+  }
 }

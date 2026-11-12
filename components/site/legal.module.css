@@ -1,0 +1,148 @@
+/* Vexa's legal documents. Reading, not watching: one column, generous line
+   length, and nothing that moves. The colour tokens are site.module.css's,
+   scoped under .site, which the page wraps everything in. */
+
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding-block: 16px;
+  background: var(--glass-sheen), rgba(4, 18, 12, 0.86);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-bottom: 1px solid var(--line);
+}
+
+.barInner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--font-display), sans-serif;
+  font-weight: 800;
+  font-size: 18px;
+  color: var(--text);
+}
+
+.docs {
+  margin-left: auto;
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-size: 14.5px;
+}
+
+.docs a {
+  color: var(--text-mut);
+}
+
+.docs a:hover {
+  color: var(--text);
+}
+
+.here {
+  color: var(--lime);
+}
+
+.doc {
+  display: block;
+  max-width: 860px;
+  padding-block: clamp(40px, 6vw, 72px) 24px;
+}
+
+.title {
+  font-size: clamp(34px, 5vw, 52px);
+  margin: 0 0 14px;
+}
+
+.lede {
+  margin: 0;
+  font-size: 18px;
+  color: var(--text-mut);
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 22px 0 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--card);
+  font-family: var(--font-mono), monospace;
+  font-size: 12.5px;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
+.meta a {
+  color: var(--text-mut);
+}
+
+.clauses {
+  margin: 34px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: clause;
+  display: grid;
+  gap: 26px;
+}
+
+.clauses li {
+  counter-increment: clause;
+  border-top: 1px solid var(--line);
+  padding-top: 22px;
+}
+
+.clauses h2 {
+  font-size: 21px;
+  margin: 0 0 8px;
+}
+
+.clauses h2::before {
+  content: counter(clause, decimal-leading-zero) " ";
+  font-family: var(--font-mono), monospace;
+  font-size: 13px;
+  color: var(--lime);
+  letter-spacing: 0.12em;
+  vertical-align: 2px;
+}
+
+.clauses p {
+  margin: 0;
+  color: var(--text-mut);
+  font-size: 16px;
+  line-height: 1.68;
+}
+
+.more {
+  margin-top: 36px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+  color: var(--text-mut);
+  font-size: 15px;
+}
+
+.more a,
+.footer a {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.footer {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  padding-block: 26px 40px;
+  border-top: 1px solid var(--line);
+  color: var(--text-dim);
+  font-size: 14px;
+}

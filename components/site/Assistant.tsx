@@ -89,13 +89,50 @@ function useLipSync(talking: boolean, mouth: RefObject<HTMLElement | null>) {
   }, [talking, mouth]);
 }
 
-/** Vexa herself, at the bottom right of every page; `aboveBar` on a page with a fixed bar at the foot (rides). */
-export function Vexa({ aboveBar = false }: { aboveBar?: boolean }) {
+/** Where the big Vexa stands when a page has one, so the small one can keep out of her way. */
+const HERO_ID = 'vexa-hero';
+
+/** True while the page's hero Vexa is on screen — the corner one steps aside rather than appear twice. */
+function useBehindHero(isHero: boolean): boolean {
+  const [away, setAway] = useState(false);
+  useEffect(() => {
+    if (isHero) return;
+    const hero = document.getElementById(HERO_ID);
+    if (!hero) return;
+    const io = new IntersectionObserver(([e]) => setAway(e.isIntersecting));
+    io.observe(hero);
+    return () => io.disconnect();
+  }, [isHero]);
+  return away;
+}
+
+/**
+ * Vexa herself.
+ *
+ * `hero` is her life-size in the top of her own page: the same figure, mouth
+ * and arc of networks, standing on a stage instead of in the corner, and she
+ * introduces herself the moment the page is allowed to make a sound. Without
+ * it she is the small one at the bottom right, which steps aside while the
+ * big one is on screen. `aboveBar` lifts her over a page with a fixed bar at
+ * the foot.
+ */
+export function Vexa({ aboveBar = false, hero = false }: { aboveBar?: boolean; hero?: boolean }) {
   const sound = useSiteSound();
   const talking = sound.speaking;
   const caption = useCaption(talking);
   const mouth = useRef<HTMLSpanElement>(null);
   useLipSync(talking, mouth);
+  const away = useBehindHero(hero);
+  const greeted = useRef(false);
+
+  // She introduces herself the moment her page opens. If the browser refuses to
+  // play without a gesture, the line waits in siteSound and the visitor's first
+  // touch anywhere starts it — no tap on her needed either way.
+  useEffect(() => {
+    if (!hero || greeted.current) return;
+    greeted.current = true;
+    say(VEXA, `/site/voice/${VEXA}.mp3`);
+  }, [hero]);
 
   const tap = (e: React.MouseEvent) => {
     if (talking && sound.owner) return hush(sound.owner);
@@ -104,25 +141,42 @@ export function Vexa({ aboveBar = false }: { aboveBar?: boolean }) {
   };
 
   return (
-    <div className={`${styles.guide} ${aboveBar ? styles.aboveBar : ''} ${talking ? styles.talking : ''}`}>
-      <div className={styles.arc} role="img" aria-label="Vexa manages Facebook, Instagram, Meta, Google, Google Ads and YouTube">
-        {PLATFORMS.map(([file, angle], i) => (
-          <span key={file} className={styles.mark} style={{ ['--a' as string]: `${angle}deg`, ['--i' as string]: i }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={`/site/logos/${file}.svg`} alt="" width={40} height={40} draggable={false} />
-          </span>
-        ))}
-      </div>
+    <div
+      id={hero ? HERO_ID : undefined}
+      className={`${styles.guide} ${hero ? styles.inHero : ''} ${aboveBar ? styles.aboveBar : ''} ${
+        talking ? styles.talking : ''
+      } ${away ? styles.away : ''}`}
+    >
+      {/* The networks over her head are the corner Vexa's: in the hero she stands on her own, life-size. */}
+      {hero ? null : (
+        <div
+          className={styles.arc}
+          role="img"
+          aria-label="Vexa manages Facebook, Instagram, Meta, Google, Google Ads and YouTube"
+        >
+          {PLATFORMS.map(([file, angle], i) => (
+            <span key={file} className={styles.mark} style={{ ['--a' as string]: `${angle}deg`, ['--i' as string]: i }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={`/site/logos/${file}.svg`} alt="" width={40} height={40} draggable={false} />
+            </span>
+          ))}
+        </div>
+      )}
       {/* The voice already says it; the words are for the eye. */}
       <p className={styles.caption} aria-hidden>
-        {caption ?? (
-          <>
-            <span className={styles.long}>
-              Hi! I’m <b>Vexa</b>. Tap me.
-            </span>
-            <span className={styles.short}>Tap me</span>
-          </>
-        )}
+        {caption ??
+          (hero ? (
+            <>
+              Hi! I’m <b>Vexa</b>, your Social Media Virtual Assistant. Tap me and I’ll tell you what I do.
+            </>
+          ) : (
+            <>
+              <span className={styles.long}>
+                Hi! I’m <b>Vexa</b>. Tap me.
+              </span>
+              <span className={styles.short}>Tap me</span>
+            </>
+          ))}
       </p>
       <button
         type="button"
@@ -144,6 +198,15 @@ export function Vexa({ aboveBar = false }: { aboveBar?: boolean }) {
           </span>
         </span>
       </button>
+
+      {/* Who she is, under her feet — the one line that says what she is for. */}
+      {hero ? (
+        <p className={styles.plate}>
+          <i aria-hidden />
+          <b>Vexa</b>
+          <span>Social Media Virtual Assistant</span>
+        </p>
+      ) : null}
     </div>
   );
 }

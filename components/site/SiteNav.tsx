@@ -167,7 +167,7 @@ export function SiteNav({ links, cta, sound }: { links: NavLink[]; cta?: NavLink
  * turning sparkle and stars twinkling at the corners. All CSS; still for anyone
  * who asked their device for reduced motion.
  */
-function MagicCta({ href, label, onClick }: NavLink & { onClick?: () => void }) {
+export function MagicCta({ href, label, onClick }: NavLink & { onClick?: () => void }) {
   return (
     <a className={`${styles.btn} ${styles.btnLime} ${styles.magic}`} href={href} onClick={onClick}>
       <span className={styles.magicShine} aria-hidden />

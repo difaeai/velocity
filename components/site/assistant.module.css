@@ -327,3 +327,186 @@
     display: none;
   }
 }
+
+/* ── Her own page's hero (owner, 2026-11-12) ─────────────────────────────
+   The same Vexa, standing in the top of her page instead of the corner: a
+   light behind her, the networks over her head, her line beside her, and her
+   name under her feet. Everything that moves here is CSS. */
+
+.inHero {
+  position: relative;
+  z-index: 1;
+  right: auto;
+  bottom: auto;
+  width: clamp(280px, 40vw, 560px);
+  margin-inline: auto;
+  padding-bottom: 58px;
+  pointer-events: auto;
+}
+
+/* The light she stands in. */
+.inHero::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 40px;
+  width: 128%;
+  aspect-ratio: 1;
+  translate: -50% 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(204, 255, 0, 0.17), rgba(4, 107, 65, 0.16) 44%, transparent 70%);
+  animation: halo 6s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes halo {
+  50% {
+    scale: 1.07;
+    opacity: 0.72;
+  }
+}
+
+/* Her cut-off waist is a crop in the corner and a mistake in a hero, so it fades out instead. */
+.inHero .fig {
+  -webkit-mask-image: linear-gradient(180deg, #000 86%, transparent);
+  mask-image: linear-gradient(180deg, #000 86%, transparent);
+}
+
+.inHero .caption {
+  /* Over her, not under her: at this size the figure would swallow its edge. */
+  z-index: 2;
+  right: 58%;
+  bottom: 52%;
+  max-width: min(330px, 40vw);
+  font-size: 15px;
+}
+
+.plate {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  translate: -50% 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: max-content;
+  max-width: 100%;
+  margin: 0;
+  padding: 10px 18px;
+  border: 1px solid rgba(204, 255, 0, 0.4);
+  border-radius: 999px;
+  background: rgba(4, 18, 12, 0.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 16px 36px -18px rgba(4, 18, 12, 0.8);
+}
+
+.plate b {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: 16px;
+  color: var(--text);
+}
+
+.plate span {
+  font-family: var(--font-mono), monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-mut);
+}
+
+.plate i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--lime);
+  box-shadow: 0 0 0 0 rgba(204, 255, 0, 0.5);
+  animation: live 2s ease-out infinite;
+}
+
+@keyframes live {
+  70% {
+    box-shadow: 0 0 0 9px rgba(204, 255, 0, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(204, 255, 0, 0);
+  }
+}
+
+/* The corner Vexa, while the big one is on screen. */
+.away {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 240ms ease;
+}
+
+@media (max-width: 940px) {
+  /* One column: she stands under the writing, as wide as the phone allows. */
+  .inHero {
+    width: min(340px, 82vw);
+    margin-top: clamp(12px, 4vw, 32px);
+  }
+
+  .inHero .caption {
+    right: 58%;
+    max-width: 46vw;
+    font-size: 13.5px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inHero::before,
+  .plate i {
+    animation: none;
+  }
+}
+
+/* She arrives with the page, and a thin light turns around her while she
+   stands there — the networks she is working, going round. */
+.inHero {
+  animation: vexaIn 900ms cubic-bezier(0.16, 1, 0.3, 1) 140ms backwards;
+}
+
+@keyframes vexaIn {
+  from {
+    opacity: 0;
+    translate: 0 28px;
+    scale: 0.96;
+  }
+}
+
+.inHero::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  left: 50%;
+  bottom: 44px;
+  width: 112%;
+  aspect-ratio: 1;
+  translate: -50% 0;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0 58%, rgba(204, 255, 0, 0.55) 76%, transparent 90%);
+  -webkit-mask: radial-gradient(circle, transparent 0 48.2%, #000 48.6% 50%, transparent 50.4%);
+  mask: radial-gradient(circle, transparent 0 48.2%, #000 48.6% 50%, transparent 50.4%);
+  opacity: 0.55;
+  animation: orbit 16s linear infinite;
+  pointer-events: none;
+}
+
+.talking.inHero::after {
+  animation-duration: 7s;
+  opacity: 0.8;
+}
+
+@keyframes orbit {
+  to {
+    rotate: 360deg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inHero,
+  .inHero::after {
+    animation: none;
+  }
+}

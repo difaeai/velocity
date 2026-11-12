@@ -4,30 +4,46 @@ import Link from 'next/link';
 import { VelocityMark } from '@/components/BrandMark';
 import { ArrowRight, Clock, Handshake, Megaphone, Mic, Sparkle, TrendingUp } from '@/components/site/Icons';
 import { Vexa } from '@/components/site/Assistant';
-import { StudioFaq, StudioPricing } from '@/components/site/StudioSections';
+import { DemoButton } from '@/components/site/DemoButton';
+import { MagicCta } from '@/components/site/SiteNav';
+import { SoundToggle } from '@/components/site/siteSound';
+import { STUDIO_FAQ, StudioFaq, StudioPricing } from '@/components/site/StudioSections';
+import { StudioScrub } from '@/components/site/StudioScrub';
+import { StudioStory } from '@/components/site/StudioStory';
 import { STUDIO_FROM_USD, STUDIO_TRIAL_HOURS, STUDIO_TRIAL_USD, studioUsd } from '@/lib/studio';
+import { VEXA_LEGAL_EFFECTIVE, VEXA_PRIVACY } from '@/lib/vexaLegal';
 import site from '@/components/site/site.module.css';
 
 import s from './studio.module.css';
 
 /**
- * Velocity Studio's sales page. Static and Firebase-free on purpose: it lives
- * outside the (app) route group, and its prices come from lib/studio.ts, which
- * imports nothing. Sign-up is /studio/signup, inside the console.
+ * Vexa's own site, at /vexa (the rewrite in next.config.ts serves this page).
+ *
+ * A site of its own, not a section of Velocity's: its own header and footer,
+ * everything Vexa does, the same scroll film and narrated story the homepage
+ * shows, the price cards, the questions, and the privacy policy on the page
+ * rather than a link away — the owner asked for it read like a separate
+ * website, and Meta, TikTok and Stripe reviewers all read a policy here.
+ *
+ * Static and Firebase-free on purpose: it lives outside the (app) route group,
+ * and its prices come from lib/studio.ts, which imports nothing. Sign-up is
+ * /studio/signup, inside the console.
  *
  * No invented numbers anywhere: no customer counts, ratings or "x% more reach".
- * Every claim here is something the product does.
+ * Every claim here is something the product does, and every line of the policy
+ * below is lib/vexaLegal.ts, the same words her own /vexa/privacy page prints.
  */
 
 export const metadata: Metadata = {
   title: { absolute: 'Vexa — Your Social Media Virtual Assistant' },
   description:
     `Connect Instagram and Facebook and Vexa plans your month, makes reels with voice-over and music, posts every day, runs your Meta ads and finds you customers. From $${STUDIO_FROM_USD} a month.`,
-  alternates: { canonical: '/studio' },
+  // /vexa and /studio are the same page; the policy and TikTok's app form name /vexa, so that is the one.
+  alternates: { canonical: '/vexa' },
   openGraph: {
     title: 'Vexa — you don’t need a social media team anymore',
     description: 'Connect your account and watch Vexa plan, make, post, advertise and sell for you.',
-    url: '/studio',
+    url: '/vexa',
   },
 };
 
@@ -59,23 +75,40 @@ const MAKES = [
   { icon: Handshake, text: 'New customers found and emailed for you' },
 ];
 
+/** The questions, for search — they moved here with the FAQ itself when the homepage became the door. */
+const JSON_LD = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: STUDIO_FAQ.map((f) => ({
+    '@type': 'Question',
+    name: f.q,
+    acceptedAnswer: { '@type': 'Answer', text: f.a },
+  })),
+};
+
 export default function StudioPage() {
   return (
     <main className={site.site}>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }} />
       <header className={s.topBar}>
         <div className={`${site.wrap} ${s.topInner}`}>
-          <Link href="/studio" className={s.topBrand}>
+          <Link href="/vexa" className={s.topBrand}>
             <VelocityMark size={30} />
             Vexa
           </Link>
           <nav className={s.topLinks} aria-label="Vexa">
-            <a href="#how" className={s.topHide}>
-              How it works
-            </a>
-            <a href="#pricing" className={s.topHide}>
-              Pricing
-            </a>
-            <Link href="/studio/login">Log in</Link>
+            {/* They stay on a phone and inside the front door's half-width box,
+                dropping to their own row rather than disappearing. */}
+            <span className={s.topPages}>
+              <a href="#how-it-works">How it works</a>
+              <a href="#pricing">Pricing</a>
+              <DemoButton>Demo</DemoButton>
+            </span>
+            {/* The way back in for a customer who already has a workspace — the
+                homepage's own button, so it is the one they know. */}
+            <MagicCta href="/studio/login" label="Vexa login" />
+            {/* The scroll film and the story below are narrated; this is the page's one mute. */}
+            <SoundToggle className={s.topSound} />
           </nav>
         </div>
       </header>
@@ -83,7 +116,7 @@ export default function StudioPage() {
       <section className={s.hero}>
         <div className={s.heroGlow} aria-hidden />
         <div className={`${site.wrap} ${s.heroGrid}`}>
-          <div>
+          <div className={s.heroCopy}>
             <span className={site.eyebrow}>
               <Sparkle /> Vexa — Your Social Media Virtual Assistant
             </span>
@@ -107,36 +140,19 @@ export default function StudioPage() {
             </p>
           </div>
 
-          <div className={s.mock} aria-label="What your dashboard looks like">
-            <div className={s.mockBar}>
-              <span className={s.mockDot} /> Your team is working
-            </div>
-            <div className={s.mockAsk}>“Make a reel for Eid: order cakes by Thursday, free delivery”</div>
-            <div className={s.mockBoxes}>
-              {[
-                { t: 'Eid orders close Thursday', bg: 'linear-gradient(160deg,#0b6b45,#04120c)', st: 'Live', live: true },
-                { t: 'Baked at 5am. Delivered by noon.', bg: 'linear-gradient(160deg,#3d2a12,#120b04)', st: 'Approve' },
-                { t: '3 cakes our regulars order most', bg: 'linear-gradient(160deg,#1d2f5a,#060b18)', st: 'Being made' },
-              ].map((b) => (
-                <div key={b.t} className={s.mockBox}>
-                  <div className={s.mockThumb} style={{ background: b.bg }}>
-                    {b.t}
-                  </div>
-                  <div className={s.mockMeta}>
-                    <span>Reel</span>
-                    <span className={b.live ? s.mockLive : undefined}>{b.st}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          {/* She is the hero: life-size, the networks over her head, and she says what she does. */}
+          <Vexa hero />
         </div>
       </section>
+
+      {/* The film that plays as you scroll, then the five jobs acted out in a mock of the console. */}
+      <StudioScrub />
+      <StudioStory />
 
       <section id="how" className={`${site.section} ${site.light}`}>
         <div className={site.wrap}>
           <div className={site.sectionHead}>
-            <span className={site.eyebrow}>How it works</span>
+            <span className={site.eyebrow}>Getting started</span>
             <h2 className={site.h2}>Three steps. Then it runs by itself.</h2>
           </div>
           <div className={s.steps}>
@@ -240,14 +256,41 @@ export default function StudioPage() {
           </div>
           <p className={`${site.lead} ${site.center}`} style={{ marginTop: 28 }}>
             Read our{' '}
-            <a href="/privacy" style={{ textDecoration: 'underline' }}>
+            <a href="#privacy" style={{ textDecoration: 'underline' }}>
               Privacy Policy
             </a>{' '}
             and{' '}
-            <a href="/terms" style={{ textDecoration: 'underline' }}>
+            <a href="/vexa/terms" style={{ textDecoration: 'underline' }}>
               Terms of Service
             </a>
             .
+          </p>
+        </div>
+      </section>
+
+      {/* The policy itself, on the page: Meta, TikTok and Stripe reviewers read it here, and so can a customer. */}
+      <section id="privacy" className={site.section}>
+        <div className={site.wrap}>
+          <div className={`${site.sectionHead} ${site.center}`}>
+            <span className={site.eyebrow}>Privacy</span>
+            <h2 className={site.h2}>What Vexa knows about you, and why</h2>
+            <p className={`${site.lead} ${site.center}`}>
+              Effective {VEXA_LEGAL_EFFECTIVE} · Berreto (Private) Limited · business@velocityrides.app
+            </p>
+          </div>
+          <div className={s.policy}>
+            {VEXA_PRIVACY.map((p) => (
+              <article key={p.t} className={s.policyItem}>
+                <h3>{p.t}</h3>
+                <p>{p.d}</p>
+              </article>
+            ))}
+          </div>
+          <p className={s.policyMore}>
+            This is Vexa’s privacy policy in full; it also has its own page at{' '}
+            <a href="/vexa/privacy">velocityrides.app/vexa/privacy</a>. Her other documents:{' '}
+            <a href="/vexa/terms">Terms of Service</a>, <a href="/vexa/delete-account">Delete your workspace</a> and{' '}
+            <a href="/support">Support</a>. The Velocity Rides app has its own at <a href="/privacy">/privacy</a>.
           </p>
         </div>
       </section>
@@ -270,7 +313,8 @@ export default function StudioPage() {
         <div className={s.footer}>
           <span>Vexa — Your Social Media Virtual Assistant. A product of Velocity Rides, by Berreto (Private) Limited</span>
           <span>
-            <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a> · <a href="/support">Support</a> ·{' '}
+            <a href="/vexa/terms">Terms</a> · <a href="/vexa/privacy">Privacy</a> ·{' '}
+            <a href="/vexa/delete-account">Delete your workspace</a> · <a href="/support">Support</a> ·{' '}
             <a href="mailto:business@velocityrides.app">business@velocityrides.app</a>
           </span>
         </div>
