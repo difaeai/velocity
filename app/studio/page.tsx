@@ -88,14 +88,16 @@ const JSON_LD = {
 
 export default function StudioPage() {
   return (
-    <main className={site.site}>
+    <main className={site.site} id="top">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }} />
       <header className={s.topBar}>
         <div className={`${site.wrap} ${s.topInner}`}>
-          <Link href="/vexa" className={s.topBrand}>
+          {/* Stays on whatever address this is: the page is also served at / when
+              the console picks "Only Vexa", and the logo must not move anyone off it. */}
+          <a href="#top" className={s.topBrand}>
             <VelocityMark size={30} />
             Vexa
-          </Link>
+          </a>
           <nav className={s.topLinks} aria-label="Vexa">
             {/* They stay on a phone and inside the front door's half-width box,
                 dropping to their own row rather than disappearing. */}
