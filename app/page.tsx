@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
-import RidesSite from './rides/page';
-import VexaSite from './studio/page';
+import RidesSite, { metadata as ridesMetadata } from './rides/page';
+import VexaSite, { metadata as vexaMetadata } from './studio/page';
 import { DoorPane } from '@/components/site/DoorPane';
 import { MixHome } from '@/components/site/MixHome';
 import { readSiteTemplate } from '@/lib/siteTemplate';
@@ -39,12 +39,29 @@ import { STUDIO_PLAN_IDS, STUDIO_PLANS } from '@/lib/studio';
  */
 
 export const revalidate = 30;
-export const metadata: Metadata = {
+
+const DOOR_METADATA: Metadata = {
   title: { absolute: 'Velocity — Velocity Rides and Vexa' },
   description:
     'Two products, one company. Velocity Rides: book a ride and share it with people going your way. Vexa: your Social Media Virtual Assistant, who plans, posts, advertises and sells for your business.',
   alternates: { canonical: '/' },
 };
+
+/**
+ * The head belongs to whichever website this address is.
+ *
+ * When the console picks one of the two, the page below is that site — so the
+ * title, the description, the site name, the Twitter card and the share
+ * picture have to be that site's too, or the tab and every shared link still
+ * say Velocity Rides. Each page's own metadata is the one used, so there is no
+ * second copy to keep in step.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const template = await readSiteTemplate();
+  if (template === 'vexa') return vexaMetadata;
+  if (template === 'rides') return ridesMetadata;
+  return DOOR_METADATA;
+}
 
 const JSON_LD = {
   '@context': 'https://schema.org',

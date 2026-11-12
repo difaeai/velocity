@@ -40,10 +40,33 @@ async function markDataUri(): Promise<string | null> {
   }
 }
 
-const SERVICES = ['City rides', 'Pooled seats', 'Intercity', 'Couriers'];
+/**
+ * One card, two websites. Velocity is two products at one address, and a
+ * shared Vexa link that draws "Name your fare. Split the ride." is the wrong
+ * product entirely — so each has its own words in the same frame. The last
+ * line is the lime one, as in each site's hero.
+ */
+const CARDS = {
+  rides: {
+    wordmark: 'VELOCITY RIDES',
+    lines: ['Name your fare.', 'Split the ride.', 'Keep the change.'],
+    chips: ['City rides', 'Pooled seats', 'Intercity', 'Couriers'],
+    url: 'velocityrides.app',
+  },
+  vexa: {
+    wordmark: 'VEXA',
+    lines: ['You don’t need a', 'social media team', 'anymore.'],
+    chips: ['Reels', 'Daily posts', 'Meta ads', 'Comments'],
+    // Her own address, and true whichever front page the console picks.
+    url: 'velocityrides.app/vexa',
+  },
+} as const;
 
-export async function renderShareCard() {
+export type ShareCard = keyof typeof CARDS;
+
+export async function renderShareCard(kind: ShareCard = 'rides') {
   const mark = await markDataUri();
+  const card = CARDS[kind];
 
   return new ImageResponse(
     (
@@ -80,27 +103,30 @@ export async function renderShareCard() {
               does not exist inside an ImageResponse; satori only reads <img>. */}
           {mark ? <img src={mark} width={54} height={54} alt="" /> : null}
           <div style={{ display: 'flex', fontSize: 27, letterSpacing: 6, color: '#ffffff' }}>
-            VELOCITY RIDES
+            {card.wordmark}
           </div>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'flex', fontSize: 82, letterSpacing: -2.5, lineHeight: 1.12 }}>
-            Name your fare.
-          </div>
-          <div style={{ display: 'flex', fontSize: 82, letterSpacing: -2.5, lineHeight: 1.12 }}>
-            Split the ride.
-          </div>
-          <div
-            style={{ display: 'flex', fontSize: 82, letterSpacing: -2.5, lineHeight: 1.12, color: LIME }}
-          >
-            Keep the change.
-          </div>
+          {card.lines.map((line, i) => (
+            <div
+              key={line}
+              style={{
+                display: 'flex',
+                fontSize: 82,
+                letterSpacing: -2.5,
+                lineHeight: 1.12,
+                ...(i === card.lines.length - 1 ? { color: LIME } : null),
+              }}
+            >
+              {line}
+            </div>
+          ))}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', gap: 14 }}>
-            {SERVICES.map((s) => (
+            {card.chips.map((s) => (
               <div
                 key={s}
                 style={{
@@ -116,7 +142,7 @@ export async function renderShareCard() {
               </div>
             ))}
           </div>
-          <div style={{ display: 'flex', fontSize: 27, color: LIME }}>velocityrides.app</div>
+          <div style={{ display: 'flex', fontSize: 27, color: LIME }}>{card.url}</div>
         </div>
       </div>
     ),

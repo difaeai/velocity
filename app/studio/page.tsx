@@ -34,16 +34,45 @@ import s from './studio.module.css';
  * below is lib/vexaLegal.ts, the same words her own /vexa/privacy page prints.
  */
 
+/**
+ * Vexa's whole head, not just her title.
+ *
+ * app/layout.tsx is Velocity Rides' — its site name, keywords, Twitter card
+ * and share picture are the ride app's, and every one of them survives on a
+ * page that only replaces the title. So this names all of them. It is also the
+ * head the front door wears when the console picks "Only Vexa" (app/page.tsx
+ * returns this object), which is why the share picture is named outright
+ * rather than left to the file beside the root page: that one is the Rides
+ * card.
+ */
 export const metadata: Metadata = {
   title: { absolute: 'Vexa — Your Social Media Virtual Assistant' },
   description:
     `Connect Instagram and Facebook and Vexa plans your month, makes reels with voice-over and music, posts every day, runs your Meta ads and finds you customers. From $${STUDIO_FROM_USD} a month.`,
+  applicationName: 'Vexa',
+  keywords: [
+    'social media virtual assistant',
+    'social media manager for small business',
+    'Instagram and Facebook posting',
+    'AI reels with voice-over',
+    'Meta ads management',
+    'Vexa',
+  ],
   // /vexa and /studio are the same page; the policy and TikTok's app form name /vexa, so that is the one.
   alternates: { canonical: '/vexa' },
   openGraph: {
+    type: 'website',
+    siteName: 'Vexa',
     title: 'Vexa — you don’t need a social media team anymore',
     description: 'Connect your account and watch Vexa plan, make, post, advertise and sell for you.',
     url: '/vexa',
+    images: ['/studio/opengraph-image'],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Vexa — you don’t need a social media team anymore',
+    description: 'Connect your account and watch Vexa plan, make, post, advertise and sell for you.',
+    images: ['/studio/opengraph-image'],
   },
 };
 
@@ -152,8 +181,9 @@ export default function StudioPage() {
       {/* The film that plays as you scroll, then the five jobs acted out in a mock of the console. */}
       <StudioScrub />
       <StudioStory />
+      <StudioPricing />
 
-      <section id="how" className={`${site.section} ${site.light}`}>
+      <section id="how" className={site.section}>
         <div className={site.wrap}>
           <div className={site.sectionHead}>
             <span className={site.eyebrow}>Getting started</span>
@@ -225,7 +255,6 @@ export default function StudioPage() {
         </div>
       </section>
 
-      <StudioPricing />
       <StudioFaq />
 
       {/* What TikTok's app reviewer reads from outside the login. Every line is what the Post to TikTok screen does. */}
