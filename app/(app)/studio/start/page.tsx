@@ -16,15 +16,25 @@
  * approves it, and the workspace made afterwards starts on that plan, paid, with
  * no trial. The free day is the way past paying.
  *
- * The pay step shows what the money buys before it asks for any: Vexa herself,
- * the three plans as small boxes with their reels and the networks each works
- * on, and then the two ways to pay — a transfer to the company's bank account,
- * or a card from any country through Stripe Checkout. The mobile wallets are
- * the rides side's, not Vexa's (owner, 2026-11-11). The card is offered only
- * while the admin's Receiving accounts page says `cardLive`; until then it says
- * "Opening soon" rather than pretending. A card needs no admin — it comes back
- * approved. A transfer leaves the page here on "thank you — waiting for your
- * transaction to be confirmed" until a person approves it.
+ * The pay step is two columns and three numbered steps, because in one column
+ * the money ended up below the fold and nobody saw it (owner, 2026-11-12):
+ * ① pick a plan, on the left with the reels and what each one does; ② how you
+ * pay, on the right and sticky, with the total above it; ③ the details of
+ * whichever way was picked, in that same right-hand column, ending in the
+ * button that finishes it. The ways to pay are a transfer to the company's
+ * bank account or a card from any country through Stripe Checkout; the mobile
+ * wallets are the rides side's, not Vexa's (owner, 2026-11-11). The card is
+ * offered only while the admin's Receiving accounts page says `cardLive`;
+ * until then it says "Opening soon" rather than pretending. A card needs no
+ * admin — it comes back approved. A transfer leaves the page here on "thank
+ * you — waiting for your transaction to be confirmed" until a person approves
+ * it.
+ *
+ * The business step does not open with empty boxes. Vexa offers to read the
+ * page the customer already has — a website, an Instagram or Facebook page —
+ * and comes back with the brief filled in and the networks she would start
+ * them on; the other door is the form, for anyone with nothing online yet.
+ * Either way the customer sees and corrects every field before it is saved.
  */
 
 import { Suspense, useEffect, useRef, useState } from 'react';
@@ -93,6 +103,8 @@ function Start() {
   const [verifiedNow, setVerifiedNow] = useState(false);
   const verified = Boolean(user?.emailVerified) || verifiedNow;
   const [brand, setBrand] = useState<Brand | null>(null);
+  /** The networks Vexa picked out for this business when she read their page; the next step opens on them. */
+  const [suggested, setSuggested] = useState<SocialPlatform[]>([]);
   const [payments, setPayments] = useState<StudioPaymentDoc[]>([]);
 
   useEffect(() => {
@@ -122,6 +134,8 @@ function Start() {
   // Nothing is free any more, not even the day (owner, 2026-11-11): the only way
   // past the pay step is an approved payment, a month of a plan or a dollar for a day.
   const stage = !verified ? 2 : !paid ? 3 : !brand ? 4 : 5;
+  // The pay step is two columns, so it needs the room; every other step is one.
+  const paying = stage === 3 && !isAdmin && prepay?.status !== 'pending' && !(params.get('paid') === 'card' && !prepay);
 
   return (
     <main className={`${s.page} ${s.single}`}>
@@ -140,7 +154,7 @@ function Start() {
 
         <div className={s.center}>
           {initializing || !user || workspaceId ? null : (
-            <div className={`${s.inner} ${s.wide}`}>
+            <div className={`${s.inner} ${s.wide} ${paying ? s.payWide : ''}`}>
               <ol className={s.steps} aria-label="Getting started">
                 {STAGES.map((label, i) => {
                   const n = i + 1;
@@ -184,9 +198,22 @@ function Start() {
                 )
               ) : stage === 4 ? (
                 // Stage 4 and 5 are only reachable once `paid` is set, which is what the stage above checks.
-                <BusinessCard plan={(paid as StudioPaymentDoc).plan} email={user.email} onSignOut={signOut} onDone={setBrand} />
+                <BusinessCard
+                  plan={(paid as StudioPaymentDoc).plan}
+                  email={user.email}
+                  onSignOut={signOut}
+                  onDone={(b, picked) => {
+                    setSuggested(picked);
+                    setBrand(b);
+                  }}
+                />
               ) : (
-                <PlatformsCard brand={brand as Brand} plan={(paid as StudioPaymentDoc).plan} onBack={() => setBrand(null)} />
+                <PlatformsCard
+                  brand={brand as Brand}
+                  plan={(paid as StudioPaymentDoc).plan}
+                  suggested={suggested}
+                  onBack={() => setBrand(null)}
+                />
               )}
             </div>
           )}
@@ -451,8 +478,8 @@ function PayCard({
   const saving = useSaveData();
   const still = reduced || saving;
   const [accounts, setAccounts] = useState<ReceivingAccounts | null>(null);
-  /** The card first (owner, 2026-11-11); until the gateway is switched on it says so rather than pretending. */
-  const [how, setHow] = useState<'transfer' | 'card'>('card');
+  /** What the customer picked, or null while they have picked nothing. */
+  const [picked, setPicked] = useState<'transfer' | 'card' | null>(null);
   /** A month (or a year) of the plan, or one day of it for a dollar. */
   const [buying, setBuying] = useState<'plan' | 'trial'>('plan');
   const [copied, setCopied] = useState(false);
@@ -468,6 +495,12 @@ function PayCard({
       .then((snap) => setAccounts((snap.data() as ReceivingAccounts | undefined) ?? {}))
       .catch(() => setAccounts({}));
   }, []);
+
+  // The card first (owner, 2026-11-11) — but opening on a way that is shut is a
+  // dead end, so while the gateway is off the transfer's own details are what
+  // step three shows, and the card sits beside it saying "Opening soon".
+  const how = picked ?? (accounts && !accounts.cardLive ? 'transfer' : 'card');
+  const setHow = setPicked;
 
   const trial = buying === 'trial';
   // A dollar for the day, never the plan's price and never the price clock's rise.
@@ -519,7 +552,7 @@ function PayCard({
   }
 
   return (
-    <div className={s.card}>
+    <div className={`${s.card} ${s.payCard}`}>
       <div className={s.vexaSays}>
         <span className={s.vexaFig} aria-hidden>
           {/* A cut-out with its own alpha: next/image would only re-encode it. */}
@@ -527,225 +560,252 @@ function PayCard({
           <img src="/site/vexa.webp" alt="" width={854} height={853} draggable={false} />
         </span>
         <p className={s.vexaBubble}>
-          Hi, I&rsquo;m <b>Vexa</b>. Here is what you are buying — pick your plan, send the money, and I start work the
-          moment it is approved.
+          Hi, I&rsquo;m <b>Vexa</b>. Pick your plan on the left, pay on the right, and I start the moment the money is
+          through.
         </p>
       </div>
 
       {rejected ? (
         <p className={s.error} role="alert">
-          Your last payment was not received{rejected.note ? `: ${rejected.note}` : ''}. Send it again, or try Vexa free first.
+          Your last payment was not received{rejected.note ? `: ${rejected.note}` : ''}. Send it again, or take a single
+          day for {studioUsd(STUDIO_TRIAL_USD)} instead.
         </p>
       ) : null}
 
-      <div style={{ display: 'grid', gap: 4 }}>
-        <h1 className={s.cardTitle} style={{ fontSize: 24 }}>
-          What you are buying
-        </h1>
-        <p className={s.signedAs}>Three plans. Tap one to see what it does for you.</p>
-      </div>
+      {/* Two columns, so the money never scrolls off the screen (owner, 2026-11-12): what you are buying on the left, paying on the right. */}
+      <div className={s.payGrid}>
+        <div className={s.payCol}>
+          <h2 className={s.stepHead}>
+            <span className={s.stepBadge} aria-hidden>
+              1
+            </span>
+            <span>
+              {trial ? 'Pick the plan to try' : 'Pick your plan'}
+              <small>Tap one to see what it does for you.</small>
+            </span>
+          </h2>
 
-      <PlanBoxes plan={plan} onPlan={onPlan} billing={billing} raised={raised} still={still} />
+          <PlanBoxes plan={plan} onPlan={onPlan} billing={billing} raised={raised} still={still} />
 
-      <div key={plan} className={s.gets}>
-        <b>{STUDIO_PLANS[plan].name}</b>
-        <ul>
-          {STUDIO_PLANS[plan].includes.slice(0, 5).map((line) => (
-            <li key={line}>
-              <span className={s.getsTick} aria-hidden>
-                ✓
-              </span>
-              {line}
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      {trial ? null : (
-        <div className={s.field} role="radiogroup" aria-label="Billing">
-          Billing
-          <div className={s.plans}>
-            {(['month', 'year'] as const).map((b) => (
-              <button key={b} type="button" role="radio" aria-checked={billing === b} className={s.planChip} onClick={() => onBilling(b)}>
-                {b === 'month' ? 'Monthly' : `Yearly — save ${STUDIO_YEAR_DISCOUNT_PCT}%`}
-              </button>
-            ))}
+          <div key={plan} className={s.gets}>
+            <b>{STUDIO_PLANS[plan].name}</b>
+            <ul>
+              {STUDIO_PLANS[plan].includes.slice(0, 5).map((line) => (
+                <li key={line}>
+                  <span className={s.getsTick} aria-hidden>
+                    ✓
+                  </span>
+                  {line}
+                </li>
+              ))}
+            </ul>
           </div>
-        </div>
-      )}
 
-      <div className={s.total}>
-        <span>To pay today</span>
-        <strong key={`${plan}-${billing}-${buying}`}>
-          {local.exact ? local.text : `about ${local.text}`}
-          <small>
-            {studioUsd(amount)} for {trial ? `${STUDIO_TRIAL_HOURS} hours` : billing === 'year' ? 'a year' : '30 days'}
-          </small>
-        </strong>
-      </div>
+          {trial ? null : (
+            <div className={s.field} role="radiogroup" aria-label="Billing">
+              Billing
+              <div className={s.plans}>
+                {(['month', 'year'] as const).map((b) => (
+                  <button key={b} type="button" role="radio" aria-checked={billing === b} className={s.planChip} onClick={() => onBilling(b)}>
+                    {b === 'month' ? 'Monthly' : `Yearly — save ${STUDIO_YEAR_DISCOUNT_PCT}%`}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
-      <div style={{ display: 'grid', gap: 4 }}>
-        <h2 className={s.cardTitle} style={{ fontSize: 20 }}>
-          {trial ? 'Pay for your day' : 'Pay for your plan'}
-        </h2>
-        <p className={s.signedAs}>
-          {accounts?.cardLive
-            ? 'By card it starts the moment it goes through. By transfer a person checks it, usually within a few hours.'
-            : 'Two ways to pay. A person approves it, usually within a few hours, and it starts then.'}
-        </p>
-      </div>
-
-      {/* The card on the left, the transfer on the right (owner, 2026-11-11). */}
-      <div className={s.payWays} role="radiogroup" aria-label="How to pay">
-        <button type="button" role="radio" aria-checked={how === 'card'} className={`${s.payWay} ${how === 'card' ? s.payWayOn : ''}`} onClick={() => setHow('card')}>
-          <span className={s.wayIcon} aria-hidden>
-            <CardMark />
-          </span>
-          <b>
-            Debit or credit card {accounts?.cardLive ? null : <i className={s.soon}>Opening soon</i>}
-          </b>
-          <small>Pay online in one go, no receipt to upload</small>
-          <span className={s.wayMarks} aria-hidden>
-            <VisaMark />
-            <MastercardMark />
-          </span>
-        </button>
-        <button
-          type="button"
-          role="radio"
-          aria-checked={how === 'transfer'}
-          className={`${s.payWay} ${how === 'transfer' ? s.payWayOn : ''}`}
-          onClick={() => setHow('transfer')}
-        >
-          <span className={s.wayIcon} aria-hidden>
-            <BankMark />
-          </span>
-          <b>Bank transfer</b>
-          <small>Send it from your bank app, then upload the receipt</small>
-        </button>
-      </div>
-
-      {how === 'card' && accounts?.cardLive ? (
-        <div className={s.soonBox}>
-          <span className={s.soonArt} aria-hidden>
-            <VisaMark />
-            <MastercardMark />
-          </span>
-          <b>Pay {studioUsd(amount)} by card</b>
-          <p>
-            Stripe takes the payment on its own page, so we never see your card. Any country&rsquo;s Visa or Mastercard
-            works, your bank converts from dollars, and {trial ? 'your day' : 'your plan'} starts the moment it goes
-            through — nobody to wait for.
-          </p>
-          <button type="button" className={s.primary} disabled={busy} onClick={() => void payByCard()}>
-            {busy ? 'Opening the card page…' : `Pay ${studioUsd(amount)} by card`}
-          </button>
-          {error ? (
-            <p className={s.error} role="alert">
-              {error}
+          {trial ? (
+            <p className={s.fine}>
+              You are buying <b>one day</b> of {STUDIO_PLANS[plan].name} for {studioUsd(STUDIO_TRIAL_USD)} — the same
+              team, for {STUDIO_TRIAL_HOURS} hours.{' '}
+              <button type="button" className={s.link} onClick={() => setBuying('plan')}>
+                Pay for the whole month instead
+              </button>
             </p>
-          ) : null}
+          ) : (
+            <p className={s.fine}>
+              Want to see Vexa work first?{' '}
+              <button type="button" className={s.link} onClick={() => setBuying('trial')}>
+                Take one day for {studioUsd(STUDIO_TRIAL_USD)} instead
+              </button>{' '}
+              — {STUDIO_TRIAL_HOURS} hours of the same team. We check that dollar the same way, which is how we know you
+              are real.
+            </p>
+          )}
         </div>
-      ) : how === 'card' ? (
-        <div className={s.soonBox}>
-          <span className={s.soonArt} aria-hidden>
-            <VisaMark />
-            <MastercardMark />
-          </span>
-          <b>Card payments are not open yet</b>
-          <p>
-            We are finishing the card gateway with our bank. Until it is live, send the money by bank transfer — it is
-            approved the same day and your plan starts from that moment.
-          </p>
-          <button type="button" className={s.primary} onClick={() => setHow('transfer')}>
-            Pay by bank transfer
-          </button>
-        </div>
-      ) : (
-        <>
-          <div className={s.field}>
-            Send {owed} to
-            {accounts === null ? (
-              <p className={s.sub}>Loading the receiving account…</p>
-            ) : !iban ? (
-              <p className={s.error}>Payment details are being set up. Email business@velocityrides.app and we will send them.</p>
-            ) : (
-              <div className={s.acct}>
-                <span>
-                  <small className={s.acctBank}>
-                    <BankMark />
-                    {accounts.bankName ?? 'Bank transfer'}
-                  </small>
-                  <code>{iban}</code>
-                  <small>{STUDIO_BANK_TITLE}</small>
+
+        {/* Sticky: the total, the two ways to pay and the button that finishes it stay on screen while the plans scroll. */}
+        <aside className={`${s.payCol} ${s.payPay}`}>
+          <h2 className={s.stepHead}>
+            <span className={s.stepBadge} aria-hidden>
+              2
+            </span>
+            <span>
+              How you pay
+              <small>
+                {accounts?.cardLive
+                  ? 'By card it starts the moment it goes through. By transfer a person checks it first.'
+                  : 'A person approves the transfer, usually within a few hours, and it starts then.'}
+              </small>
+            </span>
+          </h2>
+
+          <div className={s.total}>
+            <span>To pay today</span>
+            <strong key={`${plan}-${billing}-${buying}`}>
+              {local.exact ? local.text : `about ${local.text}`}
+              <small>
+                {studioUsd(amount)} for {trial ? `${STUDIO_TRIAL_HOURS} hours` : billing === 'year' ? 'a year' : '30 days'}
+              </small>
+            </strong>
+          </div>
+
+          {/* The card on the left, the transfer on the right (owner, 2026-11-11). */}
+          <div className={s.payWays} role="radiogroup" aria-label="How to pay">
+            <button type="button" role="radio" aria-checked={how === 'card'} className={`${s.payWay} ${how === 'card' ? s.payWayOn : ''}`} onClick={() => setHow('card')}>
+              <span className={s.wayIcon} aria-hidden>
+                <CardMark />
+              </span>
+              <b>
+                Debit or credit card {accounts?.cardLive ? null : <i className={s.soon}>Opening soon</i>}
+              </b>
+              <small>Pay online in one go, no receipt to upload</small>
+              <span className={s.wayMarks} aria-hidden>
+                <VisaMark />
+                <MastercardMark />
+              </span>
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={how === 'transfer'}
+              className={`${s.payWay} ${how === 'transfer' ? s.payWayOn : ''}`}
+              onClick={() => setHow('transfer')}
+            >
+              <span className={s.wayIcon} aria-hidden>
+                <BankMark />
+              </span>
+              <b>Bank transfer</b>
+              <small>Send it from your bank app, then upload the receipt</small>
+            </button>
+          </div>
+
+          {/* Whichever way was picked, its own details — step three is inside it. */}
+          <div key={how} className={s.paySwap}>
+            <h2 className={s.stepHead}>
+              <span className={s.stepBadge} aria-hidden>
+                3
+              </span>
+              <span>
+                {how === 'card' ? (accounts?.cardLive ? 'Pay by card' : 'Card, once it opens') : `Send ${owed} and show me`}
+              </span>
+            </h2>
+
+            {how === 'card' && accounts?.cardLive ? (
+              <div className={s.soonBox}>
+                <span className={s.soonArt} aria-hidden>
+                  <VisaMark />
+                  <MastercardMark />
                 </span>
-                <button type="button" className={s.copyBtn} onClick={copy}>
-                  {copied ? 'Copied ✓' : 'Copy'}
+                <p>
+                  Stripe takes the payment on its own page, so we never see your card. Any country&rsquo;s Visa or Mastercard
+                  works, your bank converts from dollars, and {trial ? 'your day' : 'your plan'} starts the moment it goes
+                  through — nobody to wait for.
+                </p>
+                <button type="button" className={s.primary} disabled={busy} onClick={() => void payByCard()}>
+                  {busy ? 'Opening the card page…' : `Pay ${studioUsd(amount)} by card`}
+                </button>
+                {error ? (
+                  <p className={s.error} role="alert">
+                    {error}
+                  </p>
+                ) : null}
+              </div>
+            ) : how === 'card' ? (
+              <div className={s.soonBox}>
+                <span className={s.soonArt} aria-hidden>
+                  <VisaMark />
+                  <MastercardMark />
+                </span>
+                <b>Card payments are not open yet</b>
+                <p>
+                  We are finishing the card gateway with our bank. Until it is live, send the money by bank transfer — it is
+                  approved the same day and your plan starts from that moment.
+                </p>
+                <button type="button" className={s.primary} onClick={() => setHow('transfer')}>
+                  Pay by bank transfer
                 </button>
               </div>
+            ) : (
+              <>
+                <div className={s.field}>
+                  {/* The amount is in the step's own heading above; this only has to say where. */}
+                  Our account
+                  {accounts === null ? (
+                    <p className={s.sub}>Loading the receiving account…</p>
+                  ) : !iban ? (
+                    <p className={s.error}>Payment details are being set up. Email business@velocityrides.app and we will send them.</p>
+                  ) : (
+                    <div className={s.acct}>
+                      <span>
+                        <small className={s.acctBank}>
+                          <BankMark />
+                          {accounts.bankName ?? 'Bank transfer'}
+                        </small>
+                        <code>{iban}</code>
+                        <small>{STUDIO_BANK_TITLE}</small>
+                      </span>
+                      <button type="button" className={s.copyBtn} onClick={copy}>
+                        {copied ? 'Copied ✓' : 'Copy'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <label className={`${a.drop} ${file ? a.dropDone : ''}`} style={{ position: 'relative' }}>
+                  <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+                  <span className={s.dropArt} aria-hidden>
+                    <svg viewBox="0 0 24 24" width={28} height={28} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3.5" y="3.5" width="17" height="17" rx="3" />
+                      <path d="M3.9 16.2 8.6 11.6l3.5 3.4 2.8-2.6 5.2 4.6" />
+                      <circle cx="9" cy="8.6" r="1.6" />
+                    </svg>
+                  </span>
+                  <b>{file ? `✓ ${file.name}` : 'Add the receipt screenshot'}</b>
+                  <span>{file ? 'Tap to choose a different picture' : 'A photo or screenshot of the transfer, up to 10 MB'}</span>
+                </label>
+                <FieldError message={tried && !file ? 'Add the screenshot of your transfer receipt — a photo of the screen is fine.' : null} />
+                <label className={s.field}>
+                  Transaction ID
+                  <input
+                    className={s.input}
+                    value={txnId}
+                    onChange={(e) => setTxnId(e.target.value)}
+                    placeholder="From the receipt, e.g. 0123456789"
+                    aria-invalid={tried && txnId.trim().length < 6}
+                    aria-describedby="start-txn-error"
+                  />
+                  <FieldError id="start-txn-error" message={tried && txnId.trim().length < 6 ? 'Type the transaction ID printed on the receipt — at least 6 characters.' : null} />
+                </label>
+                <label className={a.agree}>
+                  <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
+                  <span>I sent {owed} to the account shown, and the receipt and transaction ID above are from that transfer.</span>
+                </label>
+                <FieldError message={tried && !agreed ? 'Tick this to confirm the transfer is yours.' : null} />
+                {error ? (
+                  <p className={s.error} role="alert">
+                    {error}
+                  </p>
+                ) : null}
+                <button type="button" className={s.primary} onClick={send} disabled={busy}>
+                  {busy ? <span className={s.spinner} aria-hidden /> : null}
+                  {busy ? 'Sending — we are reading your receipt…' : 'Submit payment'}
+                </button>
+              </>
             )}
           </div>
-
-          <label className={`${a.drop} ${file ? a.dropDone : ''}`} style={{ position: 'relative' }}>
-            <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-            <span className={s.dropArt} aria-hidden>
-              <svg viewBox="0 0 24 24" width={28} height={28} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3.5" y="3.5" width="17" height="17" rx="3" />
-                <path d="M3.9 16.2 8.6 11.6l3.5 3.4 2.8-2.6 5.2 4.6" />
-                <circle cx="9" cy="8.6" r="1.6" />
-              </svg>
-            </span>
-            <b>{file ? `✓ ${file.name}` : 'Add the receipt screenshot'}</b>
-            <span>{file ? 'Tap to choose a different picture' : 'A photo or screenshot of the transfer, up to 10 MB'}</span>
-          </label>
-          <FieldError message={tried && !file ? 'Add the screenshot of your transfer receipt — a photo of the screen is fine.' : null} />
-          <label className={s.field}>
-            Transaction ID
-            <input
-              className={s.input}
-              value={txnId}
-              onChange={(e) => setTxnId(e.target.value)}
-              placeholder="From the receipt, e.g. 0123456789"
-              aria-invalid={tried && txnId.trim().length < 6}
-              aria-describedby="start-txn-error"
-            />
-            <FieldError id="start-txn-error" message={tried && txnId.trim().length < 6 ? 'Type the transaction ID printed on the receipt — at least 6 characters.' : null} />
-          </label>
-          <label className={a.agree}>
-            <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
-            <span>I sent {owed} to the account shown, and the receipt and transaction ID above are from that transfer.</span>
-          </label>
-          <FieldError message={tried && !agreed ? 'Tick this to confirm the transfer is yours.' : null} />
-          {error ? (
-            <p className={s.error} role="alert">
-              {error}
-            </p>
-          ) : null}
-          <button type="button" className={s.primary} onClick={send} disabled={busy}>
-            {busy ? <span className={s.spinner} aria-hidden /> : null}
-            {busy ? 'Sending — we are reading your receipt…' : 'Submit payment'}
-          </button>
-        </>
-      )}
-
-      {trial ? (
-        <p className={s.fine}>
-          You are buying <b>one day</b> of {STUDIO_PLANS[plan].name} for {studioUsd(STUDIO_TRIAL_USD)} — the same team,
-          for {STUDIO_TRIAL_HOURS} hours.{' '}
-          <button type="button" className={s.link} onClick={() => setBuying('plan')}>
-            Pay for the whole month instead
-          </button>
-        </p>
-      ) : (
-        <p className={s.fine}>
-          Want to see Vexa work first?{' '}
-          <button type="button" className={s.link} onClick={() => setBuying('trial')}>
-            Take one day for {studioUsd(STUDIO_TRIAL_USD)} instead
-          </button>{' '}
-          — {STUDIO_TRIAL_HOURS} hours of the same team. We check that dollar the same way, which is how we know you are
-          real.
-        </p>
-      )}
+        </aside>
+      </div>
     </div>
   );
 }
@@ -840,6 +900,126 @@ function WaitingCard({ payment }: { payment: StudioPaymentDoc }) {
   );
 }
 
+/** What Vexa says while she is reading, so the wait shows the work rather than a bar. */
+const LOOKING = [
+  'Finding your page…',
+  'Reading what you sell…',
+  'Working out who buys it…',
+  'Picking the networks that suit you…',
+];
+
+/**
+ * Vexa reading the customer's own page, rather than the customer typing it out.
+ *
+ * The owner's objection (2026-11-12) was that a product that claims to think
+ * should not open with seven empty boxes. So the step opens with a choice:
+ * hand her the page you already have and she fills the brief in, or type it
+ * yourself. What she finds is shown in the same editable form either way —
+ * nothing is saved behind the customer's back, and a field she could not find
+ * stays empty rather than being invented.
+ */
+function LookUpCard({ onFound, onType }: { onFound: (found: LookUpResult) => void; onType: () => void }) {
+  const [link, setLink] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [line, setLine] = useState(0);
+
+  useEffect(() => {
+    if (!busy) return;
+    const id = setInterval(() => setLine((n) => (n + 1) % LOOKING.length), 2200);
+    return () => clearInterval(id);
+  }, [busy]);
+
+  async function look() {
+    setBusy(true);
+    setError(null);
+    setLine(0);
+    try {
+      onFound(await studioApi.lookUp({ link: link.trim() }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'I could not read that page. Try another address, or tell me yourself.');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className={s.card}>
+      <div className={s.vexaSays}>
+        <span className={s.vexaFig} aria-hidden>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/site/vexa.webp" alt="" width={854} height={853} draggable={false} />
+        </span>
+        <p className={s.vexaBubble}>
+          I would rather work your business out than make you type it. Give me the page you already have — your website,
+          your Instagram, your Facebook — and I will read it and come back with what you sell, who buys it and where I
+          think you should be posting.
+        </p>
+      </div>
+
+      {busy ? (
+        <div className={s.looking} aria-live="polite">
+          <span className={s.lookingRing} aria-hidden />
+          <b key={line} className={s.lookingLine}>
+            {LOOKING[line]}
+          </b>
+          <small>This takes a few seconds — I am actually reading it.</small>
+        </div>
+      ) : (
+        <form
+          className={s.doors}
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (link.trim().length >= 3) void look();
+          }}
+        >
+          <div className={`${s.door} ${s.doorOn}`}>
+            <span className={s.doorIcon} aria-hidden>
+              <svg viewBox="0 0 24 24" width={22} height={22} fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="7" />
+                <path d="m16.3 16.3 4.2 4.2" />
+              </svg>
+            </span>
+            <b>Connect your page — I work it out</b>
+            <small>Your website, Instagram, Facebook or Google listing. One address is enough.</small>
+            <input
+              className={s.input}
+              value={link}
+              onChange={(e) => setLink(e.target.value)}
+              placeholder="bakehouse.pk"
+              aria-label="Your website or page address"
+              autoFocus
+            />
+            {error ? (
+              <p className={s.error} role="alert">
+                {error}
+              </p>
+            ) : null}
+            <button type="submit" className={s.primary} disabled={link.trim().length < 3}>
+              Look me up
+            </button>
+          </div>
+
+          <div className={s.door}>
+            <span className={s.doorIcon} aria-hidden>
+              <svg viewBox="0 0 24 24" width={22} height={22} fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 20h16" />
+                <path d="M14.5 4.8a2 2 0 0 1 2.8 2.8L8.6 16.3l-3.6.9.9-3.6Z" />
+              </svg>
+            </span>
+            <b>I&rsquo;ll tell you myself</b>
+            <small>Four short answers. Quicker if you have nothing online yet.</small>
+            <button type="button" className={s.ghost} onClick={onType}>
+              Fill it in myself
+            </button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
+
+type LookUpResult = Awaited<ReturnType<typeof studioApi.lookUp>>;
+
 function BusinessCard({
   plan,
   email,
@@ -850,8 +1030,11 @@ function BusinessCard({
   plan: StudioPlanId;
   email: string | null;
   onSignOut: () => void;
-  onDone: (brand: Brand) => void;
+  onDone: (brand: Brand, suggested: SocialPlatform[]) => void;
 }) {
+  /** The chooser, then the form — reached either by her reading the page or by the customer picking to type. */
+  const [asking, setAsking] = useState(true);
+  const [found, setFound] = useState<LookUpResult | null>(null);
   const [f, setF] = useState<Brand>({
     businessName: '',
     what: '',
@@ -866,24 +1049,63 @@ function BusinessCard({
 
   const ready = f.businessName.trim().length >= 2 && f.what.trim().length >= 5 && f.audience.trim() && f.market.trim();
 
+  if (asking) {
+    return (
+      <LookUpCard
+        onType={() => setAsking(false)}
+        onFound={(r) => {
+          // Whatever she could not find stays empty for the customer to fill; nothing is guessed into the box.
+          setF({
+            businessName: r.businessName,
+            what: r.what,
+            audience: r.audience,
+            market: r.market,
+            language: r.language || 'English',
+            differences: r.differences,
+            website: r.website,
+          });
+          setFound(r);
+          setAsking(false);
+        }}
+      />
+    );
+  }
+
   return (
     <div className={s.card}>
       <div style={{ display: 'grid', gap: 4 }}>
         <h1 className={s.cardTitle} style={{ fontSize: 24 }}>
-          Tell your team about the business
+          {found ? 'Here is what I found' : 'Tell your team about the business'}
         </h1>
         <p className={s.signedAs}>
-          Five answers become your team&apos;s brief on day one. Signed in as {email}.{' '}
+          {found
+            ? 'Fix anything I got wrong — this becomes your team’s brief on day one. '
+            : 'Five answers become your team’s brief on day one. '}
+          Signed in as {email}.{' '}
           <button type="button" onClick={onSignOut} className={s.link}>
             Not you?
           </button>
         </p>
       </div>
+
+      {found ? (
+        <div className={s.vexaSays}>
+          <span className={s.vexaFig} aria-hidden>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/site/vexa.webp" alt="" width={854} height={853} draggable={false} />
+          </span>
+          <p className={s.vexaBubble}>
+            {found.thin
+              ? 'I could not get much from that address, so most of this is still guesswork — correct it and I will work from yours.'
+              : found.plan || 'That is what I read off your page. Correct anything I got wrong.'}
+          </p>
+        </div>
+      ) : null}
       <form
         style={{ display: 'grid', gap: 12 }}
         onSubmit={(e) => {
           e.preventDefault();
-          if (ready) onDone(f);
+          if (ready) onDone(f, found?.platforms ?? []);
         }}
       >
         <label className={s.field}>
@@ -923,7 +1145,12 @@ function BusinessCard({
         </label>
 
         <p className={s.fine}>
-          Your plan: <b>{STUDIO_PLANS[plan].name}</b> — paid. It starts the moment your console opens.
+          Your plan: <b>{STUDIO_PLANS[plan].name}</b> — paid. It starts the moment your console opens.{' '}
+          {found ? null : (
+            <button type="button" className={s.link} onClick={() => setAsking(true)}>
+              Let me read your page instead
+            </button>
+          )}
         </p>
 
         <button type="submit" className={s.primary} disabled={!ready}>
@@ -938,14 +1165,17 @@ function BusinessCard({
 function PlatformsCard({
   brand,
   plan,
+  suggested,
   onBack,
 }: {
   brand: Brand;
   plan: StudioPlanId;
+  /** What Vexa picked out after reading their page; empty when nobody asked her to. */
+  suggested: SocialPlatform[];
   onBack: () => void;
 }) {
   const router = useRouter();
-  const [chosen, setChosen] = useState<SocialPlatform[]>(['instagram', 'facebook']);
+  const [chosen, setChosen] = useState<SocialPlatform[]>(suggested.length ? suggested : ['instagram', 'facebook']);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const toggle = (p: SocialPlatform) => setChosen((c) => (c.includes(p) ? c.filter((x) => x !== p) : [...c, p]));
@@ -971,8 +1201,11 @@ function PlatformsCard({
           Where do you post?
         </h1>
         <p className={s.signedAs}>
-          Pick the networks Vexa should post on. Your console opens with each one ready to connect — Instagram and Facebook
-          take one Facebook sign-in. You can add more later.
+          {suggested.length
+            ? 'These are the ones I would start you on, from what I read about you. Change any of them. '
+            : 'Pick the networks Vexa should post on. '}
+          Your console opens with each one ready to connect — Instagram and Facebook take one Facebook sign-in. You can
+          add more later.
         </p>
       </div>
       <div className={s.field} role="group" aria-label="Networks">

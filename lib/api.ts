@@ -2312,6 +2312,29 @@ export const studioApi = {
     { plan: StudioPlanId; billing?: StudioBilling; where?: 'start' | 'billing'; trial?: true },
     { url: string }
   >('studioCardCheckout'),
+  /**
+   * Vexa reads the customer's own page — a website, an Instagram or Facebook
+   * page — and writes the brief herself, so the sign-up is not seven empty
+   * boxes. Everything she returns is shown for the customer to correct before
+   * it is saved; a field she could not find comes back empty.
+   */
+  lookUp: callable<
+    { link: string },
+    {
+      businessName: string;
+      what: string;
+      audience: string;
+      market: string;
+      language: string;
+      differences: string;
+      website: string;
+      platforms: SocialPlatform[];
+      /** One or two sentences: what she would do for this business. */
+      plan: string;
+      /** She did not find the page and is working from the address alone. */
+      thin: boolean;
+    }
+  >('studioLookUpBusiness'),
   sendEmailCode: callable<Record<string, never>, { ok: boolean; sentTo?: string; alreadyVerified?: boolean }>(
     'studioSendEmailCode',
   ),

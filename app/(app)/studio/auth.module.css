@@ -1117,3 +1117,403 @@ textarea.input {
     transform: none;
   }
 }
+
+/* ── the pay step, as the three steps it actually is (owner, 2026-11-12) ───
+   One column put the money below the fold, so the plans take the left and
+   paying takes the right, where it stays while the left scrolls. Under 860px
+   it stacks, plans first. */
+
+.payWide {
+  max-width: 1000px;
+}
+.payCard {
+  gap: 18px;
+}
+.payGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.95fr);
+  gap: 22px;
+  align-items: start;
+}
+.payCol {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  min-width: 0;
+}
+.payPay {
+  position: sticky;
+  top: 18px;
+  padding: 16px;
+  border-radius: 18px;
+  background: #fbfdfb;
+  border: 1px solid var(--line);
+}
+@media (max-width: 860px) {
+  .payGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .payPay {
+    position: static;
+    padding: 14px;
+  }
+}
+
+/* ①②③ — the step this part of the screen is. */
+.stepHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: 17px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.stepHead small {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.stepBadge {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 50%;
+  background: var(--green);
+  color: var(--lime);
+  font-size: 12.5px;
+  font-weight: 800;
+  box-shadow: 0 0 0 4px rgba(0, 76, 49, 0.1);
+}
+
+/* The chosen way to pay brings its own details in from the side. */
+.paySwap {
+  display: grid;
+  gap: 12px;
+  animation: swapIn 0.32s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+@keyframes swapIn {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+}
+
+/* ── the business step: two doors, and Vexa reading while you wait ──────── */
+
+.doors {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.door {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border: 1.5px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+  animation: doorIn 0.42s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+.door:last-child {
+  animation-delay: 0.09s;
+}
+.doorOn {
+  border-color: var(--green);
+  background: linear-gradient(150deg, #f4faf3 0%, #ffffff 65%);
+  box-shadow: 0 14px 34px -22px rgba(0, 76, 49, 0.8);
+}
+.door b {
+  font-size: 14.5px;
+  font-weight: 750;
+}
+.door small {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.door .input,
+.door .primary,
+.door .ghost {
+  margin-top: 6px;
+}
+.doorIcon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  background: #e7f0ea;
+  color: var(--green);
+}
+@keyframes doorIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+/* The second door's button: the same shape, none of the pull. */
+.ghost {
+  width: 100%;
+  min-height: 46px;
+  border: 1.5px solid var(--line-hi);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.18s, background 0.18s;
+}
+.ghost:hover {
+  border-color: var(--green);
+  background: #f4faf3;
+}
+
+/* While she reads. */
+.looking {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 34px 18px;
+  text-align: center;
+}
+.lookingRing {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 3px solid #e2ece6;
+  border-top-color: var(--green);
+  animation: spin 0.9s linear infinite;
+}
+.lookingLine {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  animation: lineIn 0.4s ease-out both;
+}
+.looking small {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes lineIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* ── movement (owner, 2026-11-12: the page was boring) ─────────────────────
+   Entrances and one-shot reactions only: nothing here loops in the corner of
+   the eye except Vexa's own float and the aurora behind the page, both of
+   which stop under prefers-reduced-motion at the end of this file. */
+
+/* Every step arrives rather than appearing. */
+.card {
+  animation: cardIn 0.44s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+@keyframes cardIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.985);
+  }
+}
+
+/* A slow lime aurora behind everything, so the page is never quite still. */
+.page::before {
+  content: '';
+  position: fixed;
+  inset: -25%;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(circle at 18% 22%, rgba(204, 255, 0, 0.16), transparent 42%),
+    radial-gradient(circle at 78% 72%, rgba(4, 107, 65, 0.14), transparent 46%);
+  animation: aurora 26s ease-in-out infinite alternate;
+}
+.side,
+.show {
+  position: relative;
+  z-index: 1;
+}
+@keyframes aurora {
+  from {
+    transform: translate3d(-3%, -2%, 0) scale(1);
+  }
+  to {
+    transform: translate3d(4%, 3%, 0) scale(1.12);
+  }
+}
+
+/* The rail at the top: the step you are on breathes, the ones behind you pop as they tick. */
+.stepOn .stepNum {
+  animation: stepBreathe 2.4s ease-in-out infinite;
+}
+.stepDone .stepNum {
+  animation: tickPop 0.34s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+@keyframes stepBreathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 4px rgba(0, 76, 49, 0.12);
+  }
+  50% {
+    box-shadow: 0 0 0 9px rgba(0, 76, 49, 0);
+  }
+}
+@keyframes tickPop {
+  from {
+    transform: scale(0.55);
+  }
+  60% {
+    transform: scale(1.12);
+  }
+}
+
+/* Vexa's line arrives after she does. */
+.vexaBubble {
+  animation: bubbleIn 0.5s cubic-bezier(0.2, 0.8, 0.3, 1) 0.1s both;
+}
+@keyframes bubbleIn {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+}
+
+/* The plan you pick catches the light once, and its tick springs in. */
+.planBoxOn .boxFilm::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 36%, rgba(255, 255, 255, 0.55) 50%, transparent 64%);
+  transform: translateX(-130%);
+  animation: sheen 0.95s ease-out 0.05s;
+}
+@keyframes sheen {
+  to {
+    transform: translateX(130%);
+  }
+}
+.planBoxOn .boxTick {
+  animation: tickPop 0.34s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+.planBox:active {
+  transform: scale(0.985);
+}
+
+/* What the plan does, ticked off one line at a time. */
+.gets li {
+  animation: getsLine 0.34s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+.gets li:nth-child(1) {
+  animation-delay: 0.04s;
+}
+.gets li:nth-child(2) {
+  animation-delay: 0.1s;
+}
+.gets li:nth-child(3) {
+  animation-delay: 0.16s;
+}
+.gets li:nth-child(4) {
+  animation-delay: 0.22s;
+}
+.gets li:nth-child(5) {
+  animation-delay: 0.28s;
+}
+@keyframes getsLine {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+}
+
+/* The figure flips when the plan or the billing changes, so the change is seen. */
+.total strong {
+  animation: totalFlip 0.36s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+@keyframes totalFlip {
+  from {
+    opacity: 0;
+    transform: translateY(-9px) scale(0.93);
+  }
+}
+
+/* The way you picked settles in; the one you did not fades back. */
+.payWay {
+  transition: border-color 0.18s, box-shadow 0.18s, transform 0.18s, background 0.18s;
+}
+.payWayOn {
+  transform: translateY(-2px);
+}
+
+/* The button that finishes it catches the light now and then. */
+.primary {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.primary::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+  transform: translateX(-200%);
+  animation: shine 4.5s ease-in-out 1.4s infinite;
+  pointer-events: none;
+}
+.primary:disabled::after {
+  animation: none;
+  opacity: 0;
+}
+@keyframes shine {
+  18%,
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .door,
+  .vexaBubble,
+  .paySwap,
+  .gets li,
+  .lookingLine,
+  .stepOn .stepNum,
+  .stepDone .stepNum,
+  .planBoxOn .boxTick,
+  .planBoxOn .boxFilm::after,
+  .page::before,
+  .primary::after {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  .payWayOn,
+  .planBox:active {
+    transform: none;
+  }
+  .lookingRing {
+    animation-duration: 2.4s;
+  }
+}
