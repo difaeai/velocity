@@ -59,7 +59,8 @@ export function StudioPricing({ heading = 'Pay for what you use. Nothing else.' 
         </div>
         <PriceCountdown />
         <StudioPlans />
-        <p className={s.payNote}>Pay by bank transfer.</p>
+        {/* Cards went live on 2026-11-12; saying "bank transfer" alone sends people looking for a bank app they do not need. */}
+        <p className={s.payNote}>Pay by debit or credit card, or by bank transfer.</p>
       </div>
     </section>
   );
