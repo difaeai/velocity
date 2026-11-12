@@ -103,7 +103,6 @@ export default function StudioPage() {
               <a href="#how-it-works">How it works</a>
               <a href="#pricing">Pricing</a>
               <DemoButton>Demo</DemoButton>
-              <a href="#privacy">Privacy</a>
             </span>
             {/* The way back in for a customer who already has a workspace — the
                 homepage's own button, so it is the one they know. */}
