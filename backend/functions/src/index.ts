@@ -628,6 +628,8 @@ export { studioCreditSweep, studioUsage } from './studio/credits';
 export { studioTouch, studioSendEmailCode, studioVerifyEmailCode } from './studio/emailCode';
 export { adminSetStudioMailer } from './studio/mailer';
 export { studioPriceClock } from './studio/priceClock';
+// Velocity Studio sign-up: Vexa reading the customer's own page instead of asking them to type it out.
+export { studioLookUpBusiness } from './studio/lookUp';
 // Velocity Studio paid by card, from any country: Stripe Checkout out, its signed webhook back.
 export { studioCardCheckout, studioStripeWebhook } from './studio/cardPay';
 
