@@ -327,3 +327,144 @@
     display: none;
   }
 }
+
+/* ── Her own page's hero (owner, 2026-11-12) ─────────────────────────────
+   The same Vexa, standing in the top of her page instead of the corner: a
+   light behind her, the networks over her head, her line beside her, and her
+   name under her feet. Everything that moves here is CSS. */
+
+.inHero {
+  position: relative;
+  z-index: 1;
+  right: auto;
+  bottom: auto;
+  width: clamp(230px, 30vw, 400px);
+  margin-inline: auto;
+  padding-bottom: 58px;
+  pointer-events: auto;
+}
+
+/* The light she stands in. */
+.inHero::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 40px;
+  width: 128%;
+  aspect-ratio: 1;
+  translate: -50% 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(204, 255, 0, 0.17), rgba(4, 107, 65, 0.16) 44%, transparent 70%);
+  animation: halo 6s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes halo {
+  50% {
+    scale: 1.07;
+    opacity: 0.72;
+  }
+}
+
+.inHero .arc {
+  --w: clamp(230px, 30vw, 400px);
+  bottom: 84%;
+}
+
+/* Her cut-off waist is a crop in the corner and a mistake in a hero, so it fades out instead. */
+.inHero .fig {
+  -webkit-mask-image: linear-gradient(180deg, #000 86%, transparent);
+  mask-image: linear-gradient(180deg, #000 86%, transparent);
+}
+
+.inHero .caption {
+  right: 66%;
+  bottom: 58%;
+  max-width: min(300px, 44vw);
+  font-size: 15px;
+}
+
+.plate {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  translate: -50% 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: max-content;
+  max-width: 100%;
+  margin: 0;
+  padding: 10px 18px;
+  border: 1px solid rgba(204, 255, 0, 0.4);
+  border-radius: 999px;
+  background: rgba(4, 18, 12, 0.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 16px 36px -18px rgba(4, 18, 12, 0.8);
+}
+
+.plate b {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: 16px;
+  color: var(--text);
+}
+
+.plate span {
+  font-family: var(--font-mono), monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-mut);
+}
+
+.plate i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--lime);
+  box-shadow: 0 0 0 0 rgba(204, 255, 0, 0.5);
+  animation: live 2s ease-out infinite;
+}
+
+@keyframes live {
+  70% {
+    box-shadow: 0 0 0 9px rgba(204, 255, 0, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(204, 255, 0, 0);
+  }
+}
+
+/* The corner Vexa, while the big one is on screen. */
+.away {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 240ms ease;
+}
+
+@media (max-width: 940px) {
+  /* One column: she stands under the writing, and the bow over her head needs
+     the room above her that the second column used to give it. */
+  .inHero {
+    width: min(270px, 66vw);
+    margin-top: clamp(64px, 16vw, 104px);
+  }
+
+  .inHero .arc {
+    --w: min(270px, 66vw);
+  }
+
+  .inHero .caption {
+    right: 58%;
+    max-width: 46vw;
+    font-size: 13.5px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inHero::before,
+  .plate i {
+    animation: none;
+  }
+}

@@ -10,7 +10,6 @@ import { PhoneShowcase } from '@/components/site/PhoneShowcase';
 import { RouteMap } from '@/components/site/RouteMap';
 import { Reveal } from '@/components/site/Reveal';
 import { SiteNav } from '@/components/site/SiteNav';
-import { Vexa } from '@/components/site/Assistant';
 import { SpotlightGrid } from '@/components/site/Spotlight';
 import { SpeedStage } from '@/components/site/SpeedStage';
 import { InstallBarSubtitle, InstallButton } from '@/components/site/InstallButton';
@@ -1087,8 +1086,6 @@ export default function RidesPage() {
           </div>
         </section>
       </main>
-
-      <Vexa aboveBar />
 
       {/* Small screens get a persistent way to install without scrolling back
           up — this is an app landing page, and the app is the conversion. */}

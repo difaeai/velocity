@@ -67,6 +67,14 @@ export function DoorPane({
         }
         // The same listener twice on the same document is one listener.
         win.document.addEventListener('click', onClick, true);
+        // Each half is a window of its own, so its scrollbar would draw a pale
+        // stripe down the middle of the door. The half still scrolls.
+        if (!win.document.documentElement.dataset.door) {
+          win.document.documentElement.dataset.door = 'on';
+          const hide = win.document.createElement('style');
+          hide.textContent = 'html{scrollbar-width:none}html::-webkit-scrollbar{display:none}';
+          win.document.head.append(hide);
+        }
       } catch {
         /* not ours to follow */
       }

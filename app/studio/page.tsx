@@ -9,6 +9,7 @@ import { STUDIO_FAQ, StudioFaq, StudioPricing } from '@/components/site/StudioSe
 import { StudioScrub } from '@/components/site/StudioScrub';
 import { StudioStory } from '@/components/site/StudioStory';
 import { STUDIO_FROM_USD, STUDIO_TRIAL_HOURS, STUDIO_TRIAL_USD, studioUsd } from '@/lib/studio';
+import { VEXA_LEGAL_EFFECTIVE, VEXA_PRIVACY } from '@/lib/vexaLegal';
 import site from '@/components/site/site.module.css';
 
 import s from './studio.module.css';
@@ -28,7 +29,7 @@ import s from './studio.module.css';
  *
  * No invented numbers anywhere: no customer counts, ratings or "x% more reach".
  * Every claim here is something the product does, and every line of the policy
- * below says what public/legal/privacy-policy.html §14 says.
+ * below is lib/vexaLegal.ts, the same words her own /vexa/privacy page prints.
  */
 
 export const metadata: Metadata = {
@@ -70,80 +71,6 @@ const MAKES = [
   { icon: TrendingUp, text: 'What is going viral in your niche — and a version of your own' },
   { icon: Megaphone, text: 'Facebook and Instagram ads, with your budget guarded in code' },
   { icon: Handshake, text: 'New customers found and emailed for you' },
-];
-
-/**
- * Vexa's privacy policy, on the page.
- *
- * Every line here is what public/legal/privacy-policy.html already says about
- * Vexa (§14, and §13 for the companies involved) — the policy document stays
- * the full one, covering the ride app too, and is linked under this section.
- * Change one and change the other, or Meta and TikTok will be reading two
- * different promises.
- */
-const POLICY_EFFECTIVE = '9 November 2026';
-
-const POLICY = [
-  {
-    t: 'Who you are dealing with',
-    d: 'Vexa is operated by Berreto (Private) Limited, the company behind Velocity Rides, in Pakistan. It is the company responsible for the data described here. Write to business@velocityrides.app about anything on this page.',
-  },
-  {
-    t: 'What you give us',
-    d: 'Your email address, your business name and a short description of your business, its customers, market and language. If you pay, the transaction ID or the receipt screenshot you send.',
-  },
-  {
-    t: 'Facebook & Instagram',
-    d: 'When you connect your accounts with Facebook Login we receive an access token for the Facebook Page and Instagram professional account you choose, and — only if you connect the ads desk — your Meta ad account. We use them only to do what you ask: publish the posts and reels the service makes, read and answer comments on them, read your posts’ performance and your profile to improve future posts, and create, read and manage the ad campaigns you approve. Tokens are stored encrypted on our servers and are never shown to anyone, including you.',
-  },
-  {
-    t: 'TikTok',
-    d: 'Continue with TikTok allows two things: your basic profile, and posting videos. We store your display name, profile picture, @username, the user ID TikTok issues for our app, and an access token, so we can show which account is connected and post for you. Each time you open the Post to TikTok screen we read your account’s posting options (the privacy levels open to you, whether comments, Duet and Stitch are on, and the longest video you can post); we show them there and do not keep them. We send TikTok only the video you are looking at, with the title, privacy, interaction and commercial-content choices you made on that screen, and only after you press Post to TikTok. We keep TikTok’s answer for that post so we can show you the result. We do not read your followers, your messages, your other videos or their statistics.',
-  },
-  {
-    t: 'TikTok Ads',
-    d: 'Only if you connect it: we receive an access token for the ad accounts you allow and store the name, ID and currency of the one you choose. It is used to upload the video for an ad and to create, read and manage the campaigns you approve, including their spend, clicks and impressions. The token is stored encrypted.',
-  },
-  {
-    t: 'The sales agent and your mailbox',
-    d: 'If you use it, we store the businesses it finds (from public maps and websites) and the emails it writes. If you connect a mailbox, its app password is stored encrypted and used only to send the emails you approved and the follow-ups you allowed, and to read replies from the businesses it wrote to. The inbox is opened read-only: only messages from those businesses are read, nothing is marked read, moved or deleted, and we keep the text of their reply so an answer can be drafted for you.',
-  },
-  {
-    t: 'Market analysis',
-    d: 'Anything you type about your business, and the public pages you give us links to, are read to analyse your market and are kept in your workspace.',
-  },
-  {
-    t: 'The pricing timer',
-    d: 'Each visitor gets their own time at the current price. To count it we store when it started against your account if you are signed in, and otherwise against a one-way hash of your IP address. We do not store the address itself or use the hash for anything else.',
-  },
-  {
-    t: 'How the writing is done',
-    d: 'Your business description, what you tell us, your posts’ text, the replies your leads send and public market information are sent to Google Gemini to write and plan content. We do not send rider or driver data, and we do not sell your data.',
-  },
-  {
-    t: 'Paying',
-    d: 'Card payments are taken by Stripe on Stripe’s own page — we never see, handle or store your card number. If you pay by bank transfer, what we keep is the transaction ID or the screenshot you upload as proof.',
-  },
-  {
-    t: 'What you can switch off',
-    d: 'Disconnect an account at any time from Connected accounts, which deletes its stored token; the account’s name and picture stay in your workspace until the workspace is deleted. You can also remove our app from Facebook at Settings → Business Integrations, and from the connected apps in your TikTok settings.',
-  },
-  {
-    t: 'Deleting everything',
-    d: 'Email business@velocityrides.app from the address you signed up with to delete your Vexa workspace and everything in it. We delete it within 30 days, except records the law requires us to keep.',
-  },
-  {
-    t: 'Who else sees it',
-    d: 'Google Firebase (hosting and storage), Google Gemini (writing and research), Meta (Facebook and Instagram), TikTok (posting and ads) and Stripe (card payments). Each has its own privacy policy, listed in the full document below.',
-  },
-  {
-    t: 'Children',
-    d: 'Vexa is for businesses and for people aged 18 and over. We do not knowingly collect anything from children.',
-  },
-  {
-    t: 'Changes',
-    d: `When this policy changes we revise the effective date above. It last changed on ${POLICY_EFFECTIVE}.`,
-  },
 ];
 
 /** The questions, for search — they moved here with the FAQ itself when the homepage became the door. */
@@ -214,29 +141,8 @@ export default function StudioPage() {
             </p>
           </div>
 
-          <div className={s.mock} aria-label="What your dashboard looks like">
-            <div className={s.mockBar}>
-              <span className={s.mockDot} /> Your team is working
-            </div>
-            <div className={s.mockAsk}>“Make a reel for Eid: order cakes by Thursday, free delivery”</div>
-            <div className={s.mockBoxes}>
-              {[
-                { t: 'Eid orders close Thursday', bg: 'linear-gradient(160deg,#0b6b45,#04120c)', st: 'Live', live: true },
-                { t: 'Baked at 5am. Delivered by noon.', bg: 'linear-gradient(160deg,#3d2a12,#120b04)', st: 'Approve' },
-                { t: '3 cakes our regulars order most', bg: 'linear-gradient(160deg,#1d2f5a,#060b18)', st: 'Being made' },
-              ].map((b) => (
-                <div key={b.t} className={s.mockBox}>
-                  <div className={s.mockThumb} style={{ background: b.bg }}>
-                    {b.t}
-                  </div>
-                  <div className={s.mockMeta}>
-                    <span>Reel</span>
-                    <span className={b.live ? s.mockLive : undefined}>{b.st}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          {/* She is the hero: life-size, the networks over her head, and she says what she does. */}
+          <Vexa hero />
         </div>
       </section>
 
@@ -355,7 +261,7 @@ export default function StudioPage() {
               Privacy Policy
             </a>{' '}
             and{' '}
-            <a href="/terms" style={{ textDecoration: 'underline' }}>
+            <a href="/vexa/terms" style={{ textDecoration: 'underline' }}>
               Terms of Service
             </a>
             .
@@ -370,11 +276,11 @@ export default function StudioPage() {
             <span className={site.eyebrow}>Privacy</span>
             <h2 className={site.h2}>What Vexa knows about you, and why</h2>
             <p className={`${site.lead} ${site.center}`}>
-              Effective {POLICY_EFFECTIVE} · Berreto (Private) Limited · business@velocityrides.app
+              Effective {VEXA_LEGAL_EFFECTIVE} · Berreto (Private) Limited · business@velocityrides.app
             </p>
           </div>
           <div className={s.policy}>
-            {POLICY.map((p) => (
+            {VEXA_PRIVACY.map((p) => (
               <article key={p.t} className={s.policyItem}>
                 <h3>{p.t}</h3>
                 <p>{p.d}</p>
@@ -382,9 +288,10 @@ export default function StudioPage() {
             ))}
           </div>
           <p className={s.policyMore}>
-            This is Vexa’s part of the policy. The full document, which also covers the Velocity Rides app, is at{' '}
-            <a href="/privacy">velocityrides.app/privacy</a> — see <a href="/terms">Terms of Service</a> and{' '}
-            <a href="/support">Support</a>.
+            This is Vexa’s privacy policy in full; it also has its own page at{' '}
+            <a href="/vexa/privacy">velocityrides.app/vexa/privacy</a>. Her other documents:{' '}
+            <a href="/vexa/terms">Terms of Service</a>, <a href="/vexa/delete-account">Delete your workspace</a> and{' '}
+            <a href="/support">Support</a>. The Velocity Rides app has its own at <a href="/privacy">/privacy</a>.
           </p>
         </div>
       </section>
@@ -407,7 +314,8 @@ export default function StudioPage() {
         <div className={s.footer}>
           <span>Vexa — Your Social Media Virtual Assistant. A product of Velocity Rides, by Berreto (Private) Limited</span>
           <span>
-            <a href="/terms">Terms</a> · <a href="#privacy">Privacy</a> · <a href="/support">Support</a> ·{' '}
+            <a href="/vexa/terms">Terms</a> · <a href="/vexa/privacy">Privacy</a> ·{' '}
+            <a href="/vexa/delete-account">Delete your workspace</a> · <a href="/support">Support</a> ·{' '}
             <a href="mailto:business@velocityrides.app">business@velocityrides.app</a>
           </span>
         </div>

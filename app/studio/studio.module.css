@@ -38,84 +38,6 @@
   color: var(--text-dim);
 }
 
-/* ── the console mock: what a customer sees, drawn in CSS ───────────────── */
-.mock {
-  border: 1px solid var(--line-hi);
-  border-radius: var(--r-lg);
-  background: linear-gradient(180deg, var(--ink-2), var(--ink));
-  box-shadow: var(--shadow-lg);
-  padding: 18px;
-  display: grid;
-  gap: 14px;
-}
-
-.mockBar {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  font-family: var(--font-mono), monospace;
-  font-size: 11.5px;
-  letter-spacing: 0.08em;
-  color: var(--text-mut);
-  text-transform: uppercase;
-}
-
-.mockDot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--lime);
-  box-shadow: 0 0 0 4px rgba(204, 255, 0, 0.15);
-}
-
-.mockAsk {
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  padding: 12px 14px;
-  font-size: 14px;
-  color: var(--text);
-  background: var(--card);
-}
-
-.mockBoxes {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.mockBox {
-  border-radius: 12px;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  background: var(--card);
-}
-
-.mockThumb {
-  aspect-ratio: 4 / 5;
-  display: grid;
-  place-items: end start;
-  padding: 10px;
-  font-family: var(--font-display), sans-serif;
-  font-weight: 800;
-  font-size: 13px;
-  line-height: 1.15;
-  color: #fff;
-}
-
-.mockMeta {
-  display: flex;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 8px 10px;
-  font-size: 11px;
-  color: var(--text-mut);
-}
-
-.mockLive {
-  color: var(--lime);
-  font-weight: 700;
-}
-
 /* ── how it works ──────────────────────────────────────────────────────── */
 .steps {
   display: grid;
@@ -341,14 +263,6 @@
   }
 }
 
-@media (max-width: 480px) {
-  .mockBoxes {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .mockBoxes > :nth-child(3) {
-    display: none;
-  }
-}
 
 /* ── Liquid glass (owner, 2026-11-07) — the tokens are site.module.css's. ── */
 .topBar {
@@ -357,8 +271,6 @@
 }
 
 .topBar,
-.mockAsk,
-.mockBox,
 .step,
 .agent,
 .make,
@@ -369,8 +281,6 @@
   box-shadow: var(--glass-rim);
 }
 
-.mockAsk,
-.mockBox,
 .step,
 .agent,
 .make,
