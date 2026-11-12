@@ -1,9 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-
 import { STUDIO_PRICE_WINDOW_MS } from '@/lib/studio';
-import { BrainDemo } from './BrainDemo';
+import { DemoButton } from './DemoButton';
 import { Bell, Play } from './Icons';
 import { usePriceSecondsLeft } from './priceClock';
 import site from './site.module.css';
@@ -12,7 +10,6 @@ import styles from './pricing.module.css';
 const LABELS = ['Days', 'Hours', 'Minutes', 'Seconds'];
 
 export function PriceCountdown() {
-  const [demoOpen, setDemoOpen] = useState(false);
   const left = usePriceSecondsLeft();
   const ended = left !== null && left <= 0;
   // Counts down with the timer, so a returning visitor is never told a number the clock contradicts.
@@ -55,12 +52,11 @@ export function PriceCountdown() {
         )}
         <div className={styles.demoRow}>
           <p>See how Vexa works</p>
-          <button type="button" className={`${site.btn} ${site.btnLime} ${styles.demoBtn}`} onClick={() => setDemoOpen(true)}>
+          <DemoButton className={`${site.btn} ${site.btnLime} ${styles.demoBtn}`}>
             <Play /> Watch the demo
-          </button>
+          </DemoButton>
         </div>
       </div>
-      {demoOpen ? <BrainDemo onClose={() => setDemoOpen(false)} /> : null}
     </div>
   );
 }

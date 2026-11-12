@@ -338,7 +338,7 @@
   z-index: 1;
   right: auto;
   bottom: auto;
-  width: clamp(230px, 30vw, 400px);
+  width: clamp(280px, 40vw, 560px);
   margin-inline: auto;
   padding-bottom: 58px;
   pointer-events: auto;
@@ -366,11 +366,6 @@
   }
 }
 
-.inHero .arc {
-  --w: clamp(230px, 30vw, 400px);
-  bottom: 84%;
-}
-
 /* Her cut-off waist is a crop in the corner and a mistake in a hero, so it fades out instead. */
 .inHero .fig {
   -webkit-mask-image: linear-gradient(180deg, #000 86%, transparent);
@@ -378,9 +373,11 @@
 }
 
 .inHero .caption {
-  right: 66%;
-  bottom: 58%;
-  max-width: min(300px, 44vw);
+  /* Over her, not under her: at this size the figure would swallow its edge. */
+  z-index: 2;
+  right: 58%;
+  bottom: 52%;
+  max-width: min(330px, 40vw);
   font-size: 15px;
 }
 
@@ -444,15 +441,10 @@
 }
 
 @media (max-width: 940px) {
-  /* One column: she stands under the writing, and the bow over her head needs
-     the room above her that the second column used to give it. */
+  /* One column: she stands under the writing, as wide as the phone allows. */
   .inHero {
-    width: min(270px, 66vw);
-    margin-top: clamp(64px, 16vw, 104px);
-  }
-
-  .inHero .arc {
-    --w: min(270px, 66vw);
+    width: min(340px, 82vw);
+    margin-top: clamp(12px, 4vw, 32px);
   }
 
   .inHero .caption {
@@ -465,6 +457,56 @@
 @media (prefers-reduced-motion: reduce) {
   .inHero::before,
   .plate i {
+    animation: none;
+  }
+}
+
+/* She arrives with the page, and a thin light turns around her while she
+   stands there — the networks she is working, going round. */
+.inHero {
+  animation: vexaIn 900ms cubic-bezier(0.16, 1, 0.3, 1) 140ms backwards;
+}
+
+@keyframes vexaIn {
+  from {
+    opacity: 0;
+    translate: 0 28px;
+    scale: 0.96;
+  }
+}
+
+.inHero::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  left: 50%;
+  bottom: 44px;
+  width: 112%;
+  aspect-ratio: 1;
+  translate: -50% 0;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0 58%, rgba(204, 255, 0, 0.55) 76%, transparent 90%);
+  -webkit-mask: radial-gradient(circle, transparent 0 48.2%, #000 48.6% 50%, transparent 50.4%);
+  mask: radial-gradient(circle, transparent 0 48.2%, #000 48.6% 50%, transparent 50.4%);
+  opacity: 0.55;
+  animation: orbit 16s linear infinite;
+  pointer-events: none;
+}
+
+.talking.inHero::after {
+  animation-duration: 7s;
+  opacity: 0.8;
+}
+
+@keyframes orbit {
+  to {
+    rotate: 360deg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inHero,
+  .inHero::after {
     animation: none;
   }
 }

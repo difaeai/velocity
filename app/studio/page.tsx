@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { VelocityMark } from '@/components/BrandMark';
 import { ArrowRight, Clock, Handshake, Megaphone, Mic, Sparkle, TrendingUp } from '@/components/site/Icons';
 import { Vexa } from '@/components/site/Assistant';
+import { DemoButton } from '@/components/site/DemoButton';
+import { MagicCta } from '@/components/site/SiteNav';
 import { SoundToggle } from '@/components/site/siteSound';
 import { STUDIO_FAQ, StudioFaq, StudioPricing } from '@/components/site/StudioSections';
 import { StudioScrub } from '@/components/site/StudioScrub';
@@ -95,19 +97,17 @@ export default function StudioPage() {
             Vexa
           </Link>
           <nav className={s.topLinks} aria-label="Vexa">
-            <a href="#how-it-works" className={s.topHide}>
-              How it works
-            </a>
-            <a href="#pricing" className={s.topHide}>
-              Pricing
-            </a>
-            <a href="#privacy" className={s.topHide}>
-              Privacy
-            </a>
-            <Link href="/studio/login">Log in</Link>
-            <Link href="/studio/signup" className={`${site.btn} ${site.btnLime} ${s.topCta}`}>
-              Try a day
-            </Link>
+            {/* They stay on a phone and inside the front door's half-width box,
+                dropping to their own row rather than disappearing. */}
+            <span className={s.topPages}>
+              <a href="#how-it-works">How it works</a>
+              <a href="#pricing">Pricing</a>
+              <DemoButton>Demo</DemoButton>
+              <a href="#privacy">Privacy</a>
+            </span>
+            {/* The way back in for a customer who already has a workspace — the
+                homepage's own button, so it is the one they know. */}
+            <MagicCta href="/studio/login" label="Vexa login" />
             {/* The scroll film and the story below are narrated; this is the page's one mute. */}
             <SoundToggle className={s.topSound} />
           </nav>
@@ -117,7 +117,7 @@ export default function StudioPage() {
       <section className={s.hero}>
         <div className={s.heroGlow} aria-hidden />
         <div className={`${site.wrap} ${s.heroGrid}`}>
-          <div>
+          <div className={s.heroCopy}>
             <span className={site.eyebrow}>
               <Sparkle /> Vexa — Your Social Media Virtual Assistant
             </span>

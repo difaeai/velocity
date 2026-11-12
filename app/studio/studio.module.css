@@ -245,12 +245,28 @@
   font-size: 15px;
 }
 
-.topLinks a {
+.topLinks a,
+.topLinks button {
   color: var(--text-mut);
 }
 
-.topLinks a:hover {
+.topLinks button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.topLinks a:hover,
+.topLinks button:hover {
   color: var(--text);
+}
+
+.topPages {
+  display: flex;
+  align-items: center;
+  gap: 18px;
 }
 
 @media (max-width: 940px) {
@@ -258,8 +274,50 @@
   .steps {
     grid-template-columns: minmax(0, 1fr);
   }
-  .topHide {
-    display: none;
+
+  .topInner {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+
+  .topLinks {
+    gap: 12px;
+  }
+
+  .topPages {
+    gap: 14px;
+    font-size: 14px;
+  }
+}
+
+/* A phone: the brand and the way in on one line, the four pages under them. */
+/* A phone cannot hold the name, the way in and four pages on one line, so the
+   bar gives them three tight ones rather than hiding any of them. */
+@media (max-width: 620px) {
+  .topBar {
+    padding-block: 10px;
+  }
+
+  .topInner {
+    row-gap: 6px;
+  }
+
+  .topLinks {
+    flex-wrap: wrap;
+  }
+
+  /* The way in, small enough to sit beside the name on one line. */
+  .topLinks > a {
+    padding: 8px 14px;
+    font-size: 13.5px;
+  }
+
+  .topPages {
+    order: 3;
+    width: 100%;
+    gap: 10px;
+    justify-content: space-between;
+    font-size: 13px;
   }
 }
 
@@ -311,11 +369,6 @@
 
 .hero {
   padding-block: clamp(48px, 7vw, 90px) clamp(64px, 8vw, 110px);
-}
-
-.topCta {
-  padding: 9px 16px;
-  font-size: 14px;
 }
 
 .topSound {
@@ -387,4 +440,80 @@
 .policyMore a {
   color: var(--text);
   text-decoration: underline;
+}
+
+/* ── the hero, arriving (owner, 2026-11-12) ─────────────────────────────
+   The words come in one line after another, the light behind them drifts,
+   and Vexa rises into place (components/site/assistant.module.css). */
+
+.heroCopy > * {
+  animation: heroIn 760ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.heroCopy > :nth-child(1) {
+  animation-delay: 60ms;
+}
+.heroCopy > :nth-child(2) {
+  animation-delay: 170ms;
+}
+.heroCopy > :nth-child(3) {
+  animation-delay: 290ms;
+}
+.heroCopy > :nth-child(4) {
+  animation-delay: 400ms;
+}
+.heroCopy > :nth-child(5) {
+  animation-delay: 500ms;
+}
+
+@keyframes heroIn {
+  from {
+    opacity: 0;
+    translate: 0 20px;
+    filter: blur(7px);
+  }
+}
+
+/* A second light, low and to her left, drifting against the first. */
+.hero::after {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  left: -8%;
+  bottom: -30%;
+  width: min(620px, 80vw);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(18, 161, 94, 0.22), transparent 62%);
+  animation: drift 18s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.heroGlow {
+  animation: drift 22s ease-in-out infinite reverse;
+}
+
+.heroGrid {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes drift {
+  0%,
+  100% {
+    translate: 0 0;
+    scale: 1;
+  }
+  50% {
+    translate: 6% -4%;
+    scale: 1.12;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .heroCopy > *,
+  .hero::after,
+  .heroGlow {
+    animation: none;
+  }
 }

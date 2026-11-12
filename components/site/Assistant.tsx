@@ -125,13 +125,14 @@ export function Vexa({ aboveBar = false, hero = false }: { aboveBar?: boolean; h
   const away = useBehindHero(hero);
   const greeted = useRef(false);
 
-  // Her own introduction, once, as soon as sound is allowed — a visitor's first
-  // tap anywhere unlocks it, and nothing plays before that.
+  // She introduces herself the moment her page opens. If the browser refuses to
+  // play without a gesture, the line waits in siteSound and the visitor's first
+  // touch anywhere starts it — no tap on her needed either way.
   useEffect(() => {
-    if (!hero || !sound.unlocked || sound.muted || sound.speaking || greeted.current) return;
+    if (!hero || greeted.current) return;
     greeted.current = true;
     say(VEXA, `/site/voice/${VEXA}.mp3`);
-  }, [hero, sound.unlocked, sound.muted, sound.speaking]);
+  }, [hero]);
 
   const tap = (e: React.MouseEvent) => {
     if (talking && sound.owner) return hush(sound.owner);
@@ -146,14 +147,21 @@ export function Vexa({ aboveBar = false, hero = false }: { aboveBar?: boolean; h
         talking ? styles.talking : ''
       } ${away ? styles.away : ''}`}
     >
-      <div className={styles.arc} role="img" aria-label="Vexa manages Facebook, Instagram, Meta, Google, Google Ads and YouTube">
-        {PLATFORMS.map(([file, angle], i) => (
-          <span key={file} className={styles.mark} style={{ ['--a' as string]: `${angle}deg`, ['--i' as string]: i }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={`/site/logos/${file}.svg`} alt="" width={40} height={40} draggable={false} />
-          </span>
-        ))}
-      </div>
+      {/* The networks over her head are the corner Vexa's: in the hero she stands on her own, life-size. */}
+      {hero ? null : (
+        <div
+          className={styles.arc}
+          role="img"
+          aria-label="Vexa manages Facebook, Instagram, Meta, Google, Google Ads and YouTube"
+        >
+          {PLATFORMS.map(([file, angle], i) => (
+            <span key={file} className={styles.mark} style={{ ['--a' as string]: `${angle}deg`, ['--i' as string]: i }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={`/site/logos/${file}.svg`} alt="" width={40} height={40} draggable={false} />
+            </span>
+          ))}
+        </div>
+      )}
       {/* The voice already says it; the words are for the eye. */}
       <p className={styles.caption} aria-hidden>
         {caption ??
