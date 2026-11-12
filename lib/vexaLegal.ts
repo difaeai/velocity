@@ -1,3 +1,6 @@
+import type { Metadata } from 'next';
+
+import { SUPPORT_ADDRESS, SUPPORT_EMAIL, SUPPORT_PHONE } from './site';
 import {
   STUDIO_PLANS,
   STUDIO_PLAN_IDS,
@@ -8,22 +11,22 @@ import {
 } from './studio';
 
 /**
- * Vexa's own legal documents: her privacy policy, her terms, and how a
- * workspace is deleted.
+ * Vexa's own legal documents: her privacy policy, her terms, how a workspace
+ * is deleted, and her support page.
  *
  * Vexa is sold to businesses, in dollars, by card and bank transfer, and
  * connects to Meta, TikTok and Google on a customer's behalf — none of which
  * the ride app's documents are about. The owner asked for the two products to
- * read as two companies, so these are hers: /vexa/privacy, /vexa/terms and
- * /vexa/delete-account. The ride app keeps /privacy, /terms and
- * /delete-account.
+ * read as two companies, so these are hers: /vexa/privacy, /vexa/terms,
+ * /vexa/delete-account and /vexa/support. The ride app keeps /privacy, /terms,
+ * /delete-account and /support, and nothing of hers links there.
  *
  * Written once here and rendered twice: as those three pages
  * (components/site/LegalDoc) and, for the privacy policy, as the section on
  * Vexa's own page. Prices come from lib/studio.ts, so a price change cannot
  * leave a wrong number in a contract. Every clause is something the code
- * actually does, and the refund terms are the ones already published on
- * /support — change one and change the other.
+ * actually does, and the refund terms are the same words in her terms and on
+ * her support page — change one and change the other.
  */
 
 /** The day these last changed. One date for all three, so a reader can tell at a glance. */
@@ -32,6 +35,32 @@ export const VEXA_LEGAL_EFFECTIVE = '12 November 2026';
 export interface Clause {
   t: string;
   d: string;
+}
+
+/**
+ * The head tags for one of Vexa's documents. Without them the page inherits the
+ * root layout's, which are the ride app's — so a shared link to Vexa's support
+ * page offered to "name your fare, split the ride". Defining openGraph and
+ * twitter here replaces the parent's whole object, images included.
+ */
+export function vexaDocMetadata(title: string, description: string, path: string): Metadata {
+  const heading = `${title} — Vexa`;
+  return {
+    title: { absolute: heading },
+    description,
+    applicationName: 'Vexa',
+    keywords: ['Vexa', 'social media virtual assistant', title],
+    alternates: { canonical: path },
+    openGraph: {
+      type: 'article',
+      siteName: 'Vexa',
+      title: heading,
+      description,
+      url: path,
+      images: ['/studio/opengraph-image'],
+    },
+    twitter: { card: 'summary_large_image', title: heading, description, images: ['/studio/opengraph-image'] },
+  };
 }
 
 const PLAN_LIST = STUDIO_PLAN_IDS.map(
@@ -108,7 +137,7 @@ export const VEXA_PRIVACY: Clause[] = [
 export const VEXA_TERMS: Clause[] = [
   {
     t: 'Who we are',
-    d: 'Vexa is owned and operated by Berreto (Private) Limited, a company registered with the Securities and Exchange Commission of Pakistan, which also makes the Velocity Rides app. “We”, “us” and “our” mean that company. Our company website is berreto.com; our support address, phone and email are on velocityrides.app/support.',
+    d: 'Vexa is owned and operated by Berreto (Private) Limited, a company registered with the Securities and Exchange Commission of Pakistan, which also makes the Velocity Rides app. “We”, “us” and “our” mean that company. Our company website is berreto.com; our support address, phone and email are on velocityrides.app/vexa/support.',
   },
   {
     t: 'What Vexa is',
@@ -192,5 +221,44 @@ export const VEXA_DELETION: Clause[] = [
   {
     t: 'Stopping without deleting',
     d: 'If you only want it to stop, do not pay for the next period: nothing renews on its own, the team pauses at the end of what you paid for, and nothing is posted after that. Your workspace stays as it is until you ask for it to be deleted.',
+  },
+];
+
+export const VEXA_SUPPORT: Clause[] = [
+  {
+    t: 'Who you are dealing with',
+    d: `Vexa is owned and operated by Berreto (Private) Limited, a company registered with the Securities and Exchange Commission of Pakistan. “Vexa” is the name it trades under and the name on your receipt. Its company website is berreto.com.`,
+  },
+  {
+    t: 'How to reach a person',
+    d: `Email ${SUPPORT_EMAIL} about anything at all — the service, a connected account, an invoice or a refund. Phone or WhatsApp ${SUPPORT_PHONE}, the same number for both. By post: ${SUPPORT_ADDRESS}. Email and WhatsApp are read every day. Tell us the address you signed up with and, for anything about money, the payment or receipt — that is enough to find it.`,
+  },
+  {
+    t: 'What you are buying',
+    d: `Vexa is software that does a social media team’s work for your business: it reads your market, plans and makes the content, posts it to the accounts you connect, answers comments, runs the ads you approve inside the daily limit you set, and writes to leads. It is a tool you direct, not an agency, and it promises no particular reach, following or sales.`,
+  },
+  {
+    t: 'What it costs',
+    d: `Sold by the month or by the year, in US dollars: ${PLAN_LIST} a month. A year is the same price less ${STUDIO_YEAR_DISCOUNT_PCT}%. Any plan can start with ${STUDIO_TRIAL_HOURS} hours for ${studioUsd(STUDIO_TRIAL_USD)}, so you can see it work before you pay for a month. Each payment buys exactly that one period — nothing renews on its own and no card is kept on file to be charged again.`,
+  },
+  {
+    t: 'How you pay',
+    d: `By debit or credit card, taken by Stripe on Stripe’s own page — we never see, handle or store your card number — or by bank transfer, where you send the payment, upload the proof, and the workspace opens once it is checked. Your statement shows the amount in US dollars; your own bank decides the exchange rate it uses. Money you spend on advertising goes from you to Meta or Google, never through us.`,
+  },
+  {
+    t: 'Refunds',
+    d: `If you ask for your money back before the team has started work, we refund the payment in full, to the same card or account it came from, within 7 working days of agreeing it. Once the team has started work for that month or year, that period is not refunded, but nothing further is charged and your access runs to the end of what you paid for. Stopping is simply not paying again.`,
+  },
+  {
+    t: 'If something looks wrong on your statement',
+    d: `Write to ${SUPPORT_EMAIL} first. We can usually settle it the same day, which is faster than a bank dispute.`,
+  },
+  {
+    t: 'Your accounts and your data',
+    d: `You can disconnect any connected account from Connected accounts in your workspace, which deletes the stored token at once. What we hold and why is in the privacy policy, and a workspace and everything in it can be deleted — the Delete your workspace page says how.`,
+  },
+  {
+    t: 'If we cannot agree',
+    d: `Write to ${SUPPORT_EMAIL} with what happened and what you want done. A person reads it. Complaints are handled under the Terms of Service, which also says whose law applies.`,
   },
 ];

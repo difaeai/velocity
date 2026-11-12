@@ -21,6 +21,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${SITE}/vexa/privacy`, lastModified, changeFrequency: 'yearly', priority: 0.3 },
     { url: `${SITE}/vexa/terms`, lastModified, changeFrequency: 'yearly', priority: 0.3 },
     { url: `${SITE}/vexa/delete-account`, lastModified, changeFrequency: 'yearly', priority: 0.3 },
+    { url: `${SITE}/vexa/support`, lastModified, changeFrequency: 'yearly', priority: 0.3 },
     { url: TERMS_URL, lastModified, changeFrequency: 'yearly', priority: 0.3 },
     { url: PRIVACY_URL, lastModified, changeFrequency: 'yearly', priority: 0.3 },
     { url: DELETE_ACCOUNT_URL, lastModified, changeFrequency: 'yearly', priority: 0.3 },

@@ -22,6 +22,7 @@ const DOCS = [
   { href: '/vexa/privacy', label: 'Privacy Policy' },
   { href: '/vexa/terms', label: 'Terms of Service' },
   { href: '/vexa/delete-account', label: 'Delete your workspace' },
+  { href: '/vexa/support', label: 'Support' },
 ];
 
 export function LegalDoc({
@@ -78,9 +79,15 @@ export function LegalDoc({
         </ol>
 
         <p className={s.more}>
-          This document is Vexa’s. The Velocity Rides app has its own: <a href="/privacy">privacy policy</a>,{' '}
-          <a href="/terms">terms</a> and <a href="/delete-account">account deletion</a>. Who we are, where we are and
-          the number that is answered are on <a href="/support">support</a>.
+          This document is Vexa’s.{' '}
+          {current !== '/vexa/support' && (
+            <>
+              Who we are, where we are and the number that is answered are on{' '}
+              <Link href="/vexa/support">her support page</Link>.{' '}
+            </>
+          )}
+          The Velocity Rides app is a different product, with its own <a href="/privacy">privacy policy</a>,{' '}
+          <a href="/terms">terms</a> and <a href="/delete-account">account deletion</a>.
         </p>
       </article>
 
