@@ -108,9 +108,11 @@ export default function StudioPage() {
             </span>
             {/* The way back in for a customer who already has a workspace — the
                 homepage's own button, so it is the one they know. */}
-            <MagicCta href="/studio/login" label="Vexa login" />
-            {/* The scroll film and the story below are narrated; this is the page's one mute. */}
-            <SoundToggle className={s.topSound} />
+            <span className={s.topRight}>
+              <MagicCta href="/studio/login" label="Vexa login" />
+              {/* The scroll film and the story below are narrated; this is the page's one mute. */}
+              <SoundToggle className={s.topSound} />
+            </span>
           </nav>
         </div>
       </header>
