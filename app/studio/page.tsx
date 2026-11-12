@@ -323,7 +323,7 @@ export default function StudioPage() {
             This is Vexa’s privacy policy in full; it also has its own page at{' '}
             <a href="/vexa/privacy">velocityrides.app/vexa/privacy</a>. Her other documents:{' '}
             <a href="/vexa/terms">Terms of Service</a>, <a href="/vexa/delete-account">Delete your workspace</a> and{' '}
-            <a href="/support">Support</a>. The Velocity Rides app has its own at <a href="/privacy">/privacy</a>.
+            <a href="/vexa/support">Support</a>. The Velocity Rides app has its own at <a href="/privacy">/privacy</a>.
           </p>
         </div>
       </section>
@@ -347,7 +347,7 @@ export default function StudioPage() {
           <span>Vexa — Your Social Media Virtual Assistant. A product of Velocity Rides, by Berreto (Private) Limited</span>
           <span>
             <a href="/vexa/terms">Terms</a> · <a href="/vexa/privacy">Privacy</a> ·{' '}
-            <a href="/vexa/delete-account">Delete your workspace</a> · <a href="/support">Support</a> ·{' '}
+            <a href="/vexa/delete-account">Delete your workspace</a> · <a href="/vexa/support">Support</a> ·{' '}
             <a href="mailto:business@velocityrides.app">business@velocityrides.app</a>
           </span>
         </div>

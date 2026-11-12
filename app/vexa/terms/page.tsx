@@ -1,19 +1,16 @@
-import type { Metadata } from 'next';
-
 import { LegalDoc } from '@/components/site/LegalDoc';
-import { VEXA_TERMS } from '@/lib/vexaLegal';
+import { VEXA_TERMS, vexaDocMetadata } from '@/lib/vexaLegal';
 
 /**
  * Vexa's terms: what is sold, what it costs, how it is paid for, when money
  * comes back, and what each side is responsible for. The ride app's terms,
  * which are about fares and trips, stay at /terms.
  */
-export const metadata: Metadata = {
-  title: { absolute: 'Terms of Service — Vexa' },
-  description:
-    'The agreement for Vexa: what the service does, the plans and prices, paying by card or transfer, refunds and stopping, and the limits of our responsibility.',
-  alternates: { canonical: '/vexa/terms' },
-};
+export const metadata = vexaDocMetadata(
+  'Terms of Service',
+  'The agreement for Vexa: what the service does, the plans and prices, paying by card or transfer, refunds and stopping, and the limits of our responsibility.',
+  '/vexa/terms',
+);
 
 export default function VexaTermsPage() {
   return (
