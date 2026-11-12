@@ -5,6 +5,12 @@
  * card declared in app/layout.tsx is only honoured reliably when the image is
  * named explicitly — and other readers of twitter:* tags do not fall back.
  */
-export { size, contentType, renderShareCard as default } from '@/lib/og-card';
+import { renderShareCard } from '@/lib/og-card';
+
+export { size, contentType } from '@/lib/og-card';
 
 export const alt = 'Velocity Rides — name your fare, split the ride, keep the change';
+
+export default function Image() {
+  return renderShareCard('rides');
+}
