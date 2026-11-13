@@ -72,6 +72,8 @@ export interface TripSeed {
   passengerGender: string;
   /** True when the booker is not the passenger. */
   bookedForOther: boolean;
+  /** Their own `users/{uid}.mixedRideOk` — see PoolRosterEntry.mixedOk. */
+  mixedOk?: boolean;
 
   pool: boolean;
   /** Pools only. 'public' is discoverable; 'private' is link-only. */
@@ -173,6 +175,7 @@ export function writeTripDocuments(
               name: seed.passengerName,
               gender: seed.passengerGender,
               bookedForOther: seed.bookedForOther,
+              mixedOk: seed.mixedOk,
               coRiderRating: seed.coRiderRating,
               coRiderRatingCount: seed.coRiderRatingCount,
               pickup: seed.pickup,

@@ -1091,6 +1091,9 @@ export const api = {
       mine?: boolean;
       /** Every ride in the city, nearest first — the screen's All. */
       all?: boolean;
+      /** What the rider called their ends — names the example rides, nothing else. */
+      fromAddress?: string;
+      toAddress?: string;
     },
     { pools: SharedPool[] }
   >('getSharedPools'),
@@ -1140,6 +1143,12 @@ export const api = {
   >('leaveSharedRide'),
   // ── Driver side of shared pools ────────────────────────────────────────────
   getDriverPools: callable<{ lat: number; lng: number }, { pools: DriverPoolView[] }>('getDriverPools'),
+  /**
+   * What a driver part-way through registration is shown — example rides only,
+   * never a real one. `getDriverPools` needs the driver role, which is minted
+   * on approval, so the people this screen exists for could not call it.
+   */
+  getStarterRides: callable<{ lat: number; lng: number }, { pools: DriverPoolView[] }>('getStarterRides'),
   /** `matched`: a car already out, now yours. `accepted`: the next car, ahead of time. */
   acceptSharedPool: callable<
     { poolId: string },
@@ -2746,6 +2755,13 @@ export interface SharedPool {
   carIsDrivers?: boolean;
   /** Who is sitting in it — a shared ride is one gender. Null while it is empty. */
   riderGender?: 'male' | 'female' | null;
+  /**
+   * An example ride the server mixes in while the area has almost nobody in it.
+   * There is no seat behind it: tapping Join is answered with "that ride has
+   * just left — the queue starts again". Absent on every real ride, and on an
+   * older backend.
+   */
+  seeded?: boolean;
 }
 
 /** A shared ride as a job for a driver — backend sharedPools `DriverPoolView`. */
@@ -2771,6 +2787,8 @@ export interface DriverPoolView {
   mine: boolean;
   /** A car already out with nobody driving it: accepting takes it now. */
   liveTripId: string | null;
+  /** An example ride shown while the area is empty — there is no job behind it. */
+  seeded?: boolean;
 }
 
 /** seated: in the car · asked: waiting on the driver's yes · booked: a seat for the next car. */

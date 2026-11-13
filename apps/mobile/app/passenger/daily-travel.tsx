@@ -290,8 +290,12 @@ export default function DailyTravelScreen() {
     api
       .getSharedPools({
         city,
-        ...(qFrom ? { from: { lat: qFrom.lat, lng: qFrom.lng } } : {}),
-        ...(all ? { all: true } : qTo ? { to: { lat: qTo.lat, lng: qTo.lng } } : {}),
+        ...(qFrom ? { from: { lat: qFrom.lat, lng: qFrom.lng }, fromAddress: qFrom.address } : {}),
+        ...(all
+          ? { all: true }
+          : qTo
+            ? { to: { lat: qTo.lat, lng: qTo.lng }, toAddress: qTo.address }
+            : {}),
       })
       .then((r) => n === searchSeq.current && setPools(r.pools))
       .catch(() => n === searchSeq.current && setPools((prev) => prev ?? []));
@@ -379,8 +383,22 @@ export default function DailyTravelScreen() {
   const listed = useMemo<Box[] | null>(() => {
     if (pools === null) return null;
     const twin = TWIN_CITIES.has(city);
-    const open = SHARING_ROUTES.filter((r) => twin && !pools.some((p) => sameRoute(r, p)));
-    const boxes: Box[] = [...pools, ...open.map((r) => readyBox(r.id, r.label, city, r.pickup, r.dropoff))];
+    /**
+     * The example rides a cold area gets (demand/seedRides) are kept out of
+     * every decision below and appended at the end.
+     *
+     * Not cosmetic. Their route IS the rider's own route, so left in `pools`
+     * they would sort above the real rides on it — and worse, they would count
+     * as "there is already a ride on your route", which suppresses the box
+     * whose Join actually creates one. The rider would be left with three cards
+     * that can only answer "that one has just left" and no way to start a ride
+     * from the list. Real rides first, always; the examples fill the space under
+     * them.
+     */
+    const real = pools.filter((p) => !p.seeded);
+    const examples = pools.filter((p) => p.seeded);
+    const open = SHARING_ROUTES.filter((r) => twin && !real.some((p) => sameRoute(r, p)));
+    const boxes: Box[] = [...real, ...open.map((r) => readyBox(r.id, r.label, city, r.pickup, r.dropoff))];
     // Favourites: each one's ride as it is now — a real one first — else its route as an empty car.
     if (mode === 'favs') {
       const seen = new Set<string>();
@@ -390,24 +408,24 @@ export default function DailyTravelScreen() {
     }
     // All, or a pickup with no drop-off yet: what leaves from around the pickup
     // first, then from further away. All: the rider's favourites on top.
-    if (all || !qTo) return pickupOrder(qFrom, boxes, all ? isFav : undefined);
-    if (!qFrom) return pools;
+    if (all || !qTo) return [...pickupOrder(qFrom, boxes, all ? isFav : undefined), ...examples];
+    if (!qFrom) return [...real, ...examples];
     // The exact ones first (owner, 2026-11-11): of the rides on the route, the
     // ones leaving from and arriving at the rider's own two places lead.
-    const onIt = pools
+    const onIt = real
       .filter((p) => !p.nearby)
       .sort((a, b) => routeGap(qFrom, qTo, a) - routeGap(qFrom, qTo, b));
     const km = distanceMeters(qFrom.lat, qFrom.lng, qTo.lat, qTo.lng) / 1000;
     // Their own route, as createSharedPool would take it (0.5–80 km).
     const exact = { pickup: qFrom, dropoff: qTo };
     const mine =
-      onIt.length === 0 && km >= 0.5 && km <= 80 && !pools.some((p) => sameRoute(exact, p))
+      onIt.length === 0 && km >= 0.5 && km <= 80 && !real.some((p) => sameRoute(exact, p))
         ? [readyBox('route:exact', placeName(qTo).slice(0, 60), city, qFrom, qTo)]
         : [];
     const rest = boxes.filter((b) => b.ready || b.nearby);
     const gap = new Map(rest.map((b) => [b.id, routeGap(qFrom, qTo, b)]));
     rest.sort((a, b) => gap.get(a.id)! - gap.get(b.id)!);
-    return [...onIt, ...mine, ...rest];
+    return [...onIt, ...mine, ...rest, ...examples];
   }, [pools, city, all, mode, favs, isFav, qFrom, qTo]);
   const [limit, setLimit] = useState(PAGE);
   useEffect(() => setLimit(PAGE), [mode, qFrom, qTo, city]);
@@ -467,10 +485,30 @@ export default function DailyTravelScreen() {
     }
   }
 
-  async function join(p: Box) {
+  /**
+   * An example ride (demand/seedRides) has no seat behind it. The owner's
+   * answer (2026-11-13): say the car has gone and the queue starts again — and
+   * make that true, by offering to start this route's queue with them first in
+   * it. That turns the example into the real shared ride it was advertising,
+   * which is the entire reason the examples are on the screen.
+   */
+  function askStartQueue(p: Box) {
+    setOpened(null);
+    Alert.alert(
+      'That ride has just left',
+      'The queue starts again from the beginning. Start it for this route and you are first in the next car.',
+      [
+        { text: 'Not now', style: 'cancel' },
+        { text: 'Start the queue', onPress: () => void join(p, true) },
+      ],
+    );
+  }
+
+  async function join(p: Box, startQueue = false) {
+    if (p.seeded && !startQueue) { askStartQueue(p); return; }
     setBusy(p.id);
     try {
-      const res = p.ready
+      const res = p.ready || p.seeded
         // A ready route: its first rider creates the real shared ride, leaving now.
         ? await api.createSharedPool({ city, label: p.label, departTime: null, rideType: 'mini', pickup: p.pickup, dropoff: p.dropoff })
         // On the route, at the rider's own stops; a short walk away, at the car's own.

@@ -20,6 +20,13 @@ import { db } from '../firebase';
 type Href = Parameters<ReturnType<typeof useRouter>['push']>[0];
 
 const CHECKLIST: Href = '/passenger/become-driver/checklist';
+/**
+ * A brand-new applicant starts here, not on the checklist (owner, 2026-11-13):
+ * CNIC and licence first, then the rides. Somebody who has applied before — a
+ * rejection to fix, a face scan still owed — goes to the checklist, because
+ * they have already seen all of this and have a specific thing left to do.
+ */
+const START: Href = '/passenger/become-driver/start';
 const SUBMITTED: Href = '/passenger/become-driver/submitted';
 const DRIVER_HOME: Href = '/driver/home';
 /** Signed-out only: sign up (OTP) vs. "I already have an account". */
@@ -30,7 +37,7 @@ const ACCOUNT_GATE: Href = '/passenger/become-driver/account';
  * record attached to their account.
  *
  *   not signed in              → account gate (→ OTP login)
- *   no driver record           → registration checklist  (no re-login)
+ *   no driver record           → CNIC + licence, then the rides  (no re-login)
  *   rejected                   → registration checklist  (fix + resubmit)
  *   awaiting the face scan     → registration checklist  (one step left)
  *   approved                   → driver home
@@ -40,7 +47,7 @@ export async function resolveDriverEntry(uid?: string): Promise<Href> {
   if (!uid) return ACCOUNT_GATE;
   try {
     const snap = await getDoc(doc(db, 'drivers', uid));
-    if (!snap.exists()) return CHECKLIST;
+    if (!snap.exists()) return START;
     const status = (snap.get('verificationStatus') as string | undefined) ?? null;
     if (status === 'approved') return DRIVER_HOME;
     if (status === 'rejected') return CHECKLIST;
@@ -52,7 +59,7 @@ export async function resolveDriverEntry(uid?: string): Promise<Href> {
     return SUBMITTED;
   } catch {
     // A failed lookup must not trap the user — start the registration.
-    return CHECKLIST;
+    return START;
   }
 }
 

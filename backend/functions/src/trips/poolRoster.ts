@@ -65,6 +65,19 @@ export interface PoolRosterEntry {
    * reason it lives on a document they can read.
    */
   bookedForOther?: boolean;
+  /**
+   * This rider's own "open to mixed-gender rides" answer, as it stood when they
+   * got in (users/{uid}.mixedRideOk).
+   *
+   * Copied here rather than looked up because the shared-ride gate needs EVERY
+   * seat's answer, not just the joiner's: the owner's rule is that men ride
+   * with men and women with women unless the people involved have each said
+   * otherwise, and one person's opt-in cannot consent on another's behalf. A
+   * seat taken before this field existed is absent, which reads as "has not
+   * opted in" — the conservative answer, and the one that keeps the rule as
+   * strict as it was for everybody already in a car.
+   */
+  mixedOk?: boolean;
   kind: PoolRosterKind;
   /**
    * What fellow riders made of this person, as it stood when they got in.
@@ -149,23 +162,28 @@ const addressOf = (place: unknown): string | null => {
  * The roster entry for whoever booked the pool. Written by `createTrip`, so a
  * pool has a roster from the moment it exists rather than from its first joiner.
  */
-export function hostRosterEntry(args: {
+export interface RosterArgs {
   uid: string;
   name: unknown;
   gender: unknown;
   /** Absent is the same as false — every caller that predates seat gender. */
   bookedForOther?: unknown;
+  /** The rider's own `users/{uid}.mixedRideOk`. Absent reads as "not opted in". */
+  mixedOk?: unknown;
   /** From the caller's own user document, where the call site already has it. */
   coRiderRating?: unknown;
   coRiderRatingCount?: unknown;
   pickup: unknown;
   dropoff: unknown;
-}): PoolRosterEntry {
+}
+
+export function hostRosterEntry(args: RosterArgs): PoolRosterEntry {
   return {
     uid: args.uid,
     firstName: firstNameOf(args.name),
     gender: typeof args.gender === 'string' ? args.gender : 'unspecified',
     bookedForOther: args.bookedForOther === true,
+    mixedOk: args.mixedOk === true,
     kind: 'host',
     // Concrete values, never undefined: these entries go into an array field
     // and Firestore rejects undefined inside one.
@@ -185,16 +203,7 @@ export function hostRosterEntry(args: {
  * they never picked their own. Recording them anyway keeps every entry the same
  * shape as an en-route rider's, which is what lets one drop-off list mix them.
  */
-export function joinerRosterEntry(args: {
-  uid: string;
-  name: unknown;
-  gender: unknown;
-  bookedForOther?: unknown;
-  coRiderRating?: unknown;
-  coRiderRatingCount?: unknown;
-  pickup: unknown;
-  dropoff: unknown;
-}): PoolRosterEntry {
+export function joinerRosterEntry(args: RosterArgs): PoolRosterEntry {
   return { ...hostRosterEntry(args), kind: 'share' };
 }
 
@@ -204,15 +213,7 @@ export function joinerRosterEntry(args: {
  * showed them as a nameless "Rider" of unknown gender, and the ♂/♀ count a
  * woman looks at before joining left them out entirely.
  */
-export function enRouteRosterEntry(args: {
-  uid: string;
-  name: unknown;
-  gender: unknown;
-  coRiderRating?: unknown;
-  coRiderRatingCount?: unknown;
-  pickup: unknown;
-  dropoff: unknown;
-}): PoolRosterEntry {
+export function enRouteRosterEntry(args: RosterArgs): PoolRosterEntry {
   return { ...hostRosterEntry(args), kind: 'enroute' };
 }
 

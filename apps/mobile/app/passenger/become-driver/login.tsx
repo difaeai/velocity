@@ -201,7 +201,8 @@ export default function DriverLogin() {
     }
 
     if (!exists) {
-      router.replace('/passenger/become-driver/checklist');
+      // A new applicant: CNIC and licence, then the rides (owner, 2026-11-13).
+      router.replace('/passenger/become-driver/start');
     } else if (status === 'approved') {
       // Refresh the role claim first so the driver layout guard lets us in
       // instead of bouncing back to the passenger home.
