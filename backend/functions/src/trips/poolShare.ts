@@ -347,6 +347,8 @@ async function seatRiderOnPool(
       name: joinerName,
       gender: joinerGender,
       bookedForOther: occupant.bookedForOther,
+      // Their own mixed-ride answer, so the next joiner's gate can see it.
+      mixedOk: userSnap.get('mixedRideOk') === true,
       // Free of charge: `userSnap` is already read above for the gender gate.
       coRiderRating: userSnap.get('coRiderRating') as number | undefined,
       coRiderRatingCount: userSnap.get('coRiderRatingCount') as number | undefined,

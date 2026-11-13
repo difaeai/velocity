@@ -288,14 +288,22 @@ describe('4 · a driver who cancels hands the car back', () => {
   });
 });
 
-describe('5 · a shared ride is one gender', () => {
+describe('5 · a shared ride is one gender, unless everybody in it asked otherwise', () => {
+  const all = async (uid: string) =>
+    ((await getSharedPools.run(makeReq({ city: 'islamabad', all: true }, uid))) as { pools: PoolCard[] }).pools;
+
+  /** The default: nobody has asked to travel with other genders. */
+  const strictGenders = async (...uids: string[]) => {
+    for (const uid of uids) await db().doc(`users/${uid}`).set({ mixedRideOk: false }, { merge: true });
+  };
+
   it('a man neither sees nor joins a women’s car, and a woman cannot join a man’s', async () => {
+    await strictGenders('amna', 'bushra', 'chand', 'danish');
     const made = (await createSharedPool.run(makeReq({
       city: 'islamabad', rideType: 'mini', departTime: pktClock(2 * 3600_000), pickup: A_PICKUP, dropoff: A_DROPOFF,
     }, 'amna'))) as { poolId: string };
     expect((await search('danish', A_PICKUP, A_DROPOFF)).pools).toEqual([]);
     // Not under "All" either; a woman sees it, marked as a women's car.
-    const all = async (uid: string) => ((await getSharedPools.run(makeReq({ city: 'islamabad', all: true }, uid))) as { pools: PoolCard[] }).pools;
     expect(await all('danish')).toEqual([]);
     expect(await all('chand')).toMatchObject([{ id: made.poolId, riderGender: 'female' }]);
     await expect(joinSharedPool.run(makeReq({ poolId: made.poolId }, 'danish'))).rejects.toThrow(/women only/);
@@ -305,6 +313,32 @@ describe('5 · a shared ride is one gender', () => {
       city: 'islamabad', rideType: 'mini', departTime: pktClock(3 * 3600_000), pickup: A_PICKUP, dropoff: A_DROPOFF,
     }, 'danish'))) as { poolId: string };
     await expect(joinSharedPool.run(makeReq({ poolId: his.poolId }, 'chand'))).rejects.toThrow(/men only/);
+  });
+
+  /**
+   * The option the owner asked for (2026-11-13). It takes EVERYONE's agreement:
+   * the woman already in the car chose it under the same-gender rule, and a
+   * switch on somebody else's phone cannot answer for her.
+   */
+  it('a man joins a woman’s car when both of them asked to travel with other genders', async () => {
+    const made = (await createSharedPool.run(makeReq({
+      city: 'islamabad', rideType: 'mini', departTime: pktClock(2 * 3600_000), pickup: A_PICKUP, dropoff: A_DROPOFF,
+    }, 'amna'))) as { poolId: string };
+    // Both opted in (the fixture sets mixedRideOk on every rider).
+    expect((await search('danish', A_PICKUP, A_DROPOFF)).pools.map((p) => p.id)).toEqual([made.poolId]);
+    await joinSharedPool.run(makeReq({ poolId: made.poolId }, 'danish'));
+    const bookings = (await db().doc(`sharedPools/${made.poolId}`).get()).get('bookings') as { gender: string }[];
+    expect(bookings.map((b) => b.gender).sort()).toEqual(['female', 'male']);
+  });
+
+  it('and is shut out again the moment one rider in the car has not opted in', async () => {
+    const made = (await createSharedPool.run(makeReq({
+      city: 'islamabad', rideType: 'mini', departTime: pktClock(2 * 3600_000), pickup: A_PICKUP, dropoff: A_DROPOFF,
+    }, 'amna'))) as { poolId: string };
+    await strictGenders('bushra');
+    await joinSharedPool.run(makeReq({ poolId: made.poolId, ...BUSHRA }, 'bushra'));
+    await expect(joinSharedPool.run(makeReq({ poolId: made.poolId }, 'danish'))).rejects.toThrow(/women only/);
+    expect((await search('danish', A_PICKUP, A_DROPOFF)).pools).toEqual([]);
   });
 });
 

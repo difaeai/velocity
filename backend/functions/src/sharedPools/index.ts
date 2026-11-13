@@ -73,6 +73,9 @@ import {
   type RiderStops,
 } from '../trips/poolPricing';
 import { timestampMs } from '../poolRides/lifecycle';
+import {
+  SEED_AREA_RADIUS_M, SEED_GONE, isSeedRideId, nameOfPlaceNear, seedEndsNear, seedRides, seedsAllowed,
+} from '../demand/seedRides';
 
 /** A rider's pickup and drop-off must each be this close to the pool's route. */
 export const MATCH_RADIUS_M = 1000;
@@ -121,6 +124,13 @@ interface Booking {
   firstName: string;
   /** The seat's gender — see lib/seatGender. */
   gender: string;
+  /**
+   * This rider's own `users/{uid}.mixedRideOk` when they booked. The
+   * same-gender gate needs every seat's answer, not just the joiner's — see
+   * `sameGenderGate`. Absent on seats booked before the field existed, which
+   * reads as "has not opted in".
+   */
+  mixedOk?: boolean;
   bookedAt: FirebaseFirestore.Timestamp;
   /** Their own stops on the route and their own solo fare. Older bookings: the pool's. */
   pickup?: Place;
@@ -266,6 +276,13 @@ export interface PoolCard {
   carIsDrivers: boolean;
   /** Who is sitting in it (a shared ride is one gender); null while it is empty. */
   riderGender: 'male' | 'female' | null;
+  /**
+   * An example ride shown while the area has almost nobody in it — see
+   * demand/seedRides. Absent or false on every real pool. Acting on one is
+   * refused with `SEED_GONE`, and the app says so rather than offering a Join
+   * that cannot work.
+   */
+  seeded?: boolean;
 }
 
 /** One pool as a card, for one rider. Pure — the tests drive it with a clock. */
@@ -360,7 +377,8 @@ function aboardOf(card: PoolCard, pool: FirebaseFirestore.DocumentData, trip: Fi
   // `sharedPoolId` puts the next car under the shared-ride gender rule too.
   return {
     sharedPoolId: card.id,
-    poolRoster: ((pool.bookings as Booking[] | undefined) ?? []).map((b) => ({ uid: b.uid, gender: b.gender })),
+    poolRoster: ((pool.bookings as Booking[] | undefined) ?? [])
+      .map((b) => ({ uid: b.uid, gender: b.gender, mixedOk: b.mixedOk === true })),
   };
 }
 
@@ -388,6 +406,30 @@ const listSchema = z.object({
   mine: z.boolean().nullish(),
   /** The owner's "All": every ride in the city, nearest to `from` first — no search, no area. */
   all: z.boolean().nullish(),
+  /**
+   * What the rider called their two ends. Display only — nothing is matched or
+   * priced on them — and used solely to name the seeded example rides after the
+   * route the rider actually asked for. Older apps send neither, and then the
+   * examples are named from our own gazetteer instead.
+   */
+  fromAddress: z.string().trim().max(200).nullish(),
+  toAddress: z.string().trim().max(200).nullish(),
+  /**
+   * "This app understands example rides" — see demand/seedRides.
+   *
+   * A capability the client declares, not a preference, and the reason the
+   * backend can be deployed before the app that goes with it. An app that does
+   * not know the `seeded` flag would draw an example as an ordinary ride: sort
+   * it above the real rides on the route (its route IS the rider's own, so the
+   * route gap is nil), take it as proof that a ride on that route already
+   * exists — which hides the box whose Join creates one — and offer a Join that
+   * can only ever be refused. Every build already on a phone is such an app.
+   *
+   * So examples are sent only to a build that asked for them. Nothing is lost
+   * by a client omitting it, and nothing is gained by one claiming it falsely:
+   * what it gets back is cards with no seat behind them.
+   */
+  seeds: z.boolean().nullish(),
 });
 
 /** The most cards one search returns. */
@@ -510,8 +552,103 @@ export const getSharedPools = onCall(async (req) => {
   }
   await attachCarPhotos(pools, accepted, from ?? null).catch((e) =>
     logger.warn('sharedPools: car photos failed', { err: String(e) }));
+
+  /**
+   * The owner's seeded demand (2026-11-13): while an area has almost nobody in
+   * it, a few example rides sit among the real ones so the screen is not empty.
+   *
+   * Never on "My rides" — that list answers "what have I booked", and an
+   * example in it would be a ride the rider never booked. The real riders in
+   * the area are counted from the pools already loaded above, so deciding this
+   * costs one bounded driver query (cached per area) and no extra reads.
+   */
+  if (!mine && from && parsed.data.seeds === true) {
+    const realRiders = countRidersNear(picked, from);
+    const { show } = await seedsAllowed(from.lat, from.lng, realRiders);
+    if (show) {
+      const ends = from && to
+        ? {
+            pickup: { ...from, address: parsed.data.fromAddress || nameNear(from) },
+            dropoff: { ...to, address: parsed.data.toAddress || nameNear(to) },
+          }
+        : seedEndsNear(from);
+      for (const seed of seedRides({ nowMs, gender: myGender, mixedOk: myMixedOk, ...(ends ?? { pickup: null, dropoff: null }) })) {
+        pools.push(seedPoolCard(seed, city ?? '', from, to ?? null));
+      }
+    }
+  }
   return { pools };
 });
+
+/**
+ * Real riders in the area around a point: everybody holding a seat on a nearby
+ * pool, counted once each. Taken from the documents the search already read —
+ * a second query to learn the same thing would double the cost of every search.
+ */
+function countRidersNear(
+  picked: { doc: FirebaseFirestore.DocumentSnapshot }[],
+  near: { lat: number; lng: number },
+): number {
+  const uids = new Set<string>();
+  for (const { doc } of picked) {
+    const p = doc.get('pickup') as Place | undefined;
+    if (!p || haversineKm(near.lat, near.lng, p.lat, p.lng) * 1000 > SEED_AREA_RADIUS_M) continue;
+    for (const uid of (doc.get('bookingUids') as string[] | undefined) ?? []) uids.add(uid);
+  }
+  return uids.size;
+}
+
+/**
+ * A name for a coordinate the rider did not name, from our own gazetteer.
+ *
+ * Only this end's name matters — asking `seedEndsNear` would also demand a
+ * SECOND named place nearby and give up on both when there is none, which is
+ * how a rider with a perfectly nameable pickup ended up reading "Your route".
+ */
+const nameNear = (at: { lat: number; lng: number }): string => nameOfPlaceNear(at) ?? 'Your route';
+
+/** A seeded ride dressed as the card the screen already knows how to draw. */
+function seedPoolCard(
+  seed: ReturnType<typeof seedRides>[number],
+  city: string,
+  from: { lat: number; lng: number } | null,
+  to: { lat: number; lng: number } | null,
+): PoolCard {
+  const km = (a: { lat: number; lng: number } | null, b: { lat: number; lng: number }) =>
+    a ? Math.round(haversineKm(a.lat, a.lng, b.lat, b.lng) * 1000) : null;
+  return {
+    id: seed.id,
+    seeded: true,
+    label: null,
+    city,
+    rideType: 'mini',
+    pickup: seed.pickup,
+    dropoff: seed.dropoff,
+    pickupDistanceM: km(from, seed.pickup),
+    dropoffDistanceM: km(to, seed.dropoff),
+    departTime: null,
+    departsAtMs: seed.departsAtMs,
+    state: 'gathering',
+    riders: seed.riders,
+    seatsTotal: MAX_POOL_RIDERS,
+    seatsLeft: seed.seatsLeft,
+    fare: seed.fare,
+    farePerSeat: seed.farePerSeat,
+    fareLadder: seed.fareLadder,
+    soloFare: seed.fare,
+    driver: null,
+    driverAhead: false,
+    needsDriverApproval: false,
+    booked: false,
+    aboardTripId: null,
+    mine: false,
+    nearby: false,
+    // No driver has accepted an example, so no real car is ever shown on one.
+    carPhotos: [],
+    carIsDrivers: false,
+    riderGender: seed.gender,
+  };
+}
 
 /** A driver's car as riders see it: their latest car check, else the photo it was registered with. */
 const carPhotoOf = (d: FirebaseFirestore.DocumentSnapshot): string | null =>
@@ -680,6 +817,7 @@ async function startCar(
         name,
         gender: seat.seatGender,
         bookedForOther: seat.bookedForOther,
+        mixedOk: userSnap.get('mixedRideOk') === true,
         coRiderRating: userSnap.get('coRiderRating'),
         coRiderRatingCount: userSnap.get('coRiderRatingCount'),
         pickup: own.pickup,
@@ -979,7 +1117,10 @@ async function seatOnPool(
     assertOutstandingClear(walletSnap, settings, 'passenger');
     const seat = resolveSeatOccupant(userSnap.get('gender'), null);
     const gate = poolJoinGenderGate(
-      { sharedPoolId: poolId, poolRoster: bookings.map((b) => ({ uid: b.uid, gender: b.gender })) },
+      {
+        sharedPoolId: poolId,
+        poolRoster: bookings.map((b) => ({ uid: b.uid, gender: b.gender, mixedOk: b.mixedOk === true })),
+      },
       seat.seatGender,
       userSnap.get('mixedRideOk') === true,
     );
@@ -989,6 +1130,7 @@ async function seatOnPool(
       uid,
       firstName: firstNameOf(userSnap.get('name') ?? userSnap.get('displayName')),
       gender: seat.seatGender,
+      mixedOk: userSnap.get('mixedRideOk') === true,
       bookedAt: Timestamp.now(),
       pickup: ownStops.pickup,
       dropoff: ownStops.dropoff,
@@ -1058,6 +1200,18 @@ const createSchema = z.object({
   dropoff: place,
 });
 
+/**
+ * An example ride is not a seat. Every door into a pool goes through this, so
+ * a tap on a seeded card gets the owner's sentence — the car has gone, the
+ * queue starts again — instead of "shared ride not found", which reads as a
+ * broken app. The ids pass `docId` validation (they contain no slash), so this
+ * check has to be explicit; without it the call would reach Firestore and fail
+ * on a document that was never going to exist.
+ */
+function refuseSeeded(poolId: string): void {
+  if (isSeedRideId(poolId)) throw new HttpsError('failed-precondition', SEED_GONE);
+}
+
 /** A new pool's document — riders' and drivers' alike. */
 async function newPool(uid: string, d: z.infer<typeof createSchema>, driver?: PoolDriver | null) {
   const km = haversineKm(d.pickup.lat, d.pickup.lng, d.dropoff.lat, d.dropoff.lng);
@@ -1119,6 +1273,7 @@ export const joinSharedPool = onCall(async (req) => {
   const parsed = z.object({ poolId: docId, pickup: place.nullish(), dropoff: place.nullish() }).safeParse(req.data);
   if (!parsed.success) invalid('Choose a shared ride.');
   const { poolId, pickup, dropoff } = parsed.data;
+  refuseSeeded(poolId);
   return seatOnPool(ctx.uid, poolId, pickup && dropoff ? { pickup, dropoff } : null);
 });
 
@@ -1130,6 +1285,7 @@ export const leaveSharedPool = onCall(async (req) => {
   const ctx = requireAuth(req);
   const parsed = z.object({ poolId: docId }).safeParse(req.data);
   if (!parsed.success) invalid('Choose a shared ride.');
+  refuseSeeded(parsed.data.poolId);
   if (!(await giveBackSeat(db.doc(`sharedPools/${parsed.data.poolId}`), ctx.uid))) {
     throw new HttpsError('failed-precondition', 'You hold no seat here. If you are in the car, leave from your ride.');
   }
@@ -1172,6 +1328,7 @@ export const editSharedPool = onCall(async (req) => {
   const parsed = editSchema.safeParse(req.data);
   if (!parsed.success) invalid(parsed.error.issues[0]?.message ?? 'Invalid change.');
   const { poolId, label, departTime, remove } = parsed.data;
+  refuseSeeded(poolId);
   const poolRef = db.doc(`sharedPools/${poolId}`);
 
   await db.runTransaction(async (tx) => {
@@ -1231,6 +1388,66 @@ export interface DriverPoolView {
   mine: boolean;
   /** A car already out with nobody driving it: accepting takes it now. */
   liveTripId: string | null;
+  /** An example ride, shown while the area is empty — see demand/seedRides. */
+  seeded?: boolean;
+}
+
+/**
+ * A seeded ride as a driver's job. The riders are named by first name only, as
+ * on every other job, and `earnIfFull` is the same ladder a real car of that
+ * fare would pay — a driver who takes the real one next to it must not find it
+ * paying less than the example that brought them here.
+ */
+function seedDriverView(
+  seed: ReturnType<typeof seedRides>[number],
+  at: { lat: number; lng: number } | null,
+): DriverPoolView {
+  const { pickup, dropoff } = seed;
+  return {
+    id: seed.id,
+    seeded: true,
+    label: null,
+    rideType: 'mini',
+    pickup,
+    dropoff,
+    routeKm: Math.round(haversineKm(pickup.lat, pickup.lng, dropoff.lat, dropoff.lng) * 10) / 10,
+    toPickupKm: at ? Math.round(haversineKm(at.lat, at.lng, pickup.lat, pickup.lng) * 10) / 10 : null,
+    departTime: null,
+    departsAtMs: seed.departsAtMs,
+    riders: seed.riders,
+    seatsLeft: seed.seatsLeft,
+    earnNow: seed.fare,
+    earnIfFull: seed.fare,
+    stops: [
+      { kind: 'pickup', name: 'Rider', address: pickup.address },
+      { kind: 'dropoff', name: 'Rider', address: dropoff.address },
+    ],
+    mine: false,
+    liveTripId: null,
+  };
+}
+
+/**
+ * The seeded jobs shown to a driver who is part-way through registering.
+ *
+ * Only to them. An APPROVED driver is shown real rides and nothing else
+ * (owner, 2026-11-13): a driver who can be dispatched must never be looking at
+ * a car that is not there, because the cost of being wrong is their petrol and
+ * their trust, and neither comes back. The five-and-stop rule therefore governs
+ * the rider's screen alone.
+ */
+async function seedDriverJobs(uid: string, lat: number, lng: number, nowMs: number): Promise<DriverPoolView[]> {
+  const ends = seedEndsNear({ lat, lng });
+  if (!ends) return [];
+  const userSnap = await db.doc(`users/${uid}`).get();
+  return seedRides({
+    nowMs,
+    // A driver's own gender decides which examples they are shown, exactly as a
+    // rider's does: the men's cars and the women's cars are different demand.
+    gender: resolveSeatOccupant(userSnap.get('gender'), null).seatGender,
+    mixedOk: userSnap.get('mixedRideOk') === true,
+    ...ends,
+  }).map((seed) => seedDriverView(seed, { lat, lng }));
 }
 
 /** A pool as a job for a driver, or null when it has no work in it for them. */
@@ -1346,7 +1563,30 @@ export const getDriverPools = onCall(async (req) => {
     const p = d.get('pickup') as Place;
     return haversineKm(lat, lng, p.lat, p.lng) * 1000 <= DRIVER_RADIUS_M;
   });
+  // Real rides only. An approved driver never sees a seeded one — see seedDriverJobs.
   return { pools: await viewsFor(docs, ctx.uid, { lat, lng }, nowMs) };
+});
+
+/**
+ * The rides a driver part-way through registration is shown — the owner's
+ * "see the rides coming" (2026-11-13).
+ *
+ * Its own callable rather than `getDriverPools` for one reason: that one needs
+ * the `driver` role, which is minted only on approval, so the person this
+ * screen exists for could never call it. It answers with examples ONLY — never
+ * a real pool — so an unapproved applicant learns nothing about real riders,
+ * their routes or their whereabouts, and there is no seat here for them to take.
+ */
+export const getStarterRides = onCall(async (req) => {
+  const ctx = requireAuth(req);
+  if (isWarmPing(req.data)) return warmUp();
+  const parsed = point.safeParse(req.data);
+  if (!parsed.success) invalid('Your location is needed to show the rides near you.');
+  await rateLimit(ctx.uid, 'getStarterRides', 60, 3600);
+  const { lat, lng } = parsed.data;
+  // Wherever they are: the five-and-stop rule governs the rider's live feed,
+  // and this is not one — it is what registration shows instead of nothing.
+  return { pools: await seedDriverJobs(ctx.uid, lat, lng, Date.now()) };
 });
 
 /** What every driver must be before taking riders — the checks placeBid applies. */
@@ -1406,6 +1646,7 @@ export const acceptSharedPool = onCall(async (req) => {
   await rateLimit(ctx.uid, 'acceptSharedPool', 10, 60);
   const parsed = z.object({ poolId: docId }).safeParse(req.data);
   if (!parsed.success) invalid('Choose a shared ride.');
+  refuseSeeded(parsed.data.poolId);
   const poolRef = db.doc(`sharedPools/${parsed.data.poolId}`);
   const driverSnap = await assertDriverCanTake(ctx.uid);
   const pre = await poolRef.get();
@@ -1449,6 +1690,7 @@ export const withdrawSharedPool = onCall(async (req) => {
   const ctx = requireRole(req, 'driver');
   const parsed = z.object({ poolId: docId }).safeParse(req.data);
   if (!parsed.success) invalid('Choose a shared ride.');
+  refuseSeeded(parsed.data.poolId);
   const poolRef = db.doc(`sharedPools/${parsed.data.poolId}`);
   const riders = await db.runTransaction(async (tx) => {
     const snap = await tx.get(poolRef);

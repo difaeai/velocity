@@ -945,22 +945,42 @@ export function genderGate(
  * rule — only the tally was bumped — so this is the one gate both doors to the
  * same car now go through.
  */
+/** One seat's gender and that rider's own mixed-ride answer. */
+export type AboardSeat = { gender?: string | null; mixedOk?: boolean };
+
 /**
  * Shared rides from the ride sharing screen (`sharedPoolId`), the owner's rule
  * (2026-10-30): women ride only with women and men only with men. The first
  * rider decides; a rider whose gender we do not know only gets an empty car.
+ *
+ * THE OPT-IN (owner, 2026-11-13): "and keep an option for people who want to
+ * travel with other genders". It is granted only when EVERY person involved has
+ * asked for it — the joiner and every rider already in the car. One rider's
+ * `mixedRideOk` says what they are willing to do; it cannot answer for the
+ * woman already sitting in the back, who chose this car under the same-gender
+ * rule and would otherwise have a stranger of the other gender put beside her
+ * by a setting on his phone. So the opt-in widens the rule only where the
+ * agreement is mutual, and a single seat that has not opted in — including
+ * every seat booked before the field existed — keeps the car same-gender.
+ *
+ * A rider whose own gender is unknown is unchanged by this: they still only get
+ * an empty car unless everyone, themselves included, opted into mixed.
  */
 export function sameGenderGate(
-  aboard: (string | null | undefined)[],
+  aboard: readonly AboardSeat[],
   joinerGender: string,
+  joinerMixedOk = false,
 ): { allowed: true } | { allowed: false; reason: string } {
+  const genders = aboard.map((a) => a.gender);
   const known = joinerGender === 'male' || joinerGender === 'female';
-  if (aboard.length === 0 || (known && aboard.every((g) => g === joinerGender))) return { allowed: true };
+  if (aboard.length === 0 || (known && genders.every((g) => g === joinerGender))) return { allowed: true };
+  // Mutual consent: this rider and every rider already aboard asked for mixed.
+  if (joinerMixedOk && aboard.every((a) => a.mixedOk === true)) return { allowed: true };
   return {
     allowed: false,
-    reason: aboard.every((g) => g === 'female')
+    reason: genders.every((g) => g === 'female')
       ? 'This shared ride is for women only.'
-      : aboard.every((g) => g === 'male')
+      : genders.every((g) => g === 'male')
         ? 'This shared ride is for men only.'
         : 'This shared ride is not open to you.',
   };
@@ -972,12 +992,21 @@ export function poolJoinGenderGate(
   joinerMixedRideOk: boolean,
 ): { allowed: true } | { allowed: false; reason: string } {
   const stored = trip.poolRiders as PoolRider[] | undefined;
-  const aboard: { gender?: string | null; seats?: number }[] =
+  /**
+   * `poolRiders` carries the fares and seat counts; the roster carries who the
+   * people are. Only the roster has each rider's mixed-ride answer, so the
+   * same-gender gate reads the roster even when `poolRiders` is present —
+   * taking `mixedOk` from the wrong array would silently read `undefined` for
+   * every seat and make the opt-in unreachable.
+   */
+  const roster = rosterForTrip(trip);
+  const byUid = new Map(roster.map((r) => [r.uid, r] as const));
+  const aboard: { gender?: string | null; seats?: number; mixedOk?: boolean }[] =
     Array.isArray(stored) && stored.length > 0
-      ? stored
-      : rosterForTrip(trip).map((r) => ({ gender: r.gender }));
+      ? stored.map((r) => ({ ...r, mixedOk: byUid.get(r.uid)?.mixedOk === true }))
+      : roster.map((r) => ({ gender: r.gender, mixedOk: r.mixedOk === true }));
   if (aboard.length === 0) return { allowed: true };
-  if (typeof trip.sharedPoolId === 'string') return sameGenderGate(aboard.map((a) => a.gender), joinerGender);
+  if (typeof trip.sharedPoolId === 'string') return sameGenderGate(aboard, joinerGender, joinerMixedRideOk);
   const { male, female, other } = genderCounts(aboard);
   return canJoinPool({
     currentComposition: computeGenderAccess(male, female, MAX_POOL_RIDERS, 'any'),

@@ -385,6 +385,8 @@ export {
   getSharedPools, createSharedPool, joinSharedPool, leaveSharedPool, editSharedPool, dispatchSharedPools,
   getDriverPools, acceptSharedPool, withdrawSharedPool, findPoolsForRoute, offerDriverRoute,
   startSharedRide, confirmSharedSeat,
+  // The examples a driver part-way through registration is shown — never a real pool.
+  getStarterRides,
 } from './sharedPools';
 // Any rider leaves a shared pool's car — not only its host, and without
 // cancelling everyone else's ride with theirs.
