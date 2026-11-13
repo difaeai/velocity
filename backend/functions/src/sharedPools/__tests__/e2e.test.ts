@@ -100,14 +100,8 @@ function driverReq<T>(data: T, uid: string): CallableRequest<T> {
 
 const trip = async (id: string) => (await db().doc(`trips/${id}`).get()).data()!;
 
-/**
- * Real pools only. A cold area also gets the example rides (demand/seedRides);
- * they are proved in src/demand/__tests__/seedRides.test.ts, and every case
- * here is about what real riders and real drivers do.
- */
 async function search(uid: string, from: { lat: number; lng: number }, to: { lat: number; lng: number }) {
-  const res = (await getSharedPools.run(makeReq({ city: 'islamabad', from, to }, uid))) as { pools: PoolCard[] };
-  return { pools: res.pools.filter((p) => !p.seeded) };
+  return (await getSharedPools.run(makeReq({ city: 'islamabad', from, to }, uid))) as { pools: PoolCard[] };
 }
 
 beforeEach(async () => {
@@ -295,10 +289,8 @@ describe('4 · a driver who cancels hands the car back', () => {
 });
 
 describe('5 · a shared ride is one gender, unless everybody in it asked otherwise', () => {
-  /** Real pools in "All" — the examples a cold area gets have their own suite. */
   const all = async (uid: string) =>
-    ((await getSharedPools.run(makeReq({ city: 'islamabad', all: true }, uid))) as { pools: PoolCard[] })
-      .pools.filter((p) => !p.seeded);
+    ((await getSharedPools.run(makeReq({ city: 'islamabad', all: true }, uid))) as { pools: PoolCard[] }).pools;
 
   /** The default: nobody has asked to travel with other genders. */
   const strictGenders = async (...uids: string[]) => {

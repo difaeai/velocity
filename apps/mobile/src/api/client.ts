@@ -1094,6 +1094,13 @@ export const api = {
       /** What the rider called their ends — names the example rides, nothing else. */
       fromAddress?: string;
       toAddress?: string;
+      /**
+       * "This build understands `seeded`". Sent so the backend may be deployed
+       * before the app that goes with it: an older build that drew an example
+       * ride as a real one would rank it above the real rides and hide the box
+       * that starts one, so the server sends them only to a build that asks.
+       */
+      seeds?: boolean;
     },
     { pools: SharedPool[] }
   >('getSharedPools'),

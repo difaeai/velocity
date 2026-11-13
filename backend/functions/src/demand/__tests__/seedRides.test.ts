@@ -243,13 +243,15 @@ async function seedUsers() {
   await db().doc(`users/${RIDERS.open}`).set({ name: 'Omar', gender: 'male', mixedRideOk: true });
 }
 
-const search = async (uid: string): Promise<PoolCard[]> =>
+/** A search from a build that understands example rides. */
+const search = async (uid: string, seeds = true): Promise<PoolCard[]> =>
   ((await getSharedPools.run(makeReq({
     city: 'islamabad',
     from: { lat: ISB.lat, lng: ISB.lng },
     to: { lat: ISB_TO.lat, lng: ISB_TO.lng },
     fromAddress: ISB.address,
     toAddress: ISB_TO.address,
+    ...(seeds ? { seeds: true } : {}),
   }, uid))) as { pools: PoolCard[] }).pools;
 
 describe('what a rider actually sees on the Corporate & Students screen', () => {
@@ -293,6 +295,22 @@ describe('what a rider actually sees on the Corporate & Students screen', () => 
     const lastReal = pools.map((p) => !p.seeded).lastIndexOf(true);
     expect(firstSeed).toBeGreaterThan(-1);
     expect(lastReal).toBeLessThan(firstSeed);
+  });
+
+  /**
+   * The gate that lets the backend ship before the app. Every build already on
+   * a phone omits `seeds`, and would have drawn an example as a real ride.
+   */
+  it('sends none to a build that did not ask for them', async () => {
+    expect((await search(RIDERS.man, false)).some((p) => p.seeded)).toBe(false);
+  });
+
+  it('…and still sends the real rides to that build, untouched', async () => {
+    const { poolId } = (await createSharedPool.run(makeReq({
+      city: 'islamabad', label: 'Real', rideType: 'mini',
+      pickup: ISB, dropoff: ISB_TO, departTime: laterToday(),
+    }, RIDERS.man2))) as { poolId: string };
+    expect((await search(RIDERS.man, false)).map((p) => p.id)).toEqual([poolId]);
   });
 
   it('never puts an example in "My rides" — that list is what the rider booked', async () => {

@@ -414,6 +414,22 @@ const listSchema = z.object({
    */
   fromAddress: z.string().trim().max(200).nullish(),
   toAddress: z.string().trim().max(200).nullish(),
+  /**
+   * "This app understands example rides" — see demand/seedRides.
+   *
+   * A capability the client declares, not a preference, and the reason the
+   * backend can be deployed before the app that goes with it. An app that does
+   * not know the `seeded` flag would draw an example as an ordinary ride: sort
+   * it above the real rides on the route (its route IS the rider's own, so the
+   * route gap is nil), take it as proof that a ride on that route already
+   * exists — which hides the box whose Join creates one — and offer a Join that
+   * can only ever be refused. Every build already on a phone is such an app.
+   *
+   * So examples are sent only to a build that asked for them. Nothing is lost
+   * by a client omitting it, and nothing is gained by one claiming it falsely:
+   * what it gets back is cards with no seat behind them.
+   */
+  seeds: z.boolean().nullish(),
 });
 
 /** The most cards one search returns. */
@@ -546,7 +562,7 @@ export const getSharedPools = onCall(async (req) => {
    * the area are counted from the pools already loaded above, so deciding this
    * costs one bounded driver query (cached per area) and no extra reads.
    */
-  if (!mine && from) {
+  if (!mine && from && parsed.data.seeds === true) {
     const realRiders = countRidersNear(picked, from);
     const { show } = await seedsAllowed(from.lat, from.lng, realRiders);
     if (show) {

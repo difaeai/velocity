@@ -290,6 +290,8 @@ export default function DailyTravelScreen() {
     api
       .getSharedPools({
         city,
+        // This build knows what a seeded ride is, and draws it under the real ones.
+        seeds: true,
         ...(qFrom ? { from: { lat: qFrom.lat, lng: qFrom.lng }, fromAddress: qFrom.address } : {}),
         ...(all
           ? { all: true }

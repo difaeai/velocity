@@ -52,17 +52,8 @@ const join = (uid: string, poolId: string) =>
   joinSharedPool.run(makeReq({ poolId }, uid)) as Promise<{ status: string; tripId: string | null; perSeatFare: number }>;
 
 type Point = { lat: number; lng: number };
-/**
- * The REAL pools a search returns.
- *
- * A cold area also gets the example rides mixed in (demand/seedRides), which is
- * the whole point of them — but every test in this file is about what real
- * pools do, so they are filtered here rather than in thirty assertions. The
- * examples have their own suite: src/demand/__tests__/seedRides.test.ts.
- */
 const search = async (uid: string, at: { from?: Point; to?: Point; all?: boolean } = NEAR): Promise<PoolCard[]> =>
-  ((await getSharedPools.run(makeReq({ city: 'islamabad', ...at }, uid))) as { pools: PoolCard[] })
-    .pools.filter((p) => !p.seeded);
+  ((await getSharedPools.run(makeReq({ city: 'islamabad', ...at }, uid))) as { pools: PoolCard[] }).pools;
 
 describe('the owner’s fare split', () => {
   it('a PKR 1,000 car is 550 each for two and 450 each for three, and the driver gains every time', () => {
