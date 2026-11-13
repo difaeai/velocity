@@ -125,19 +125,6 @@ export default function RidesPreview() {
     <SafeAreaView style={styles.safe} edges={['bottom']}>
       <StepHeader title="Rides near you" />
       <ScrollView contentContainerStyle={styles.container}>
-        {/*
-          First on the screen and red, because this screen exists to make
-          somebody finish registering — not to let them feel finished.
-        */}
-        <View style={styles.warning}>
-          <Text style={styles.warningTitle}>Please complete your registration</Text>
-          <Text style={styles.warningText}>
-            These are the kind of rides going out around you right now. You cannot take any of them
-            until your registration is complete and approved — finish it and real rides start
-            coming to you.
-          </Text>
-        </View>
-
         {denied ? (
           <Pressable style={styles.locCard} onPress={request}>
             <Text style={styles.locText}>
@@ -160,6 +147,21 @@ export default function RidesPreview() {
         ) : (
           jobs.map((j) => <RideCard key={j.id} job={j} />)
         )}
+
+        {/*
+          The rides, and then the warning — the owner's order (2026-11-13). It
+          sits under them rather than over them, and the button that acts on it
+          is pinned to the bottom of the screen, so the one thing this screen is
+          for cannot scroll out of reach while somebody reads the rides.
+        */}
+        <View style={styles.warning}>
+          <Text style={styles.warningTitle}>Please complete your registration</Text>
+          <Text style={styles.warningText}>
+            These are the kind of rides going out around you right now. You cannot take any of them
+            until your registration is complete and approved — finish it and real rides start
+            coming to you.
+          </Text>
+        </View>
       </ScrollView>
 
       <View style={styles.footer}>
