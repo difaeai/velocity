@@ -2,9 +2,32 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { VelocityMark } from '@/components/BrandMark';
-import { ArrowRight, Clock, Handshake, Megaphone, Mic, Sparkle, TrendingUp } from '@/components/site/Icons';
+import {
+  ArrowRight,
+  BadgeCheck,
+  Bolt,
+  Cart,
+  Check,
+  Clock,
+  Crown,
+  Gift,
+  Handshake,
+  Headset,
+  Mail,
+  Megaphone,
+  Mic,
+  Palette,
+  Pencil,
+  Play,
+  Search,
+  Shield,
+  Sparkle,
+  TrendingUp,
+  Users,
+} from '@/components/site/Icons';
 import { Vexa } from '@/components/site/Assistant';
 import { DemoButton } from '@/components/site/DemoButton';
+import { BuyTimer, HeroPrice } from './HeroOffer';
 import { MagicCta } from '@/components/site/SiteNav';
 import { SoundToggle } from '@/components/site/siteSound';
 import { STUDIO_FAQ, StudioFaq, StudioPricing } from '@/components/site/StudioSections';
@@ -100,15 +123,26 @@ const TEAM = [
  * on this page further down, named by the job rather than by our name for them,
  * because the hero's whole argument is the wage bill it replaces.
  */
-const REPLACES = [
-  'Research assistant',
-  'Content writer',
-  'Designer',
-  'Video editor',
-  'SEO',
-  'Social media manager',
-  'Meta & Google ad expert',
-  'Sales & email',
+const REPLACES: { label: string; icon: typeof Search }[] = [
+  { label: 'Research assistant', icon: Search },
+  { label: 'Content writer', icon: Pencil },
+  { label: 'Designer', icon: Palette },
+  { label: 'Video editor', icon: Play },
+  { label: 'SEO', icon: TrendingUp },
+  { label: 'Social media manager', icon: Users },
+  { label: 'Meta & Google ads expert', icon: Megaphone },
+  { label: 'Sales & email', icon: Mail },
+];
+
+/**
+ * The line under the buttons. Every one of these is true of the product on both
+ * ways of paying — "instant activation" is not, because a bank transfer waits
+ * for a person, so it is not claimed here.
+ */
+const TRUST: { label: string; icon: typeof Search }[] = [
+  { label: 'Secure & encrypted', icon: Shield },
+  { label: 'Stop any time', icon: BadgeCheck },
+  { label: 'Support any time', icon: Headset },
 ];
 
 /** The networks the whole-team plan works on, as the logo files in /site/logos. */
@@ -169,21 +203,27 @@ export default function StudioPage() {
         <div className={s.heroGlow} aria-hidden />
         <div className={`${site.wrap} ${s.heroGrid}`}>
           <div className={s.heroCopy}>
-            <span className={site.eyebrow}>
-              <Sparkle /> Vexa — Your Social Media Virtual Assistant
-            </span>
             <h1 className={site.h1}>
-              A whole social media team for <span className={site.accent}>{studioUsd(STUDIO_ALL_USD)} a month.</span>
+              A whole social media team for{' '}
+              <span className={s.heroPrice}>
+                <HeroPrice /> a month.
+                {/* The hand-drawn stroke under the figure, as the reference draws it. */}
+                <svg className={s.heroUnderline} viewBox="0 0 320 16" preserveAspectRatio="none" aria-hidden>
+                  <path d="M4 11.5C62 4.5 150 2.5 316 7.5" />
+                </svg>
+              </span>
             </h1>
 
-            {/* The eight people you would otherwise hire, struck off one at a time — which is the offer, acted out. */}
-            <ul className={s.swap} aria-label={`What ${studioUsd(STUDIO_ALL_USD)} a month replaces`}>
-              {REPLACES.map((role, i) => (
-                <li key={role} className={s.swapGone} style={{ animationDelay: `${0.55 + i * 0.12}s` }}>
-                  {role}
+            {/* The eight seats a business would otherwise hire for, and the one that replaces them. */}
+            <ul className={s.seats} aria-label={`What ${studioUsd(STUDIO_ALL_USD)} a month covers`}>
+              {REPLACES.map(({ label, icon: Ico }, i) => (
+                <li key={label} className={s.seat} style={{ animationDelay: `${0.25 + i * 0.07}s` }}>
+                  <Ico className={s.seatIcon} />
+                  {label}
                 </li>
               ))}
-              <li className={s.swapHer} style={{ animationDelay: `${0.55 + REPLACES.length * 0.12 + 0.2}s` }}>
+              <li className={s.seatHer} style={{ animationDelay: `${0.25 + REPLACES.length * 0.07 + 0.1}s` }}>
+                <Sparkle className={s.seatIcon} />
                 Vexa
               </li>
             </ul>
@@ -193,53 +233,115 @@ export default function StudioPage() {
               sales by email and phone. One price, nobody to hire. Connect your account — and watch.
             </p>
 
-            {/* What the money buys, with the reel it makes and the networks it works on. */}
-            <div className={s.priceStrip}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img className={s.priceReel} src="/site/plan-all.jpg" alt="" width={120} height={160} />
-              <div className={s.priceWords}>
-                <b>
-                  {studioUsd(STUDIO_ALL_USD)}
-                  <small>/month</small>
-                </b>
-                <span>Everything below, every day, on all of these:</span>
-                <span className={s.priceLogos} aria-hidden>
-                  {HERO_LOGOS.map((f, i) => (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      key={f}
-                      src={`/site/logos/${f}.svg`}
-                      alt=""
-                      width={22}
-                      height={22}
-                      style={{ animationDelay: `${1.5 + i * 0.07}s` }}
-                    />
-                  ))}
-                </span>
+            {/* The offer, as one card: what it costs, what it opens, and the button. */}
+            <div className={s.buy}>
+              <span className={s.buyBadge}>
+                <Crown className={s.buyCrown} />
+                Best value
+              </span>
+              <BuyTimer />
+              <div className={s.buyRow}>
+                {/* A frame of the reel this plan makes — the product, not an illustration of it. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img className={s.buyArt} src="/site/plan-all.jpg" alt="" width={132} height={176} />
+                <div className={s.buyFigure}>
+                  <b>
+                    <HeroPrice />
+                    <small>/month</small>
+                  </b>
+                  <span className={s.buyGets}>
+                    <Check className={s.buyTick} />
+                    Full access to your whole social media team
+                  </span>
+                  <span className={s.buyLogos} aria-hidden>
+                    {HERO_LOGOS.map((f, i) => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        key={f}
+                        src={`/site/logos/${f}.svg`}
+                        alt=""
+                        width={24}
+                        height={24}
+                        style={{ animationDelay: `${1.1 + i * 0.07}s` }}
+                      />
+                    ))}
+                  </span>
+                </div>
+                <div className={s.buyAct}>
+                  <span className={s.buyWrap}>
+                    <span className={s.buyStars} aria-hidden>
+                      <i />
+                      <i />
+                      <i />
+                      <i />
+                    </span>
+                    <Link href="/studio/signup?plan=all" className={s.buyBtn}>
+                      <Cart className={s.buyBtnIcon} />
+                      <span className={s.buyLabel}>
+                        Buy now — <HeroPrice />/month
+                      </span>
+                      <ArrowRight className={s.buyBtnArrow} />
+                      <Bolt className={s.buyBolt} />
+                    </Link>
+                  </span>
+
+                </div>
               </div>
             </div>
 
+            {/* The two ways to look before buying, side by side. */}
             <div className={s.heroActions}>
-              <Link href="/studio/signup?plan=all" className={`${site.btn} ${site.btnLime}`}>
-                Buy now — {studioUsd(STUDIO_ALL_USD)}/month <ArrowRight />
+              <DemoButton className={s.ghostBtn}>
+                <Play className={s.ghostIcon} />
+                Watch the demo
+              </DemoButton>
+              <Link href="/studio/signup?plan=all" className={s.tryLink}>
+                <Gift className={s.tryIcon} />
+                <span>
+                  Try Vexa for one day — {studioUsd(STUDIO_TRIAL_USD)}
+                  <small>{STUDIO_TRIAL_HOURS} hours of the same team</small>
+                </span>
               </Link>
-              <DemoButton className={`${site.btn} ${site.btnGhost}`}>Watch the demo</DemoButton>
             </div>
+
+          </div>
+
+          {/* She is the hero: life-size, the networks over her head, and she says
+              what she does. The chips over her are the jobs that actually run. */}
+          <div className={s.heroFigure}>
+            <Vexa hero />
+            <span className={`${s.ticker} ${s.tickerA}`}>
+              <Pencil className={s.tickerIcon} />
+              Writing today&rsquo;s posts…
+            </span>
+            <span className={`${s.ticker} ${s.tickerB}`}>
+              <Play className={s.tickerIcon} />
+              Rendering reel + voice-over
+            </span>
+            <span className={`${s.ticker} ${s.tickerC}`}>
+              <i className={s.tickerDot} aria-hidden />
+              Online — on autopilot
+            </span>
+          </div>
+
+          {/* Under both columns, so the hero ends on a line rather than on a hole beside her. */}
+          <div className={s.heroFoot}>
+            <ul className={s.trust}>
+              {TRUST.map(({ label, icon: Ico }) => (
+                <li key={label}>
+                  <Ico className={s.trustIcon} />
+                  {label}
+                </li>
+              ))}
+            </ul>
             <p className={s.heroNote}>
-              Rather see it work first?{' '}
-              <Link href="/studio/signup?plan=all" className={s.heroNoteLink}>
-                Take one day for {studioUsd(STUDIO_TRIAL_USD)}
-              </Link>{' '}
-              — {STUDIO_TRIAL_HOURS} hours of the same team. Smaller jobs from ${STUDIO_FROM_USD} a month;{' '}
+              Smaller jobs from ${STUDIO_FROM_USD} a month —{' '}
               <a href="#pricing" className={s.heroNoteLink}>
                 see all plans
               </a>
               .
             </p>
           </div>
-
-          {/* She is the hero: life-size, the networks over her head, and she says what she does. */}
-          <Vexa hero />
         </div>
       </section>
 

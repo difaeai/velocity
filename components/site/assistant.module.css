@@ -375,10 +375,12 @@
 .inHero .caption {
   /* Over her, not under her: at this size the figure would swallow its edge. */
   z-index: 2;
-  right: 58%;
-  bottom: 52%;
-  max-width: min(330px, 40vw);
-  font-size: 15px;
+  /* Over her, inside her own column: at 58% it reached across into the copy and
+     sat on top of the row of seats under the headline (owner, 2026-11-14). */
+  right: 20%;
+  bottom: 62%;
+  max-width: min(290px, 26vw);
+  font-size: 14.5px;
 }
 
 .plate {
