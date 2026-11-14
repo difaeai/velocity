@@ -25,6 +25,24 @@ on:
       - 'firebase.json'
       - 'docs/**'
 
+# One deploy at a time, project-wide.
+#
+# `firebase deploy --only functions --force` deletes every deployed function
+# that is not in THAT run's source. Two merges minutes apart start two runs that
+# overlap happily, and the run built from the OLDER commit deletes the functions
+# the newer one just created — both reporting success. That is exactly what
+# happened on 2026-11-14: #196 and #197 merged twenty seconds apart, #197's run
+# created `studioSaveBusiness` at 13:03 and #196's run deleted it at 13:21, CI
+# green throughout, and the callable simply did not exist in production.
+#
+# `cancel-in-progress: false` queues rather than cancels: a deploy killed
+# half-way would leave functions partly updated, which is worse than waiting.
+# A run that is still *pending* when a newer one arrives is superseded, so the
+# newest commit is always the one that lands last.
+concurrency:
+  group: deploy-functions
+  cancel-in-progress: false
+
 permissions:
   contents: read
   id-token: write
