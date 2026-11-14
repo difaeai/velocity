@@ -1011,27 +1011,28 @@ offer viewer `app/passenger/offer/[adId].tsx`. Admin page: **Advertise**.
 
 #### 9.2.1 The price ladder
 
-**The radius is the price** (owner, 2026-11-14). One ad costs a dollar and
-reaches a kilometre; every kilometre after that is twenty cents. The five numbers
+**The radius is the price** (owner, 2026-11-14). One ad costs **Rs 300** and
+reaches a kilometre; every kilometre after that is **Rs 60**. The four numbers
 live in `config/businessAdSettings` so an admin can reprice without shipping a
-build, and the app ships the same five so the screen is priced on its first
+build, and the app ships the same four so the screen is priced on its first
 frame (`apps/mobile/src/lib/adPricing.ts`).
 
 | Radius | Price | | Radius | Price |
 |---|---|---|---|---|
-| 1 km | **$1.00** | | 25 km | $5.80 |
-| 2 km | $1.20 | | 50 km | $10.80 |
-| 6 km | $2.00 | | 120 km | $24.80 |
+| 1 km | **Rs 300** | | 25 km | Rs 1,740 |
+| 2 km | Rs 360 | | 50 km | Rs 3,240 |
+| 6 km | Rs 600 | | 120 km | Rs 7,440 |
 
-- `baseUsd` 1 at `includedKm` 1, `perKmUsd` 0.2, `maxRadiusKm` 300, `planDays` 30,
-  `adSlots` 1.
+- `basePkr` 300 at `includedKm` 1, `perKmPkr` 60, `maxRadiusKm` 300, `planDays`
+  30, `adSlots` 1.
 - The picker on the phone runs **1–50 km**; past that a box takes a typed number
   and prices it the same way.
 - One ad runs **30 days** from approval. The three-band / 3-6-12-month plans this
   replaced are gone.
-- The list is in **dollars**, the rails are in **rupees**: every quote carries
-  both and the payment step asks for `priceUsd × usdToPkr`, snapshotted onto the
-  application so a moving rate cannot change what somebody already paid.
+- Rupees throughout — the figure on the slider is the figure the payment step
+  asks them to transfer, snapshotted onto the application so a reprice cannot
+  change what somebody already paid. (It was briefly in dollars; the owner asked
+  for rupees on the same day.)
 - Ads wider than `WIDE_RADIUS_KM` (10 km) carry `wide: true` and are swept by
   their own query — the geohash cell sweep cannot cover a 50 km disc inside
   Firestore's 30-value `in` limit (`businessAds/geo.ts`).
@@ -1052,8 +1053,8 @@ frame (`apps/mobile/src/lib/adPricing.ts`).
 Both images must live in Velocity's own Storage bucket — never a URL the client
 made up.
 
-The backend **re-derives the quote** (radius, dollar price, rupees asked for,
-ad slots, days) from live settings and snapshots it onto the application. An admin reviewing a receipt
+The backend **re-derives the quote** (radius, price, ad slots, days) from live
+settings and snapshots it onto the application. An admin reviewing a receipt
 next week therefore compares it against the price the applicant actually saw, not
 against a rate that has since changed.
 

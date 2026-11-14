@@ -2,8 +2,8 @@
  * "Find your Customers" — buying a campaign, and the admin review that starts it.
  * ----------------------------------------------------------------------------
  * The shape of the deal (owner, 2026-11-14): a business picks a radius, the
- * radius is the price — a dollar for the first kilometre and twenty cents for
- * each one after it — and they upload a screenshot of the transfer. A human
+ * radius is the price — Rs 300 for the first kilometre and Rs 60 for each one
+ * after it — and they upload a screenshot of the transfer. A human
  * looks at the screenshot and at the offer they intend to push, and only an
  * approval mints `businessAdvertisers/{uid}` — the document every publishing
  * and notification path keys off.
@@ -11,10 +11,10 @@
  * The screenshot is checked by a person, not by code. The backend cannot tell a
  * real receipt from an edited one, and pretending otherwise would just be
  * theatre. What the backend CAN do is make sure the numbers the advertiser was
- * shown are the numbers on file: the radius, the dollar price and the rupees
- * asked for are all re-derived here from the live settings and written as a
- * snapshot, so an admin comparing a receipt next week compares it against the
- * price the applicant actually saw — not against a rate that changed since.
+ * shown are the numbers on file: the radius and the price it comes to are
+ * re-derived here from the live settings and written as a snapshot, so an admin
+ * comparing a receipt next week compares it against the price the applicant
+ * actually saw — not against a list that changed since.
  *
  * The creative arrives twice on purpose. It comes in with the application so the
  * reviewer can see what would be pushed to thousands of phones before saying
@@ -31,7 +31,7 @@ import { encodeGeohash } from '../lib/geohash';
 import { docId, invalid, requireAdmin, requireAuth } from '../lib/guards';
 import { notifyUser } from '../lib/fcm';
 import { rateLimit } from '../lib/ratelimit';
-import { adPriceUsd, getBusinessAdSettings, pricePkr } from './config';
+import { adPrice, getBusinessAdSettings } from './config';
 import type { BusinessAdApplicationStatus, BusinessAdvertiserStatus } from './types';
 
 /** Documents must live in our own bucket — never a URL the client made up. */
@@ -94,12 +94,11 @@ export const getBusinessAdPlans = onCall(async () => {
   const s = await getBusinessAdSettings();
   return {
     ok: true,
-    baseUsd: s.baseUsd,
-    perKmUsd: s.perKmUsd,
+    basePkr: s.basePkr,
+    perKmPkr: s.perKmPkr,
     includedKm: s.includedKm,
     maxRadiusKm: s.maxRadiusKm,
     planDays: s.planDays,
-    usdToPkr: s.usdToPkr,
     adSlots: s.adSlots,
     notifyCooldownHours: s.notifyCooldownHours,
     payment: s.payment,
@@ -161,8 +160,7 @@ export const submitBusinessAdApplication = onCall(async (req) => {
     invalid('Your advertising request is already awaiting approval.');
   }
 
-  const priceUsd = adPriceUsd(settings, data.radiusKm);
-  const askPkr = pricePkr(settings, priceUsd);
+  const price = adPrice(settings, data.radiusKm);
 
   await appRef.set({
     uid,
@@ -172,9 +170,7 @@ export const submitBusinessAdApplication = onCall(async (req) => {
     radiusKm: data.radiusKm,
     adSlots: settings.adSlots,
     planDays: settings.planDays,
-    priceUsd,
-    pricePkr: askPkr,
-    usdToPkr: settings.usdToPkr,
+    price,
 
     center: {
       lat: data.lat,
@@ -201,18 +197,12 @@ export const submitBusinessAdApplication = onCall(async (req) => {
     updatedAt: FieldValue.serverTimestamp(),
   });
 
-  logger.info('Business ad application submitted', {
-    uid,
-    radiusKm: data.radiusKm,
-    priceUsd,
-    pricePkr: askPkr,
-  });
+  logger.info('Business ad application submitted', { uid, radiusKm: data.radiusKm, price });
 
   return {
     ok: true,
     status: 'pending' as BusinessAdApplicationStatus,
-    priceUsd,
-    pricePkr: askPkr,
+    price,
     planDays: settings.planDays,
     adSlots: settings.adSlots,
   };
@@ -239,10 +229,10 @@ export const adminReviewBusinessAdApplication = onCall(async (req) => {
   const radiusKm = parsed.data.radiusKm ?? (snap.get('radiusKm') as number);
   // An approval onto a narrower radius re-prices with it; otherwise the price
   // the applicant was quoted stands, whatever the list says today.
-  const priceUsd =
+  const price =
     parsed.data.radiusKm !== undefined
-      ? adPriceUsd(settings, radiusKm)
-      : ((snap.get('priceUsd') as number | undefined) ?? adPriceUsd(settings, radiusKm));
+      ? adPrice(settings, radiusKm)
+      : ((snap.get('price') as number | undefined) ?? adPrice(settings, radiusKm));
   const planDays = (snap.get('planDays') as number | undefined) ?? settings.planDays;
 
   // The clock starts at approval, not at payment: the advertiser should not lose
@@ -262,7 +252,7 @@ export const adminReviewBusinessAdApplication = onCall(async (req) => {
     tx.update(appRef, {
       status,
       approvedRadiusKm: decision === 'approve' ? radiusKm : null,
-      approvedPriceUsd: decision === 'approve' ? priceUsd : null,
+      approvedPrice: decision === 'approve' ? price : null,
       rejectionReason: decision === 'approve' ? null : reason,
       reviewedAt: now,
       reviewedBy: admin.uid,
@@ -282,8 +272,7 @@ export const adminReviewBusinessAdApplication = onCall(async (req) => {
           radiusKm,
           adSlots: snap.get('adSlots') ?? settings.adSlots,
           planDays,
-          priceUsd,
-          pricePkr: snap.get('pricePkr') ?? pricePkr(settings, priceUsd),
+          price,
           /** Prefills the ad composer so approval isn't followed by retyping. */
           draft: snap.get('draft') ?? null,
           expiresAt,
@@ -307,7 +296,7 @@ export const adminReviewBusinessAdApplication = onCall(async (req) => {
       actor: admin.uid,
       targetUid: uid,
       radiusKm: decision === 'approve' ? radiusKm : null,
-      priceUsd: decision === 'approve' ? priceUsd : null,
+      price: decision === 'approve' ? price : null,
       reason: reason ?? null,
       createdAt: now,
     });

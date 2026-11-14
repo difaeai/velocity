@@ -60,9 +60,8 @@ interface AdRequest {
   radiusKm?: number;
   adSlots?: number;
   planDays?: number;
-  /** The dollar price the radius came to, and the rupees asked for at that day's rate. */
-  priceUsd?: number;
-  pricePkr?: number;
+  /** What the radius came to, in rupees. */
+  price?: number;
   city?: string;
   contactPhone?: string;
   center?: { lat: number; lng: number; address?: string | null };
@@ -83,8 +82,7 @@ interface Advertiser {
   adSlots?: number;
   liveAds?: number;
   planDays?: number;
-  priceUsd?: number;
-  pricePkr?: number;
+  price?: number;
   expiresAt?: { seconds: number };
   totalNotified?: number;
   totalReach?: number;
@@ -332,10 +330,10 @@ function RequestRow({ r, busy, run }: { r: AdRequest; busy: string | null; run: 
           </div>
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: 22, fontWeight: 900, color: colors.primary }}>
-              {pkr(r.pricePkr)}
+              {pkr(r.price)}
             </div>
             <div style={{ color: colors.muted, fontSize: 12 }}>
-              quoted · {usd(r.priceUsd ?? 0)} for {r.radiusKm} km
+              quoted for {r.radiusKm} km
             </div>
             <div style={{ color: colors.muted, fontSize: 12 }}>
               {r.planDays ?? 30} days · {r.adSlots} offer{r.adSlots === 1 ? '' : 's'}
@@ -385,7 +383,7 @@ function RequestRow({ r, busy, run }: { r: AdRequest; busy: string | null; run: 
               <div style={{ padding: 12, color: colors.danger, fontSize: 13 }}>No screenshot attached.</div>
             )}
             <div style={{ padding: 12, fontSize: 12, color: colors.muted }}>
-              Must show <strong>{pkr(r.pricePkr)}</strong>. Click to open full size.
+              Must show <strong>{pkr(r.price)}</strong>. Click to open full size.
               {r.center ? (
                 <>
                   {' '}
@@ -514,7 +512,7 @@ function Advertisers({ rows, busy, run }: { rows: Advertiser[]; busy: string | n
                   {a.liveAds ?? 0}/{a.adSlots ?? 1} offers live
                 </div>
                 <div style={{ color: colors.muted, fontSize: 12, marginTop: 2 }}>
-                  {a.planDays ?? 30} days · {usd(a.priceUsd ?? 0)} · expires {when(a.expiresAt)}
+                  {a.planDays ?? 30} days · {pkr(a.price)} · expires {when(a.expiresAt)}
                   {left !== null ? ` (${left} days)` : ''}
                 </div>
                 {a.suspensionReason ? (
@@ -880,15 +878,14 @@ function Queries({
  * sold is unaffected: the quote is snapshotted onto the application at submission.
  */
 function Settings() {
-  // The ladder (owner, 2026-11-14): a dollar for the first kilometre, twenty
-  // cents for each one after it, and the rate the rupee figure is asked at.
+  // The ladder (owner, 2026-11-14): Rs 300 for the first kilometre, Rs 60 for
+  // each one after it.
   const [ladder, setLadder] = useState({
-    baseUsd: '1',
-    perKmUsd: '0.2',
+    basePkr: '300',
+    perKmPkr: '60',
     includedKm: '1',
     maxRadiusKm: '300',
     planDays: '30',
-    usdToPkr: '285',
     adSlots: '1',
   });
   const [cooldown, setCooldown] = useState('12');
@@ -911,12 +908,11 @@ function Settings() {
       const d = snap.data();
       if (!d) return;
       setLadder((prev) => ({
-        baseUsd: d.baseUsd !== undefined ? String(d.baseUsd) : prev.baseUsd,
-        perKmUsd: d.perKmUsd !== undefined ? String(d.perKmUsd) : prev.perKmUsd,
+        basePkr: d.basePkr !== undefined ? String(d.basePkr) : prev.basePkr,
+        perKmPkr: d.perKmPkr !== undefined ? String(d.perKmPkr) : prev.perKmPkr,
         includedKm: d.includedKm !== undefined ? String(d.includedKm) : prev.includedKm,
         maxRadiusKm: d.maxRadiusKm !== undefined ? String(d.maxRadiusKm) : prev.maxRadiusKm,
         planDays: d.planDays !== undefined ? String(d.planDays) : prev.planDays,
-        usdToPkr: d.usdToPkr !== undefined ? String(d.usdToPkr) : prev.usdToPkr,
         adSlots: d.adSlots !== undefined ? String(d.adSlots) : prev.adSlots,
       }));
       if (d.notifyCooldownHours) setCooldown(String(d.notifyCooldownHours));
@@ -944,12 +940,11 @@ function Settings() {
       await setDoc(
         doc(db, 'config', 'businessAdSettings'),
         {
-          baseUsd: Number(ladder.baseUsd),
-          perKmUsd: Number(ladder.perKmUsd),
+          basePkr: Number(ladder.basePkr),
+          perKmPkr: Number(ladder.perKmPkr),
           includedKm: Number(ladder.includedKm),
           maxRadiusKm: Number(ladder.maxRadiusKm),
           planDays: Number(ladder.planDays),
-          usdToPkr: Number(ladder.usdToPkr),
           adSlots: Number(ladder.adSlots),
           notifyCooldownHours: Number(cooldown),
           maxNotifPerUserPerDay: Number(dailyCap),
@@ -979,15 +974,15 @@ function Settings() {
         <h3 style={{ margin: 0, color: colors.text, fontSize: 16 }}>Price ladder</h3>
         <p style={{ color: colors.muted, fontSize: 13, marginTop: 6 }}>
           The radius is the price: an ad costs the base at the included radius and
-          the per-km rate for every kilometre after it. The phone does the same
-          arithmetic as the server, so a change here moves both. Changing these
-          never re-prices an application already submitted.
+          the per-km rate, in rupees, for every kilometre after it. The phone does
+          the same arithmetic as the server, so a change here moves both. Changing
+          these never re-prices an application already submitted.
         </p>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 10 }}>
           <Field
-            label="Base price (USD)"
-            value={ladder.baseUsd}
-            onChange={(v) => setLadder({ ...ladder, baseUsd: v })}
+            label="Base price (PKR)"
+            value={ladder.basePkr}
+            onChange={(v) => setLadder({ ...ladder, basePkr: v })}
           />
           <Field
             label="Included radius (km)"
@@ -995,9 +990,9 @@ function Settings() {
             onChange={(v) => setLadder({ ...ladder, includedKm: v })}
           />
           <Field
-            label="Per extra km (USD)"
-            value={ladder.perKmUsd}
-            onChange={(v) => setLadder({ ...ladder, perKmUsd: v })}
+            label="Per extra km (PKR)"
+            value={ladder.perKmPkr}
+            onChange={(v) => setLadder({ ...ladder, perKmPkr: v })}
           />
           <Field
             label="Widest radius sold (km)"
@@ -1010,21 +1005,15 @@ function Settings() {
             onChange={(v) => setLadder({ ...ladder, planDays: v })}
           />
           <Field
-            label="PKR to the dollar"
-            value={ladder.usdToPkr}
-            onChange={(v) => setLadder({ ...ladder, usdToPkr: v })}
-          />
-          <Field
             label="Offers at a time"
             value={ladder.adSlots}
             onChange={(v) => setLadder({ ...ladder, adSlots: v })}
           />
         </div>
         <p style={{ color: colors.muted, fontSize: 12, marginTop: 10 }}>
-          At these numbers: {usd(Number(ladder.baseUsd))} for{' '}
-          {ladder.includedKm} km, {usd(ladderPrice(ladder, 10))} for 10 km,{' '}
-          {usd(ladderPrice(ladder, 50))} for 50 km — and the shop is asked for{' '}
-          {pkr(Math.round(ladderPrice(ladder, 50) * Number(ladder.usdToPkr)))} at 50 km.
+          At these numbers: {pkr(ladderPrice(ladder, Number(ladder.includedKm)))} for{' '}
+          {ladder.includedKm} km, {pkr(ladderPrice(ladder, 10))} for 10 km, and{' '}
+          {pkr(ladderPrice(ladder, 50))} for 50 km.
         </p>
       </Card>
 
@@ -1076,18 +1065,13 @@ function Settings() {
  * backend businessAds/config, so the admin sees the price before saving it.
  */
 function ladderPrice(
-  l: { baseUsd: string; perKmUsd: string; includedKm: string; maxRadiusKm: string },
+  l: { basePkr: string; perKmPkr: string; includedKm: string; maxRadiusKm: string },
   radiusKm: number,
 ): number {
   const km = Math.min(Math.max(radiusKm, 0.5), Number(l.maxRadiusKm) || radiusKm);
   const extra = Math.max(0, km - (Number(l.includedKm) || 0));
-  const cents = Math.round(Number(l.baseUsd) * 100) + Math.round(Number(l.perKmUsd) * 100) * extra;
-  return Number.isFinite(cents) ? Math.max(0, Math.round(cents)) / 100 : 0;
-}
-
-/** "$10.80" — two decimals only when there are cents. */
-function usd(amount: number): string {
-  return `$${amount.toFixed(Math.round(amount * 100) % 100 === 0 ? 0 : 2)}`;
+  const price = Number(l.basePkr) + Number(l.perKmPkr) * extra;
+  return Number.isFinite(price) ? Math.max(0, Math.round(price)) : 0;
 }
 
 function Field({

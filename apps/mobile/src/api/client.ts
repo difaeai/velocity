@@ -2087,7 +2087,7 @@ export const api = {
   getBusinessAdPlans: callable<Record<string, never>, BusinessAdPlans>('getBusinessAdPlans'),
   submitBusinessAdApplication: callable<
     BusinessAdApplicationInput,
-    { ok: boolean; status: 'pending'; priceUsd: number; pricePkr: number; planDays: number; adSlots: number }
+    { ok: boolean; status: 'pending'; price: number; planDays: number; adSlots: number }
   >('submitBusinessAdApplication'),
   getBusinessAdDashboard: callable<Record<string, never>, BusinessAdDashboard>(
     'getBusinessAdDashboard',
@@ -2243,19 +2243,17 @@ export type BusinessAdStage =
 
 /**
  * The price ladder, not a list of plans (owner, 2026-11-14): what one ad costs
- * at `includedKm`, what every kilometre after it adds, and how far we will sell.
- * The phone does the arithmetic itself — see src/lib/adPricing.
+ * in rupees at `includedKm`, what every kilometre after it adds, and how far we
+ * will sell. The phone does the arithmetic itself — see src/lib/adPricing.
  */
 export interface BusinessAdPlans {
   ok: boolean;
-  baseUsd: number;
-  perKmUsd: number;
+  basePkr: number;
+  perKmPkr: number;
   includedKm: number;
   maxRadiusKm: number;
   /** Days one paid ad runs from approval. */
   planDays: number;
-  /** Rupees to the dollar: the price is in USD, the transfer is in PKR. */
-  usdToPkr: number;
   /** Offers one paid ad may run at a time. */
   adSlots: number;
   notifyCooldownHours: number;
@@ -2368,8 +2366,8 @@ export interface BusinessAdDashboard {
     status: string;
     radiusKm: number;
     planDays: number;
-    priceUsd: number;
-    pricePkr: number;
+    /** Whole rupees. */
+    price: number;
     rejectionReason: string | null;
     draft: BusinessAdCreative | null;
     submittedAtMs: number | null;
@@ -2382,8 +2380,8 @@ export interface BusinessAdDashboard {
     adSlots: number;
     liveAds: number;
     planDays: number;
-    priceUsd: number;
-    pricePkr: number;
+    /** Whole rupees. */
+    price: number;
     expiresAtMs: number | null;
     daysLeft: number | null;
     suspensionReason: string | null;

@@ -1,65 +1,53 @@
 /**
  * "Find your Customers" — the radius price ladder (pure, no emulator).
  *
- * The owner's list (2026-11-14): a dollar buys one ad at one kilometre, and
- * every kilometre after it is twenty cents. These are the numbers a shopkeeper
- * is quoted and the numbers the server re-derives when the application lands,
- * so they are worth pinning down to the cent — in cents, because 1 + 0.2 * 3 in
- * floating point is 1.6000000000000003.
+ * The owner's list (2026-11-14): Rs 300 buys one ad at one kilometre, and every
+ * kilometre after it is Rs 60. These are the numbers a shopkeeper is quoted and
+ * the numbers the server re-derives when the application lands, so they are
+ * worth pinning down to the rupee.
  */
 import { describe, it, expect } from 'vitest';
 
-import {
-  adPriceCents,
-  adPriceUsd,
-  DEFAULT_BUSINESS_AD_SETTINGS as S,
-  pricePkr,
-} from '../config';
+import { adPrice, DEFAULT_BUSINESS_AD_SETTINGS as S } from '../config';
 
-describe('adPriceUsd', () => {
-  it('is a dollar for the kilometre the base price includes', () => {
-    expect(adPriceUsd(S, 1)).toBe(1);
+describe('adPrice', () => {
+  it('is Rs 300 for the kilometre the base price includes', () => {
+    expect(adPrice(S, 1)).toBe(300);
   });
 
-  it('climbs twenty cents a kilometre', () => {
-    expect(adPriceUsd(S, 2)).toBe(1.2);
-    expect(adPriceUsd(S, 3)).toBe(1.4);
-    // Five kilometres past the first make a second dollar.
-    expect(adPriceUsd(S, 6)).toBe(2);
-    expect(adPriceUsd(S, 11)).toBe(3);
+  it('climbs Rs 60 a kilometre', () => {
+    expect(adPrice(S, 2)).toBe(360);
+    expect(adPrice(S, 3)).toBe(420);
+    // Five kilometres past the first double the price.
+    expect(adPrice(S, 6)).toBe(600);
+    expect(adPrice(S, 11)).toBe(900);
   });
 
   it('prices the picker’s widest radius', () => {
-    expect(adPriceUsd(S, 50)).toBe(10.8);
+    expect(adPrice(S, 50)).toBe(3240);
   });
 
   it('counts half kilometres', () => {
-    expect(adPriceUsd(S, 2.5)).toBe(1.3);
+    expect(adPrice(S, 2.5)).toBe(390);
   });
 
-  it('never lands between cents', () => {
+  it('never quotes paisa', () => {
     for (let km = 0.5; km <= 60; km += 0.5) {
-      expect(Number.isInteger(adPriceCents(S, km))).toBe(true);
+      expect(Number.isInteger(adPrice(S, km))).toBe(true);
     }
   });
 
   it('quotes the ceiling rather than more for a radius we do not sell', () => {
-    expect(adPriceUsd(S, S.maxRadiusKm + 500)).toBe(adPriceUsd(S, S.maxRadiusKm));
+    expect(adPrice(S, S.maxRadiusKm + 500)).toBe(adPrice(S, S.maxRadiusKm));
   });
 
   it('charges the base price below the included radius', () => {
-    expect(adPriceUsd(S, 0.5)).toBe(1);
+    expect(adPrice(S, 0.5)).toBe(300);
   });
 
   it('follows a repriced list', () => {
-    const cheap = { ...S, baseUsd: 2, perKmUsd: 0.5, includedKm: 2 };
-    expect(adPriceUsd(cheap, 2)).toBe(2);
-    expect(adPriceUsd(cheap, 4)).toBe(3);
-  });
-});
-
-describe('pricePkr', () => {
-  it('is the dollar price at the configured rate, to the rupee', () => {
-    expect(pricePkr({ ...S, usdToPkr: 285 }, 1.8)).toBe(513);
+    const cheap = { ...S, basePkr: 500, perKmPkr: 100, includedKm: 2 };
+    expect(adPrice(cheap, 2)).toBe(500);
+    expect(adPrice(cheap, 4)).toBe(700);
   });
 });

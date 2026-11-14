@@ -3,12 +3,11 @@
  *
  * THE RADIUS IS THE PRICE (owner, 2026-11-14)
  * -------------------------------------------
- * "1 Ad 1 dollar ka hoga or uska radius 1 kilometer mai jaye ga … each
- * kilometer k 20 cents increase krty jayen gy". So there is no price list to
- * read and no plan to choose: there is a slider, and the figure above it moves
- * as the thumb does. The three bands and the 3/6/12-month plans this replaced
- * are gone — they made a shopkeeper read a table before they could find out
- * what their own shop would cost.
+ * One ad is Rs 300 and reaches a kilometre; every kilometre after that is
+ * Rs 60. So there is no price list to read and no plan to choose: there is a
+ * slider, and the figure above it moves as the thumb does. The three bands and
+ * the 3/6/12-month plans this replaced are gone — they made a shopkeeper read a
+ * table before they could find out what their own shop would cost.
  *
  * The slider stops at 50 km because that is where the screen runs out; past
  * that the box underneath takes a typed number and prices it the same way.
@@ -18,7 +17,7 @@
  * it once the months went.
  *
  * IT IS PRICED ON THE FIRST FRAME
- * The ladder is five numbers and the app ships them (src/lib/adPricing), so
+ * The ladder is four numbers and the app ships them (src/lib/adPricing), so
  * nothing on this screen waits for a cold function: `getBusinessAdPlans` is
  * still read through the cache and still overrides them the moment it lands,
  * which is what keeps a reprice a config change rather than a release. The
@@ -26,8 +25,9 @@
  * works out is what the screen shows, never what anybody is charged.
  *
  * THE MONEY
- * The list is in dollars, the rails are rupees: every quote carries both, and
- * the payment step asks for the rupee figure at `usdToPkr`.
+ * Rupees throughout (owner, 2026-11-14): the price on the slider is the figure
+ * the payment step asks them to transfer, which is also what Easypaisa,
+ * JazzCash and a bank transfer actually move.
  *
  * The shop's coordinates come from the device, because "within 3 km" has to be
  * 3 km of somewhere real. There is no address-only path: a typed address we
@@ -59,8 +59,7 @@ import { colors } from '../../../src/config';
 import { useCurrentLocation } from '../../../src/hooks/location';
 import { useCachedResource } from '../../../src/lib/cachedResource';
 import {
-  adPriceLabel,
-  adPricePkr,
+  adPrice,
   adPricing,
   RADIUS_PICKER_MAX_KM,
   type AdPricing,
@@ -126,8 +125,7 @@ export default function BusinessAdSubscribe() {
   const [proofUri, setProofUri] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const priceUsd = adPriceLabel(pricing, radiusKm);
-  const pkr = adPricePkr(pricing, radiusKm);
+  const price = adPrice(pricing, radiusKm);
 
   // The step slides in rather than cutting: the screen is one flow, and a card
   // arriving from the right says "next" without a word.
@@ -316,12 +314,11 @@ export default function BusinessAdSubscribe() {
                 pricing={pricing}
                 radiusKm={radiusKm}
                 onRadius={setRadiusKm}
-                priceUsd={priceUsd}
-                pkr={pkr}
+                price={price}
               />
 
               <PrimaryButton
-                label={`Continue · ${priceUsd}`}
+                label={`Continue · ${formatPKR(price)}`}
                 disabled={!step1Valid}
                 onPress={() => {
                   if (!step1Valid) {
@@ -339,10 +336,10 @@ export default function BusinessAdSubscribe() {
             </>
           ) : (
             <>
-              <Text style={styles.stepTitle}>Send {formatPKR(pkr)}</Text>
+              <Text style={styles.stepTitle}>Send {formatPKR(price)}</Text>
               <Text style={styles.stepSub}>
-                {priceUsd} for {radiusKm} km, {pricing.planDays} days. Transfer to one of the
-                accounts below, then upload the screenshot.
+                {radiusKm} km for {pricing.planDays} days. Transfer to one of the accounts
+                below, then upload the screenshot.
               </Text>
 
               <View style={styles.methodRow}>
@@ -390,7 +387,7 @@ export default function BusinessAdSubscribe() {
               </View>
 
               <PrimaryButton
-                label={submitting ? 'Submitting…' : `Submit for approval · ${formatPKR(pkr)}`}
+                label={submitting ? 'Submitting…' : `Submit for approval · ${formatPKR(price)}`}
                 loading={submitting}
                 disabled={!proofUri || submitting}
                 onPress={submit}
@@ -416,20 +413,19 @@ export function ReachCard({
   pricing,
   radiusKm,
   onRadius,
-  priceUsd,
-  pkr,
+  price,
 }: {
   pricing: AdPricing;
   radiusKm: number;
   onRadius: (km: number) => void;
-  priceUsd: string;
-  pkr: number;
+  /** Whole rupees, for this radius. */
+  price: number;
 }) {
   const [pop] = useState(() => new Animated.Value(1));
   useEffect(() => {
     pop.setValue(0.92);
     Animated.spring(pop, { toValue: 1, friction: 5, tension: 220, useNativeDriver: true }).start();
-  }, [priceUsd, pop]);
+  }, [price, pop]);
 
   // What the box holds: null while they have not typed in it, so it shows the
   // slider's own number instead of fighting it.
@@ -441,9 +437,13 @@ export function ReachCard({
       <View style={styles.reachTop}>
         <View style={{ flex: 1 }}>
           <Animated.View style={{ transform: [{ scale: pop }], alignSelf: 'flex-start' }}>
-            <Text style={styles.reachPrice}>{priceUsd}</Text>
+            {/* One line, whatever the figure: "Rs 18,240" at the widest radius
+                we sell is twice the width of "Rs 300". */}
+            <Text style={styles.reachPrice} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
+              {formatPKR(price)}
+            </Text>
           </Animated.View>
-          <Text style={styles.reachPkr}>{formatPKR(pkr)} to transfer</Text>
+          <Text style={styles.reachPkr}>for {pricing.planDays} days, one offer</Text>
         </View>
         <View style={styles.reachKmBox}>
           <Text style={styles.reachKm}>{radiusKm}</Text>
@@ -499,10 +499,9 @@ export function ReachCard({
       </View>
 
       <Text style={styles.reachNote}>
-        {pricing.includedKm} km is in the {adPriceLabel(pricing, pricing.includedKm)}; every km
-        after that adds {Math.round(pricing.perKmUsd * 100)}¢. One offer, {pricing.planDays} days,
-        and everyone inside your radius gets it — again every {pricing.notifyCooldownHours} hours
-        while it runs.
+        {pricing.includedKm} km is in the {formatPKR(adPrice(pricing, pricing.includedKm))}; every
+        km after that adds {formatPKR(pricing.perKmPkr)}. Everyone inside your radius gets your
+        offer — again every {pricing.notifyCooldownHours} hours while it runs.
       </Text>
     </Glass>
   );

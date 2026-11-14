@@ -3,26 +3,26 @@
  * ----------------------------------------------------------------------------
  * THE PRICE IS THE RADIUS (owner, 2026-11-14)
  * -------------------------------------------
- * One ad costs a dollar and reaches one kilometre. Every kilometre past that is
- * twenty cents, so a shop that wants the whole sector pays for the whole sector
- * and the shop on the corner pays a dollar:
+ * One ad costs Rs 300 and reaches one kilometre. Every kilometre past that is
+ * Rs 60, so a shop that wants the whole sector pays for the whole sector and
+ * the shop on the corner pays three hundred:
  *
- *     1 km → $1.00      6 km → $2.00      26 km → $6.00
- *     2 km → $1.20     11 km → $3.00      50 km → $10.80
+ *     1 km → Rs 300      6 km → Rs 600      26 km → Rs 1,800
+ *     2 km → Rs 360     11 km → Rs 900      50 km → Rs 3,240
  *
  * The bands this replaced (3 km / 5 km, 5,500 and 7,000 a month, 3/6/12-month
  * plans) are gone: nobody could tell which band they were in, and the cheapest
- * way in was a year of rupees. A dollar and a slider is a price a shopkeeper can
- * say yes to in one go.
+ * way in was a year of rupees. Three hundred rupees and a slider is a price a
+ * shopkeeper can say yes to in one go.
  *
- * WHY THE PRICE IS IN DOLLARS AND THE TRANSFER IS IN RUPEES
- * ---------------------------------------------------------
- * The owner set the list in dollars, and Velocity Studio already sells in them.
- * The rails an Islamabad shop actually pays on are Easypaisa, JazzCash and a
- * bank transfer, all in rupees — so every quote carries both: the dollar price
- * it was bought at, and the rupees to send, converted at `usdToPkr`. Both are
- * snapshotted onto the application, so a rate that moves during the review does
- * not change what somebody already paid.
+ * RUPEES, NOT DOLLARS (owner, 2026-11-14, second pass)
+ * ----------------------------------------------------
+ * The ladder was briefly in dollars — $1 and 20¢ — with the rupees worked out
+ * at a stored rate. The owner asked for it in rupees outright, which is also
+ * what every rail this feature bills on (Easypaisa, JazzCash, a bank transfer)
+ * actually moves. One currency, one number, no conversion to go stale: the
+ * price is snapshotted onto the application, so a reprice during the review
+ * cannot change what somebody already paid.
  *
  * THE NOTIFICATION BUDGET
  * -----------------------
@@ -36,10 +36,10 @@
 import { db } from '../lib/firebase';
 
 export interface BusinessAdSettings {
-  /** What one ad costs at `includedKm`, in US dollars. */
-  baseUsd: number;
-  /** Every kilometre past `includedKm`, in US dollars. */
-  perKmUsd: number;
+  /** What one ad costs at `includedKm`, in rupees. */
+  basePkr: number;
+  /** Every kilometre past `includedKm`, in rupees. */
+  perKmPkr: number;
   /** The radius the base price already covers. */
   includedKm: number;
   /**
@@ -49,8 +49,6 @@ export interface BusinessAdSettings {
   maxRadiusKm: number;
   /** How long one paid ad runs from the day it is approved. */
   planDays: number;
-  /** Rupees to the dollar: the price list is USD, the transfer is PKR. */
-  usdToPkr: number;
   /** How many offers one paid ad may have running at a time. */
   adSlots: number;
   /**
@@ -75,15 +73,12 @@ export interface BusinessAdSettings {
 }
 
 export const DEFAULT_BUSINESS_AD_SETTINGS: BusinessAdSettings = {
-  baseUsd: 1,
-  perKmUsd: 0.2,
+  basePkr: 300,
+  perKmPkr: 60,
   includedKm: 1,
   // 50 is as far as the picker goes; the manual box goes to here.
   maxRadiusKm: 300,
   planDays: 30,
-  // Roughly the open-market rate in November 2026. An admin keeps it current —
-  // it only decides what rupee figure the payment step asks for.
-  usdToPkr: 285,
   adSlots: 1,
   // Twice a day per offer. Anyone inside the radius hears from the advertiser
   // every 12 hours, whether they walked in or live there.
@@ -102,31 +97,16 @@ export const DEFAULT_BUSINESS_AD_SETTINGS: BusinessAdSettings = {
   },
 };
 
-/** A money amount in cents, so the ladder never lands on 1.2000000000000002. */
-function cents(usd: number): number {
-  return Math.round(usd * 100);
-}
-
 /**
- * What one ad at this radius costs, in US cents. The radius is clamped to what
- * we sell: a client asking for 10,000 km is answered with the ceiling's price,
- * and the caller refuses the radius separately — silently over-charging is
- * worse than quoting the cap.
+ * What one ad at this radius costs, in whole rupees. The radius is clamped to
+ * what we sell: a client asking for 10,000 km is answered with the ceiling's
+ * price, and the caller refuses the radius separately — silently over-charging
+ * is worse than quoting the cap. Rounded, because nobody transfers paisa.
  */
-export function adPriceCents(settings: BusinessAdSettings, radiusKm: number): number {
+export function adPrice(settings: BusinessAdSettings, radiusKm: number): number {
   const km = Math.min(Math.max(radiusKm, 0.5), settings.maxRadiusKm);
   const extra = Math.max(0, km - settings.includedKm);
-  return Math.max(0, Math.round(cents(settings.baseUsd) + cents(settings.perKmUsd) * extra));
-}
-
-/** The same price as dollars, to two decimal places. */
-export function adPriceUsd(settings: BusinessAdSettings, radiusKm: number): number {
-  return adPriceCents(settings, radiusKm) / 100;
-}
-
-/** The rupees to transfer for a dollar price, at the configured rate. */
-export function pricePkr(settings: BusinessAdSettings, priceUsd: number): number {
-  return Math.round(priceUsd * settings.usdToPkr);
+  return Math.max(0, Math.round(settings.basePkr + settings.perKmPkr * extra));
 }
 
 function str(value: unknown): string | null {
@@ -152,12 +132,11 @@ export async function getBusinessAdSettings(): Promise<BusinessAdSettings> {
   const payment = (snap.get('payment') as Record<string, unknown> | undefined) ?? {};
 
   return {
-    baseUsd: num(snap.get('baseUsd'), d.baseUsd, 0, 1000),
-    perKmUsd: num(snap.get('perKmUsd'), d.perKmUsd, 0, 1000),
+    basePkr: num(snap.get('basePkr'), d.basePkr, 0, 10_000_000),
+    perKmPkr: num(snap.get('perKmPkr'), d.perKmPkr, 0, 10_000_000),
     includedKm: num(snap.get('includedKm'), d.includedKm, 0.5, 50),
     maxRadiusKm: num(snap.get('maxRadiusKm'), d.maxRadiusKm, 1, 2000),
     planDays: Math.round(num(snap.get('planDays'), d.planDays, 1, 3650)),
-    usdToPkr: num(snap.get('usdToPkr'), d.usdToPkr, 1, 100_000),
     adSlots: Math.round(num(snap.get('adSlots'), d.adSlots, 1, 20)),
     notifyCooldownHours: num(snap.get('notifyCooldownHours'), d.notifyCooldownHours, 1, 720),
     maxNotifPerUserPerDay: Math.round(

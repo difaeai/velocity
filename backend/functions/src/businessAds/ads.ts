@@ -277,14 +277,13 @@ export const adminUpdateBusinessAdSettings = onCall(async (req) => {
   const admin = requireAdmin(req);
   const parsed = z
     .object({
-      // The price ladder (owner, 2026-11-14): a dollar for the first kilometre,
-      // twenty cents for each one after it.
-      baseUsd: z.number().min(0).max(1000).optional(),
-      perKmUsd: z.number().min(0).max(1000).optional(),
+      // The price ladder (owner, 2026-11-14): Rs 300 for the first kilometre,
+      // Rs 60 for each one after it.
+      basePkr: z.number().min(0).max(10_000_000).optional(),
+      perKmPkr: z.number().min(0).max(10_000_000).optional(),
       includedKm: z.number().min(0.5).max(50).optional(),
       maxRadiusKm: z.number().min(1).max(2000).optional(),
       planDays: z.number().int().min(1).max(3650).optional(),
-      usdToPkr: z.number().min(1).max(100_000).optional(),
       adSlots: z.number().int().min(1).max(20).optional(),
       notifyCooldownHours: z.number().min(1).max(720).optional(),
       maxNotifPerUserPerDay: z.number().int().min(1).max(20).optional(),
@@ -305,7 +304,7 @@ export const adminUpdateBusinessAdSettings = onCall(async (req) => {
 
   const patch: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
   const d = parsed.data;
-  for (const key of ['baseUsd', 'perKmUsd', 'includedKm', 'maxRadiusKm', 'planDays', 'usdToPkr', 'adSlots'] as const) {
+  for (const key of ['basePkr', 'perKmPkr', 'includedKm', 'maxRadiusKm', 'planDays', 'adSlots'] as const) {
     if (d[key] !== undefined) patch[key] = d[key];
   }
   if (d.notifyCooldownHours !== undefined) patch.notifyCooldownHours = d.notifyCooldownHours;

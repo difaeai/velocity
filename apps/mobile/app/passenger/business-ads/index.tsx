@@ -26,11 +26,7 @@ import { api } from '../../../src/api/client';
 import type { BusinessAd, BusinessAdDashboard, BusinessAdPlans } from '../../../src/api/client';
 import { colors } from '../../../src/config';
 import { useBusinessAdDashboard, useBusinessAdQueries } from '../../../src/hooks/businessAds';
-import {
-  adPriceLabel,
-  adPricing,
-  RADIUS_PICKER_MAX_KM,
-} from '../../../src/lib/adPricing';
+import { adPrice, adPricing, RADIUS_PICKER_MAX_KM } from '../../../src/lib/adPricing';
 import { useCachedResource } from '../../../src/lib/cachedResource';
 import { Glass } from '../../../src/ui/Glass';
 import {
@@ -177,14 +173,14 @@ const FEATURES = [
 ];
 
 const STEPS = [
-  { title: 'Choose your reach', body: 'Drag the radius — the price moves with it. $1 covers the first km.' },
+  { title: 'Choose your reach', body: 'Drag the radius — the price moves with it. Rs 300 covers the first km.' },
   { title: 'Publish your offer', body: 'Picture, business name and the deal — live after approval.' },
   { title: 'Get seen and asked', body: 'Watch who opened it and answer their questions.' },
 ];
 
 /**
- * What it costs, the owner's way (2026-11-14): a dollar for one offer at one
- * kilometre, twenty cents a kilometre after that. The numbers come from the
+ * What it costs, the owner's way (2026-11-14): Rs 300 for one offer at one
+ * kilometre, Rs 60 a kilometre after that. The numbers come from the
  * same cached price list the subscribe screen reads — under the same key, so
  * this paints from cache and agrees with the screen it leads to — and from this
  * build's own ladder until that lands.
@@ -199,20 +195,21 @@ function PriceLadder() {
   return (
     <Glass radius={20} style={styles.ladder}>
       <View style={styles.ladderTop}>
-        <Text style={styles.ladderPrice}>{adPriceLabel(p, p.includedKm)}</Text>
+        <Text style={styles.ladderPrice}>{formatPKR(adPrice(p, p.includedKm))}</Text>
         <View style={{ flex: 1 }}>
           <Text style={styles.ladderTitle}>One offer, {p.includedKm} km around your door</Text>
           <Text style={styles.ladderBody}>
-            Every extra kilometre adds {Math.round(p.perKmUsd * 100)}¢. You pick the radius —
-            the price follows it.
+            Every extra kilometre adds {formatPKR(p.perKmPkr)}. You pick the radius — the
+            price follows it.
           </Text>
         </View>
       </View>
       <View style={styles.ladderRow}>
-        {[1, 5, 10, 25, 50].map((km) => (
+        {/* Four rungs, not five: a rupee figure at 25 and 50 km is four digits. */}
+        {[1, 5, 25, 50].map((km) => (
           <View key={km} style={styles.ladderCell}>
             <Text style={styles.ladderKm}>{km} km</Text>
-            <Text style={styles.ladderAmt}>{adPriceLabel(p, km)}</Text>
+            <Text style={styles.ladderAmt}>{formatPKR(adPrice(p, km))}</Text>
           </View>
         ))}
       </View>
@@ -303,8 +300,7 @@ function Pending({ data }: { data: BusinessAdDashboard }) {
         <View style={styles.summaryCard}>
           <Row label="Radius" value={`${app.radiusKm} km`} />
           <Row label="Runs for" value={`${app.planDays} days`} />
-          <Row label="Price" value={`$${app.priceUsd.toFixed(2)}`} />
-          <Row label="Paid" value={formatPKR(app.pricePkr)} strong />
+          <Row label="Paid" value={formatPKR(app.price)} strong />
         </View>
       ) : null}
 

@@ -25,7 +25,7 @@ import { onCall } from 'firebase-functions/v2/https';
 
 import { db, Timestamp } from '../lib/firebase';
 import { requireAuth } from '../lib/guards';
-import { adPriceUsd, getBusinessAdSettings, pkDay, pricePkr } from './config';
+import { adPrice, getBusinessAdSettings, pkDay } from './config';
 import type { BusinessAdStatus } from './types';
 
 interface DayRow {
@@ -73,8 +73,7 @@ export const getBusinessAdDashboard = onCall(async (req) => {
             status: appSnap.get('status') as string,
             radiusKm: appSnap.get('radiusKm') as number,
             planDays: (appSnap.get('planDays') as number | undefined) ?? settings.planDays,
-            priceUsd: (appSnap.get('priceUsd') as number | undefined) ?? 0,
-            pricePkr: (appSnap.get('pricePkr') as number | undefined) ?? 0,
+            price: (appSnap.get('price') as number | undefined) ?? 0,
             rejectionReason: (appSnap.get('rejectionReason') as string | null) ?? null,
             draft: (appSnap.get('draft') as Record<string, string> | null) ?? null,
             submittedAtMs: ms(appSnap.get('submittedAt')),
@@ -176,11 +175,7 @@ export const getBusinessAdDashboard = onCall(async (req) => {
       adSlots: (advertiserSnap.get('adSlots') as number) ?? settings.adSlots,
       liveAds: ads.filter((a) => a.status === 'active').length,
       planDays: (advertiserSnap.get('planDays') as number) ?? settings.planDays,
-      priceUsd:
-        (advertiserSnap.get('priceUsd') as number | undefined) ?? adPriceUsd(settings, radiusKm),
-      pricePkr:
-        (advertiserSnap.get('pricePkr') as number | undefined) ??
-        pricePkr(settings, adPriceUsd(settings, radiusKm)),
+      price: (advertiserSnap.get('price') as number | undefined) ?? adPrice(settings, radiusKm),
       expiresAtMs,
       daysLeft:
         expiresAtMs === null ? null : Math.max(0, Math.ceil((expiresAtMs - Date.now()) / 86_400_000)),

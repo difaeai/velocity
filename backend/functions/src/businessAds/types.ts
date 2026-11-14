@@ -30,13 +30,13 @@ export interface GeoCenter {
 }
 
 /**
- * What one ad was sold for: the radius it reaches, the dollar price that radius
- * came to, and the rupees asked for at the day's rate (see businessAds/config).
+ * What one ad was sold for: the radius it reaches and the rupees that radius
+ * came to on the day (see businessAds/config).
  */
 export interface BusinessAdQuote {
   radiusKm: number;
-  priceUsd: number;
-  pricePkr: number;
+  /** Whole rupees. */
+  price: number;
   /** Days the ad runs from approval. */
   planDays: number;
 }
