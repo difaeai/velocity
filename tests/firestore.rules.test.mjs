@@ -1124,3 +1124,28 @@ test('AI usage and agent records: admins see all, a customer their own agent row
     await assertFails(getDoc(doc(ownerA, path)));
   }
 });
+
+test('pooling verdicts and totals are the desk’s, and nobody can write them', async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'analytics/pooling'), { evaluated: 2, passed: 1 });
+    await setDoc(doc(db, 'poolDecisions/d1'), { poolId: 'p1', uid: 'passenger1', ok: true });
+  });
+
+  // The totals steer the radius; a rider who could raise `passed` could make a
+  // bad radius look like a good one.
+  await assertSucceeds(getDoc(doc(admin, 'analytics/pooling')));
+  await assertFails(getDoc(doc(passenger, 'analytics/pooling')));
+  await assertFails(setDoc(doc(admin, 'analytics/pooling'), { evaluated: 999 }));
+
+  // A verdict names who shared a car with whom, so not even its own rider reads it.
+  await assertSucceeds(getDoc(doc(admin, 'poolDecisions/d1')));
+  await assertFails(getDoc(doc(passenger, 'poolDecisions/d1')));
+  await assertFails(getDoc(doc(driver, 'poolDecisions/d1')));
+  await assertFails(setDoc(doc(driver, 'poolDecisions/d2'), { poolId: 'p1', ok: true }));
+
+  // The parameters themselves: every app reads them, only the desk sets them.
+  await assertSucceeds(getDoc(doc(passenger, 'config/poolingSettings')));
+  await assertFails(setDoc(doc(passenger, 'config/poolingSettings'), { mode: 'live' }));
+  await assertSucceeds(setDoc(doc(admin, 'config/poolingSettings'), { mode: 'shadow', matchRadiusM: 1500 }));
+});

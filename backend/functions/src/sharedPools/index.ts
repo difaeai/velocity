@@ -48,6 +48,8 @@ import { computeGenderAccess } from '../lib/genderAccess';
 import { queryNearbyDriverDocs } from '../lib/nearbyDrivers';
 import { neighborGeohashes } from '../lib/geohash';
 import { MAX_POOL_RIDERS, poolPerSeatFare } from '../domain/fares';
+import { getPoolingSettings, type PoolingSettings } from '../domain/poolingSettings';
+import { recordAdmission } from './admit';
 import type { DriverPublicInfo, TripStatus } from '../domain/types';
 import { assertOutstandingClear, getCancellationSettings, type CancellationSettings } from '../domain/cancellation';
 import { assertCommissionClear, getCommissionSettings } from '../domain/commission';
@@ -82,6 +84,13 @@ import {
 export const MATCH_RADIUS_M = 1000;
 /** "From your area": a search lists every car leaving within this of the rider's pickup. */
 export const NEARBY_RADIUS_M = 2500;
+/**
+ * Both of the above are now the FALLBACK for `config/poolingSettings`
+ * (domain/poolingSettings): `matchRadiusM` and `candidateRadiusM`, which an
+ * admin moves without a deploy. They stay exported because the tests and the
+ * mobile copy of the rule read them, and because a settings read that fails
+ * must leave the engine behaving exactly as it did.
+ */
 /** A car that filled stays on the card this long; then the pool is empty again. */
 export const FULL_HOLD_MS = 2 * 60 * 1000;
 /** A pool with a time asks drivers this long before it, so the car is there on time. */
@@ -163,8 +172,12 @@ export function departureOf(pool: FirebaseFirestore.DocumentData, nowMs: number)
   const departTime = (pool.departTime as string | null) ?? null;
   if (!departTime) return null;
   const dispatchMs = timestampMs(pool.dispatchAt);
+  // `dispatchLeadMs` is the lead THIS pool's bookings were taken under, stored
+  // when they were, so moving `matchWindowMin` in the dashboard cannot shift the
+  // departure already promised to riders who booked under the old one.
+  const lead = typeof pool.dispatchLeadMs === 'number' ? pool.dispatchLeadMs : DISPATCH_LEAD_MS;
   return ((pool.bookings as Booking[] | undefined) ?? []).length > 0 && dispatchMs !== null
-    ? dispatchMs + DISPATCH_LEAD_MS
+    ? dispatchMs + lead
     : nextDepartureMs(departTime, nowMs);
 }
 
@@ -197,7 +210,18 @@ function closedForComfort(genders: string[]): boolean {
 }
 
 /** What the pool's last car can still do, read off its trip. */
-export function carOf(trip: FirebaseFirestore.DocumentData | null | undefined, nowMs: number) {
+export function carOf(
+  trip: FirebaseFirestore.DocumentData | null | undefined,
+  nowMs: number,
+  /**
+   * Lock the car the moment a driver is assigned, rather than when they tap
+   * Start. The spec's timeline (2026-11-14) locks at assignment; this engine
+   * shipped locking at Start, so a car on its way to the first pickup still
+   * fills its empty seats. Default false keeps that — `lockOnDriverAssigned` in
+   * the dashboard's Ride Pooling page turns the stricter rule on.
+   */
+  lockOnDriverAssigned = false,
+) {
   if (!trip) return null;
   const status = trip.status as string;
   const members = (trip.poolMembers as string[] | undefined) ?? [trip.passengerId as string];
@@ -214,7 +238,8 @@ export function carOf(trip: FirebaseFirestore.DocumentData | null | undefined, n
     ended,
     full,
     // Started: the driver is collecting its riders, and the box is the next car's.
-    joinable: !full && !trip.poolStartedAt && (gathering || WITH_DRIVER.has(status)),
+    joinable: !full && !trip.poolStartedAt
+      && (gathering || (WITH_DRIVER.has(status) && !lockOnDriverAssigned)),
     /** When the last seat went: the newest roster entry. */
     filledAtMs: full ? Math.max(0, ...rosterForTrip(trip).map((r) => timestampMs(r.joinedAt) ?? 0)) : null,
     fare: (trip.fare as number | null) ?? (trip.offeredFare as number),
@@ -462,7 +487,7 @@ export const getSharedPools = onCall(async (req) => {
   const to = all ? null : parsed.data.to;
   const nowMs = Date.now();
 
-  const userSnap = await db.doc(`users/${ctx.uid}`).get();
+  const [userSnap, pooling] = await Promise.all([db.doc(`users/${ctx.uid}`).get(), getPoolingSettings()]);
   const myGender = resolveSeatOccupant(userSnap.get('gender'), null).seatGender;
   const myMixedOk = userSnap.get('mixedRideOk') === true;
 
@@ -499,16 +524,16 @@ export const getSharedPools = onCall(async (req) => {
       if (d.get('createdBy') === ctx.uid && d.get('creatorRemoved') === true && !inIt) continue;
       const route = { pickup: d.get('pickup') as Place, dropoff: d.get('dropoff') as Place };
       if (from && to) {
-        if (routeFit(route, from, to, MATCH_RADIUS_M)) {
+        if (routeFit(route, from, to, pooling.matchRadiusM)) {
           ranked.push({ doc: d, nearby: false, rank: metres(from, route.pickup) });
-        } else if (metres(from, route.pickup) <= NEARBY_RADIUS_M) {
+        } else if (metres(from, route.pickup) <= pooling.candidateRadiusM) {
           ranked.push({ doc: d, nearby: true, rank: LATER + metres(to, route.dropoff) });
         }
       } else {
         // Before a search (owner, 2026-10-30): what leaves from where the rider
         // is — "from Gulberg, who is going where" — nearest first, their own on top.
         const yours = inIt || d.get('createdBy') === ctx.uid;
-        if (!all && !yours && from && metres(from, route.pickup) > NEARBY_RADIUS_M) continue;
+        if (!all && !yours && from && metres(from, route.pickup) > pooling.candidateRadiusM) continue;
         ranked.push({ doc: d, nearby: true, rank: (yours ? 0 : LATER) + (from ? metres(from, route.pickup) : 0) });
       }
     }
@@ -1115,6 +1140,50 @@ export type SeatResult =
   };
 
 /**
+ * How long before a timed departure the car is asked for. `DISPATCH_LEAD_MS` is
+ * the fallback; `matchWindowMin` is the admin's.
+ */
+const leadMs = (p: PoolingSettings): number =>
+  Number.isFinite(p.matchWindowMin) ? p.matchWindowMin * 60_000 : DISPATCH_LEAD_MS;
+
+/** What a rider is told when the engine turns their join down in `live` mode. */
+const poolRefusal = (reason: string | null): string =>
+  `This shared ride is not a good match for your journey${reason ? ` — ${reason}` : ''}. Join one shown for your route, or start your own.`;
+
+/**
+ * The riders of a car already out, each with their own stops — what the car
+ * actually drives, which is what a detour is measured against. Riders seated
+ * before stops were recorded (or by invite link) ride the pool's own ends.
+ */
+async function carRiderGeometry(
+  tripRef: FirebaseFirestore.DocumentReference,
+  trip: FirebaseFirestore.DocumentData,
+  members: string[],
+  route: { pickup: Place; dropoff: Place },
+): Promise<(PricedRider & { pickup: Place; dropoff: Place })[]> {
+  const stopSnaps = await tripRef.collection('stops').get();
+  const byUid = new Map(stopSnaps.docs.map((d) => [d.id, d.data() as { pickup?: Place; dropoff?: Place }]));
+  return sharedCarRiders(trip, members).map((r) => ({
+    ...r,
+    pickup: byUid.get(r.uid)?.pickup ?? route.pickup,
+    dropoff: byUid.get(r.uid)?.dropoff ?? route.dropoff,
+  }));
+}
+
+/** The bookings of a pool, each with their own stops and solo fare. */
+const bookedGeometry = (
+  bookings: Booking[],
+  pool: FirebaseFirestore.DocumentData,
+  route: { pickup: Place; dropoff: Place },
+): (PricedRider & { pickup: Place; dropoff: Place })[] =>
+  bookings.map((b) => ({
+    uid: b.uid,
+    soloFare: b.soloFare ?? (pool.fare as number),
+    pickup: b.pickup ?? route.pickup,
+    dropoff: b.dropoff ?? route.dropoff,
+  }));
+
+/**
  * Take a seat on a pool: in its car when one is out and has room, else a
  * booking for the next car — which, for a pool with no time or a booking that
  * fills it, is sent at once. `stops` are the rider's own pickup and drop-off
@@ -1130,11 +1199,14 @@ async function seatOnPool(
   if (!snap.exists || snap.get('status') !== 'active') {
     throw new HttpsError('not-found', 'This shared ride is no longer running.');
   }
+  const pooling = await getPoolingSettings();
   const route = { pickup: snap.get('pickup') as Place, dropoff: snap.get('dropoff') as Place };
-  if (stops && !routeFit(route, stops.pickup, stops.dropoff, MATCH_RADIUS_M)) {
+  if (stops && !routeFit(route, stops.pickup, stops.dropoff, pooling.matchRadiusM)) {
     throw new HttpsError(
       'failed-precondition',
-      'Your pickup or drop-off is more than 1 km off this shared ride’s route. Join one shown for your route, or start your own.',
+      `Your pickup or drop-off is more than ${
+        Math.round(pooling.matchRadiusM / 100) / 10
+      } km off this shared ride’s route. Join one shown for your route, or start your own.`,
     );
   }
   const own = stops ?? route;
@@ -1146,9 +1218,23 @@ async function seatOnPool(
   const tripId = snap.get('tripId') as string | null;
   if (tripId) {
     const tripRef = db.doc(`trips/${tripId}`);
-    const car = carOf((await tripRef.get()).data(), Date.now());
+    const tripData = (await tripRef.get()).data();
+    const car = carOf(tripData, Date.now(), pooling.lockOnDriverAssigned);
     const aboard = !!car && car.members.includes(uid);
     if (car && !car.ended && (aboard || (car.joinable && (await riderIsIn(uid, tripId)) !== 'waiting'))) {
+      // Is one more rider in this car worth it — for them, for the others and
+      // for the driver? Recorded either way; it only refuses in `live` mode.
+      if (!aboard) {
+        const admission = await recordAdmission({
+          poolId,
+          uid,
+          aboard: await carRiderGeometry(tripRef, tripData!, car.members, route),
+          joiner: { uid, ...ownStops },
+          currentGross: car.gross,
+          start: (tripData?.driverLocation as Place | undefined) ?? null,
+        }, pooling);
+        if (admission.refuse) throw new HttpsError('failed-precondition', poolRefusal(admission.reason));
+      }
       const res = await joinPoolTripAsRider(uid, tripRef, 'self', ownStops);
       await poolRef.update({ lastActiveAt: FieldValue.serverTimestamp() });
       return { status: res.pending ? 'asked' : 'seated', tripId, perSeatFare: res.perSeatFare };
@@ -1168,6 +1254,19 @@ async function seatOnPool(
   const settings = await getCancellationSettings();
   const nowMs = Date.now();
 
+  // Judged before the transaction, on the bookings as they stand: the record is
+  // a write, and a write does not belong inside one. The transaction still owns
+  // the seat count, the gender gate and who gets the last seat.
+  const pending = (snap.get('bookings') as Booking[] | undefined) ?? [];
+  const admission = pending.some((b) => b.uid === uid) ? null : await recordAdmission({
+    poolId,
+    uid,
+    aboard: bookedGeometry(pending, { ...snap.data(), fare: fresh?.fare ?? snap.get('fare') }, route),
+    joiner: { uid, ...ownStops },
+    start: null,
+  }, pooling);
+  if (admission?.refuse) throw new HttpsError('failed-precondition', poolRefusal(admission.reason));
+
   const booked = await db.runTransaction(async (tx) => {
     const [poolSnap, userSnap, walletSnap] = await Promise.all([
       tx.get(poolRef),
@@ -1179,13 +1278,25 @@ async function seatOnPool(
     const departTime = (d.departTime as string | null) ?? null;
     const dueMs = bookings.length > 0
       ? timestampMs(d.dispatchAt) ?? nowMs
-      : departTime ? nextDepartureMs(departTime, nowMs) - DISPATCH_LEAD_MS : nowMs;
+      : departTime ? nextDepartureMs(departTime, nowMs) - leadMs(pooling) : nowMs;
     const pricedPool = { ...d, fare: bookings.length === 0 && fresh ? fresh.fare : d.fare };
     if (bookings.some((b) => b.uid === uid)) {
       return { count: bookings.length, dueMs, departTime, quote: priceInOrder(bookedRiders(bookings, pricedPool)).fares[uid] ?? 0, demand: false };
     }
-    if (bookings.length >= MAX_POOL_RIDERS) {
+    if (bookings.length >= Math.min(pooling.maxRiders, MAX_POOL_RIDERS)) {
       throw new HttpsError('failed-precondition', 'This shared ride is full. The next car opens two minutes after it leaves.');
+    }
+    // Booking cutoff: a timed pool stops taking seats this close to departure,
+    // so a car that is about to be asked for is not re-priced under its riders.
+    // 0 (the default) is no cutoff, which is how this engine shipped.
+    if (departTime && pooling.bookingCutoffMin > 0) {
+      const departsMs = nextDepartureMs(departTime, nowMs);
+      if (departsMs - nowMs < pooling.bookingCutoffMin * 60_000) {
+        throw new HttpsError(
+          'failed-precondition',
+          `Bookings for this departure closed ${pooling.bookingCutoffMin} minutes before it leaves. Take the next one.`,
+        );
+      }
     }
     if (userSnap.get('banned') === true) {
       throw new HttpsError('permission-denied', 'This account cannot book rides. Contact support.');
@@ -1214,13 +1325,14 @@ async function seatOnPool(
     }];
     // Demand drivers can plan around: the FIRST seat of a departure, once
     // (owner, 2026-11-14) — and the second if that one never went out.
-    const depKey = departTime ? dueMs + DISPATCH_LEAD_MS : 0;
+    const depKey = departTime ? dueMs + leadMs(pooling) : 0;
     const demand = next.length <= 2 && !aheadDriver(d, nowMs) && d.demandAlertedFor !== depKey;
     tx.update(poolRef, {
       bookings: next,
       bookingUids: next.map((b) => b.uid),
       fare: pricedPool.fare,
       dispatchAt: Timestamp.fromMillis(dueMs),
+      dispatchLeadMs: leadMs(pooling),
       // For drivers' "shared rides near you" — set here too for pools made before it existed.
       pickupGeohash: geohashForLocation([route.pickup.lat, route.pickup.lng]),
       ...(demand ? { demandAlertedFor: depKey } : {}),
@@ -1263,7 +1375,7 @@ async function seatOnPool(
     status: 'booked',
     tripId: null,
     perSeatFare: booked.quote,
-    departsAtMs: booked.departTime ? booked.dueMs + DISPATCH_LEAD_MS : null,
+    departsAtMs: booked.departTime ? booked.dueMs + leadMs(pooling) : null,
     ...(backup ? { backup: true } : {}),
   };
 }

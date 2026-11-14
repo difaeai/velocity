@@ -1849,6 +1849,28 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ----- analytics/{doc} -------------------------------------------------
+    // Running totals the backend increments as it works — `analytics/pooling`
+    // is every pooling verdict summed, which the dashboard's Ride Pooling page
+    // divides into averages. Admin-readable so that page needs no callable;
+    // closed to writes, because a client that could increment these could make
+    // a bad radius look like a good one.
+    match /analytics/{docId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // ----- poolDecisions/{id} ----------------------------------------------
+    // One row per judged join: what each rider would pay, what the car would
+    // earn, the detour, and whether the limits passed. Written by the engine
+    // (sharedPools/admit.ts) and read by the desk when a refusal needs
+    // explaining. It names the riders in a car together, so it is not readable
+    // by the riders themselves.
+    match /poolDecisions/{decisionId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // ----- Catch-all DENY --------------------------------------------------
     match /{document=**} {
       allow read, write: if false;

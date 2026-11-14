@@ -69,6 +69,7 @@ const APP_NAV: NavGroup[] = [
       { href: '/dashboard/travel-areas', label: '🧭 Travel demand' },
       { href: '/dashboard/whatsapp-leads', label: '💬 WhatsApp demand' },
       { href: '/dashboard/ride-settings', label: '⚙️ Ride settings' },
+      { href: '/dashboard/pooling', label: '🔀 Ride pooling' },
       { href: '/dashboard/pricing', label: '🧮 Pricing engine' },
       { href: '/dashboard/market-rates', label: '📊 Market rates' },
       { href: '/dashboard/special-rides', label: '🚙 Rent a car' },

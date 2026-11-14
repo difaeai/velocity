@@ -480,6 +480,34 @@ const placeBidSchema = z.object({
   fare: z.number().int().positive(),
 });
 
+/**
+ * Refuse a bid from a driver who is carrying a shared pool that has not
+ * finished. Reads the driver's own active trip — one document, already in the
+ * driver doc as `activeTripId` — and only blocks when that trip is a shared
+ * ride still running. Bidding on the very trip they are already on is fine
+ * (re-bidding their own pool's car), as is a driver whose pointer is stale: a
+ * trip that is over, cancelled or gone frees them, exactly as `lockInBid` and
+ * the QA dangling-pointer check treat it.
+ */
+async function assertNotCarryingPool(
+  driverSnap: FirebaseFirestore.DocumentSnapshot,
+  biddingOn: string,
+): Promise<void> {
+  const activeTripId = driverSnap.get('activeTripId') as string | null | undefined;
+  if (!activeTripId || activeTripId === biddingOn) return;
+  const active = await db.doc(`trips/${activeTripId}`).get();
+  if (!active.exists || !ACTIVE_STATUSES.has(active.get('status') as TripStatus)) return;
+  const riders = (active.get('poolMembers') as string[] | undefined) ?? [];
+  // `pool` is the trip's own flag (see createTrip and poolTripFactory); the
+  // other two catch a shared car whose flag predates them.
+  const isPool = active.get('pool') === true || !!active.get('sharedPoolId') || riders.length > 1;
+  if (!isPool) return;
+  throw new HttpsError(
+    'failed-precondition',
+    'Finish your shared ride before taking another. Drop everyone off, and the next ride is yours.',
+  );
+}
+
 /** An approved, online driver bids on an open request. */
 export const placeBid = onCall(async (req) => {
   const ctx = requireRole(req, 'driver');
@@ -528,6 +556,15 @@ export const placeBid = onCall(async (req) => {
   if (tripSnap.get('passengerId') === ctx.uid) {
     throw new HttpsError('failed-precondition', 'You cannot bid on your own trip.');
   }
+  /**
+   * A driver carrying a shared pool finishes it before taking anything else
+   * (owner's spec, 2026-11-14). `lockInBid` already refuses to ASSIGN a second
+   * ride, but on a shared ride the fare is fixed and a bid IS the acceptance
+   * (see pricing/claimGate), so the refusal has to be here or a driver mid-pool
+   * can take another shared ride from any screen. Only an active pool blocks
+   * bidding: a solo ride still lets a driver line up their next job.
+   */
+  await assertNotCarryingPool(driverSnap, tripId);
   if (tripSnap.get('status') !== 'requested') {
     throw new HttpsError('failed-precondition', 'This trip is no longer open for bids.');
   }
