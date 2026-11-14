@@ -191,12 +191,17 @@ describe('search and ownership', () => {
     // Same pickup, a drop-off ~3 km past the pool's: still from your area, met at its own ends.
     const farDrop = { from: NEAR.from, to: { lat: 33.7485, lng: 73.0433 } };
     expect(await search('sp-b', farDrop)).toMatchObject([{ id: made.poolId, nearby: true }]);
-    // A pickup ~5 km away is not your area.
-    expect(await search('sp-b', { from: { lat: 33.64, lng: 73.0479 }, to: NEAR.to })).toEqual([]);
+    // "Your area" is `candidateRadiusM` (domain/poolingSettings), 5 km as the
+    // owner's spec set it (2026-11-14) — so a pickup ~4.9 km off is still
+    // offered, met at the car's own ends, and one ~7 km off is not.
+    const fiveKmOff = { lat: 33.64, lng: 73.0479 };
+    const sevenKmOff = { lat: 33.62, lng: 73.0479 };
+    expect(await search('sp-b', { from: fiveKmOff, to: NEAR.to })).toMatchObject([{ id: made.poolId, nearby: true }]);
+    expect(await search('sp-b', { from: sevenKmOff, to: NEAR.to })).toEqual([]);
     // Before a search: what leaves from where the rider is (the city, without a location).
     expect((await search('sp-b', {})).map((c) => c.id)).toEqual([made.poolId]);
     expect((await search('sp-b', { from: NEAR.from })).map((c) => c.id)).toEqual([made.poolId]);
-    expect(await search('sp-b', { from: { lat: 33.64, lng: 73.0479 } })).toEqual([]);
+    expect(await search('sp-b', { from: sevenKmOff })).toEqual([]);
     // "All": the whole city, wherever the rider is.
     expect((await search('sp-b', { from: { lat: 33.64, lng: 73.0479 }, all: true })).map((c) => c.id)).toEqual([made.poolId]);
     // Who is in it: a shared ride is one gender.

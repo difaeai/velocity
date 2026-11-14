@@ -29,6 +29,7 @@
  * ----------------------------------------------------------------------------
  */
 import { buildCorridor, haversineM, projectToCorridor, type LatLng } from '../lib/corridor';
+import { MIN_PER_KM } from '../lib/enRouteFare';
 import { MAX_POOL_RIDERS, poolPerSeatFare } from '../domain/fares';
 
 /** A rider has to share at least this much of the route, or it is not their car. */
@@ -198,4 +199,134 @@ export function priceInOrder(riders: PricedRider[]): CarPrice {
     aboard.push(r);
   }
   return price;
+}
+
+// ── Is this join worth making? ────────────────────────────────────────────────
+// `routeFit` answers "is this journey on the route", and `priceJoin` answers
+// "what does everyone pay". Neither answers the owner's question (2026-11-14):
+// is the combination actually worth it — for the riders, for the driver, and in
+// road driven. Three things `priceJoin` alone permits that should not pass:
+//
+//   A JOINER WHO SAVES NOTHING. The driver-never-loses top-up is capped at the
+//   joiner's own solo fare, so a short-hop rider seated beside a long one can be
+//   charged every rupee of it. Never more than riding alone — but no cheaper
+//   either, and sharing a car for no discount is not a shared ride.
+//   A DRIVER WHO GAINS NOTHING. The top-up keeps the car from earning LESS; it
+//   does not make a join worth the extra minutes of driving.
+//   A DETOUR NOBODY AGREED TO. Half the route shared still allows a rider to be
+//   carried a long way off it to collect somebody else.
+//
+// Distances are straight-line × MIN_PER_KM for minutes, which is exactly how
+// `sharedRideFare` priced every solo fare these percentages are measured
+// against — a road-distance detour judged against a haversine fare would be
+// comparing two different journeys.
+
+/** A rider's geometry, for measuring the road a car drives. */
+export interface RiderGeometry {
+  uid: string;
+  pickup: LatLng;
+  dropoff: LatLng;
+}
+
+/** The road a car drives to serve `riders` in the best order, in metres. */
+export function pathM(riders: RiderGeometry[], start?: LatLng | null): number {
+  const order = orderStops(riders, start ?? null);
+  const at = (s: Stop): LatLng => {
+    const r = riders.find((x) => x.uid === s.uid)!;
+    return s.kind === 'pickup' ? r.pickup : r.dropoff;
+  };
+  let total = 0;
+  let here: LatLng | null = start ?? null;
+  for (const s of order) {
+    const p = at(s);
+    if (here) total += haversineM(here.lat, here.lng, p.lat, p.lng);
+    here = p;
+  }
+  return total;
+}
+
+/**
+ * The extra road and time one more rider adds to the car — the car's best route
+ * with them, less its best route without. Not the joiner's own distance: a rider
+ * going exactly the same way as the rest adds almost nothing.
+ */
+export function detourOf(
+  aboard: RiderGeometry[],
+  joiner: RiderGeometry,
+  start?: LatLng | null,
+): { km: number; min: number } {
+  const km = Math.max(0, pathM([...aboard, joiner], start) - pathM(aboard, start)) / 1000;
+  return { km, min: km * MIN_PER_KM };
+}
+
+/** The admin-set limits a join is judged against (domain/poolingSettings). */
+export interface PoolLimits {
+  maxDetourKm: number;
+  maxDetourMin: number;
+  minRiderSavingPct: number;
+  minDriverGainPkr: number;
+}
+
+export interface AdmitDecision {
+  /** Whether the limits are met. In shadow mode the caller seats them anyway. */
+  ok: boolean;
+  /** Why not, in the words the dashboard shows; null when ok. */
+  reason: string | null;
+  /** What the joiner would pay. */
+  joinerFare: number;
+  /** What the car would collect, and how much more than it does now. */
+  gross: number;
+  driverGain: number;
+  /** The joiner's saving against their own solo fare, 0–1. */
+  joinerSavingPct: number;
+  /** The least any rider in the car would save — the one the limit is about. */
+  worstSavingPct: number;
+  detourKm: number;
+  detourMin: number;
+}
+
+const savingPct = (soloFare: number, pays: number) =>
+  soloFare > 0 ? Math.max(0, (soloFare - pays) / soloFare) : 0;
+
+/**
+ * Should this rider be seated? Pure: the same inputs always give the same
+ * verdict, which is what lets the shadow-mode record be trusted as a prediction
+ * of what `live` would have done.
+ */
+export function poolAdmit(
+  aboard: PricedRider[],
+  joiner: PricedRider,
+  limits: PoolLimits,
+  detour: { km: number; min: number },
+  currentGross?: number | null,
+): AdmitDecision {
+  const before = typeof currentGross === 'number' && currentGross > 0 ? currentGross : priceCar(aboard).gross;
+  const priced = priceJoin(aboard, joiner, before);
+  const everyone = [...aboard, joiner];
+  const savings = everyone.map((r) => savingPct(r.soloFare, priced.fares[r.uid] ?? r.soloFare));
+  const worst = savings.length > 0 ? Math.min(...savings) : 0;
+  const gain = priced.gross - before;
+
+  const decision: Omit<AdmitDecision, 'ok' | 'reason'> = {
+    joinerFare: priced.joinerFare,
+    gross: priced.gross,
+    driverGain: gain,
+    joinerSavingPct: savingPct(joiner.soloFare, priced.joinerFare),
+    worstSavingPct: worst,
+    detourKm: detour.km,
+    detourMin: detour.min,
+  };
+
+  // First failure wins, so the recorded reason is the one an admin should act on.
+  const reason = detour.km > limits.maxDetourKm
+    ? `detour ${detour.km.toFixed(1)} km is over the ${limits.maxDetourKm} km limit`
+    : detour.min > limits.maxDetourMin
+      ? `detour ${Math.round(detour.min)} min is over the ${limits.maxDetourMin} min limit`
+      : worst + 1e-9 < limits.minRiderSavingPct
+        ? `a rider would save only ${Math.round(worst * 100)}%, under the ${Math.round(limits.minRiderSavingPct * 100)}% minimum`
+        : gain + 1e-9 < limits.minDriverGainPkr
+          ? `the car would earn only PKR ${Math.round(gain)} more, under the PKR ${limits.minDriverGainPkr} minimum`
+          : null;
+
+  return { ...decision, ok: reason === null, reason };
 }
