@@ -10,7 +10,7 @@ import { SoundToggle } from '@/components/site/siteSound';
 import { STUDIO_FAQ, StudioFaq, StudioPricing } from '@/components/site/StudioSections';
 import { StudioScrub } from '@/components/site/StudioScrub';
 import { StudioStory } from '@/components/site/StudioStory';
-import { STUDIO_FROM_USD, STUDIO_TRIAL_HOURS, STUDIO_TRIAL_USD, studioUsd } from '@/lib/studio';
+import { STUDIO_ALL_USD, STUDIO_FROM_USD, STUDIO_TRIAL_HOURS, STUDIO_TRIAL_USD, studioUsd } from '@/lib/studio';
 import { VEXA_LEGAL_EFFECTIVE, VEXA_PRIVACY } from '@/lib/vexaLegal';
 import site from '@/components/site/site.module.css';
 
@@ -95,6 +95,25 @@ const TEAM = [
   { name: 'Sales', role: 'Sales, calling & email agents', does: 'Finds businesses that could buy from you, emails each one from your own mailbox, follows up, and phones your leads.' },
 ];
 
+/**
+ * The eight seats a business would otherwise be hiring for. They are the team
+ * on this page further down, named by the job rather than by our name for them,
+ * because the hero's whole argument is the wage bill it replaces.
+ */
+const REPLACES = [
+  'Research assistant',
+  'Content writer',
+  'Designer',
+  'Video editor',
+  'SEO',
+  'Social media manager',
+  'Meta & Google ad expert',
+  'Sales & email',
+];
+
+/** The networks the whole-team plan works on, as the logo files in /site/logos. */
+const HERO_LOGOS = ['facebook', 'instagram', 'google-ads', 'youtube', 'tiktok', 'gmail'];
+
 const MAKES = [
   { icon: Mic, text: 'Reels with real footage, music and a voice-over' },
   { icon: Sparkle, text: 'Posts, stories and carousels, designed for you' },
@@ -154,22 +173,68 @@ export default function StudioPage() {
               <Sparkle /> Vexa — Your Social Media Virtual Assistant
             </span>
             <h1 className={site.h1}>
-              You don’t need a social media team <span className={site.accent}>anymore.</span>
+              A whole social media team for <span className={site.accent}>{studioUsd(STUDIO_ALL_USD)} a month.</span>
             </h1>
+
+            {/* The eight people you would otherwise hire, struck off one at a time — which is the offer, acted out. */}
+            <ul className={s.swap} aria-label={`What ${studioUsd(STUDIO_ALL_USD)} a month replaces`}>
+              {REPLACES.map((role, i) => (
+                <li key={role} className={s.swapGone} style={{ animationDelay: `${0.55 + i * 0.12}s` }}>
+                  {role}
+                </li>
+              ))}
+              <li className={s.swapHer} style={{ animationDelay: `${0.55 + REPLACES.length * 0.12 + 0.2}s` }}>
+                Vexa
+              </li>
+            </ul>
+
             <p className={site.lead}>
-              Vexa plans your month, makes reels with voice-over and music, posts every day, answers comments, runs
-              your Meta ads and finds you new customers. Connect your account — and watch.
+              Research, writing, design, reels with voice-over, SEO, posting every day, your Meta and Google ads, and
+              sales by email and phone. One price, nobody to hire. Connect your account — and watch.
             </p>
+
+            {/* What the money buys, with the reel it makes and the networks it works on. */}
+            <div className={s.priceStrip}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img className={s.priceReel} src="/site/plan-all.jpg" alt="" width={120} height={160} />
+              <div className={s.priceWords}>
+                <b>
+                  {studioUsd(STUDIO_ALL_USD)}
+                  <small>/month</small>
+                </b>
+                <span>Everything below, every day, on all of these:</span>
+                <span className={s.priceLogos} aria-hidden>
+                  {HERO_LOGOS.map((f, i) => (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      key={f}
+                      src={`/site/logos/${f}.svg`}
+                      alt=""
+                      width={22}
+                      height={22}
+                      style={{ animationDelay: `${1.5 + i * 0.07}s` }}
+                    />
+                  ))}
+                </span>
+              </div>
+            </div>
+
             <div className={s.heroActions}>
-              <Link href="/studio/signup" className={`${site.btn} ${site.btnLime}`}>
-                Try a day for {studioUsd(STUDIO_TRIAL_USD)} <ArrowRight />
+              <Link href="/studio/signup?plan=all" className={`${site.btn} ${site.btnLime}`}>
+                Buy now — {studioUsd(STUDIO_ALL_USD)}/month <ArrowRight />
               </Link>
-              <a href="#pricing" className={`${site.btn} ${site.btnGhost}`}>
-                See plans
-              </a>
+              <DemoButton className={`${site.btn} ${site.btnGhost}`}>Watch the demo</DemoButton>
             </div>
             <p className={s.heroNote}>
-              One day for {studioUsd(STUDIO_TRIAL_USD)}. From ${STUDIO_FROM_USD}/month after it.
+              Rather see it work first?{' '}
+              <Link href="/studio/signup?plan=all" className={s.heroNoteLink}>
+                Take one day for {studioUsd(STUDIO_TRIAL_USD)}
+              </Link>{' '}
+              — {STUDIO_TRIAL_HOURS} hours of the same team. Smaller jobs from ${STUDIO_FROM_USD} a month;{' '}
+              <a href="#pricing" className={s.heroNoteLink}>
+                see all plans
+              </a>
+              .
             </p>
           </div>
 

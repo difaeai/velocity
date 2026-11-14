@@ -101,6 +101,9 @@ export const STUDIO_PLAN_IDS: StudioPlanId[] = ['research', 'content', 'all'];
 /** The "From $… a month" the pages quote: the cheapest plan on sale. */
 export const STUDIO_FROM_USD = Math.min(...STUDIO_PLAN_IDS.map((id) => STUDIO_PLANS[id].usd));
 
+/** The whole team's price — the one the front door leads with (owner, 2026-11-14). */
+export const STUDIO_ALL_USD = STUDIO_PLANS.all.usd;
+
 /**
  * The title on Velocity's bank account, exactly as the bank prints it: the one
  * word, not the company's long legal name (owner, 2026-11-11). It is the only
