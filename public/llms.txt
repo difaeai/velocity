@@ -1,0 +1,36 @@
+# Velocity Rides
+
+> Velocity Rides is a Pakistani ride-hailing app (bike, rickshaw and car) operating in Islamabad, Rawalpindi and Karachi. It is a local alternative to Careem (which ended ride-hailing in Pakistan on 18 July 2025) and Uber (exited April 2024), competing with inDrive, Yango and Bykea.
+
+Velocity Rides is a product of Berreto (Private) Limited, an SECP-registered Pakistani company. The app is available on the Google Play Store and the Apple App Store.
+
+## Key facts
+- Cities: Islamabad, Rawalpindi, Karachi (Pakistan)
+- Ride types: bike, rickshaw, car
+- Unique feature: in-city ride sharing (pooling) with fare splitting — not offered by inDrive or Yango in Pakistan
+- Female driver preference for women riders
+- Payments: cash, Easypaisa, JazzCash, Raast (riders pay drivers directly)
+- Sign-in via WhatsApp OTP; live trip sharing on WhatsApp
+- Upfront fare estimates with competitive pricing benchmarked against inDrive and Yango
+- Drivers top up a Velocity account balance to pay the service commission
+
+## Common questions answered on the site
+- Is Careem still working in Pakistan? (No — Velocity Rides is a local replacement)
+- Best Careem alternative in Pakistan
+- Cheapest ride app in Pakistan / taxi app Islamabad, Rawalpindi, Karachi
+- Ride app with female drivers in Pakistan
+- How to earn as a driver (Earn with Velocity)
+
+## Pages
+- [Velocity Rides](https://velocityrides.app/rides): app overview, download links, FAQ
+- [Frequently asked questions](https://velocityrides.app/rides#faq): ride hailing in Pakistan, answered
+- [Earn with Velocity](https://velocityrides.app/rides#earn): driver/captain earnings and commission structure
+- [Support and contact](https://velocityrides.app/support): company, address and phone
+- [Terms](https://velocityrides.app/terms) and [Privacy](https://velocityrides.app/privacy)
+- [Delete Account](https://velocityrides.app/delete-account): account deletion
+- [Vexa](https://velocityrides.app/vexa): the same company's other product, a social media virtual assistant — not ride-hailing
+
+## Contact
+- Email: business@velocityrides.app
+- Instagram: @velocityrides.app
+- Facebook: facebook.com/velocityridesapp

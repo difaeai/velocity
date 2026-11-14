@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next';
 
-import { DELETE_ACCOUNT_URL, PRIVACY_URL, SITE_URL as SITE, TERMS_URL } from '@/lib/site';
+import { DELETE_ACCOUNT_URL, PRIVACY_URL, SITE_URL as SITE, SUPPORT_URL, TERMS_URL } from '@/lib/site';
 
 /**
  * The public surface: the door, the two sites and both sets of legal documents.
@@ -22,6 +22,9 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${SITE}/vexa/terms`, lastModified, changeFrequency: 'yearly', priority: 0.3 },
     { url: `${SITE}/vexa/delete-account`, lastModified, changeFrequency: 'yearly', priority: 0.3 },
     { url: `${SITE}/vexa/support`, lastModified, changeFrequency: 'yearly', priority: 0.3 },
+    // Who we are, where we are and the number that is answered — a real page,
+    // and the one a card network and a stranger both look for.
+    { url: SUPPORT_URL, lastModified, changeFrequency: 'yearly', priority: 0.4 },
     { url: TERMS_URL, lastModified, changeFrequency: 'yearly', priority: 0.3 },
     { url: PRIVACY_URL, lastModified, changeFrequency: 'yearly', priority: 0.3 },
     { url: DELETE_ACCOUNT_URL, lastModified, changeFrequency: 'yearly', priority: 0.3 },

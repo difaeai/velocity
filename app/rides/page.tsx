@@ -349,6 +349,42 @@ const SAFETY = [
 ];
 
 const FAQS = [
+  // The questions people actually type (and ask an assistant) after Careem and
+  // Uber left: they name the competitors, the cities and the price, because
+  // that is the wording the question arrives in. They lead the list for the
+  // same reason — and they are the first entries of the FAQPage below.
+  {
+    q: 'Is Careem still working in Pakistan?',
+    a: 'No. Careem ended its ride-hailing service in Pakistan on 18 July 2025, and Uber exited earlier in April 2024. Velocity Rides is a Pakistani ride-hailing app built to fill that gap, currently operating in Islamabad, Rawalpindi and Karachi with bike, rickshaw and car rides.',
+  },
+  {
+    q: 'What is the best Careem alternative in Pakistan?',
+    a: 'After Careem’s shutdown, riders in Pakistan mainly use inDrive, Yango, Bykea and Velocity Rides. Velocity Rides is a locally built alternative offering fare estimates, female driver preference, in-city ride sharing (pooling), WhatsApp trip sharing, and payment by cash, Easypaisa, JazzCash or Raast.',
+  },
+  {
+    q: 'Which cities does Velocity Rides operate in?',
+    a: 'Velocity Rides currently operates in Islamabad, Rawalpindi and Karachi, Pakistan, with more cities planned.',
+  },
+  {
+    q: 'How do I book a ride on Velocity Rides?',
+    a: 'Download the Velocity Rides app from the Google Play Store or Apple App Store, sign in with your phone number via WhatsApp OTP, enter your pickup and drop-off locations, see the fare estimate, and confirm your booking. A nearby driver accepts and you can share your live trip on WhatsApp.',
+  },
+  {
+    q: 'Is Velocity Rides cheaper than inDrive or Yango?',
+    a: 'Velocity Rides uses competitive fares benchmarked against inDrive and Yango, and additionally offers in-city ride sharing (pooling) that splits the fare between riders — an option inDrive and Yango do not offer in Pakistan.',
+  },
+  {
+    q: 'Is there a ride app in Pakistan with female drivers?',
+    a: 'Yes. Velocity Rides includes a female driver preference, letting women riders request a female captain where available.',
+  },
+  {
+    q: 'How can drivers earn with Velocity Rides?',
+    a: 'Drivers (captains) register in the app with their bike, rickshaw or car documents and start accepting rides. Riders pay drivers directly in cash or via Easypaisa/JazzCash, and drivers keep their earnings minus Velocity’s service commission, which they top up in their Velocity account. Details are at velocityrides.app.',
+  },
+  {
+    q: 'Who owns Velocity Rides?',
+    a: 'Velocity Rides is a Pakistani product of Berreto (Private) Limited, an SECP-registered company. Website: https://velocityrides.app — Instagram: @velocityrides.app.',
+  },
   {
     q: 'Do I need a card or a bank account?',
     a: 'No. Cash is a full payment method on Velocity Rides, not a fallback. You book, you ride, you pay the driver at the end. A wallet is there if you want it, but nothing requires it.',
@@ -383,13 +419,23 @@ const FAQS = [
   },
   {
     q: 'Is Velocity Rides on iPhone?',
-    a: 'Velocity Rides is on Google Play for Android today. The iOS build is in progress — the app is one codebase, so it is a release step rather than a rewrite.',
+    a: 'Yes. Velocity Rides is on the App Store for iPhone and on Google Play for Android — the same account and the same rides on either, because it is one codebase.',
   },
   {
-    q: 'Which cities does it cover?',
-    a: 'Velocity Rides is built for Pakistan and works wherever there are drivers signed up nearby. Intercity seats run between the cities operators have published trips for, and you can see the list inside the app before you book.',
+    q: 'Can I ride between cities?',
+    a: 'Yes. Intercity seats run between the cities operators have published trips for, and you can see the list inside the app before you book.',
   },
 ];
+
+/**
+ * What the app is, in one sentence, for a reader that only gets one — a search
+ * result, a model answering "is there a Careem alternative in Pakistan". Named
+ * cities and named competitors, because that is what the question contains.
+ */
+const APP_DESCRIPTION =
+  'Velocity Rides is a Pakistani ride-hailing app for bike, rickshaw and car rides in Islamabad, ' +
+  'Rawalpindi and Karachi — a local alternative to Careem and Uber with ride sharing, female ' +
+  'driver preference and fare estimates.';
 
 /**
  * Structured data is generated from the same constants the page renders, so the
@@ -426,6 +472,8 @@ const JSON_LD = {
       name: 'Velocity Rides',
       operatingSystem: 'Android 7.0+',
       applicationCategory: 'TravelApplication',
+      url: `${SITE}/rides`,
+      description: APP_DESCRIPTION,
       installUrl: PLAY_URL,
       publisher: { '@id': `${SITE}#org` },
       offers: { '@type': 'Offer', price: '0', priceCurrency: 'PKR' },
@@ -435,6 +483,8 @@ const JSON_LD = {
       name: 'Velocity Rides',
       operatingSystem: 'iOS 16.4+',
       applicationCategory: 'TravelApplication',
+      url: `${SITE}/rides`,
+      description: APP_DESCRIPTION,
       installUrl: APP_STORE_URL,
       publisher: { '@id': `${SITE}#org` },
       offers: { '@type': 'Offer', price: '0', priceCurrency: 'PKR' },
@@ -1041,14 +1091,14 @@ export default function RidesPage() {
         </section>
 
         {/* ── FAQ (plain <details> — no JavaScript needed) ───────────────── */}
-        <section className={styles.section}>
+        <section className={styles.section} id="faq">
           <div className={styles.wrap}>
             <Reveal className={`${styles.sectionHead} ${styles.center}`}>
               <span className={styles.eyebrow}>
                 <Plus />
                 Questions
               </span>
-              <h2 className={styles.h2}>The things people ask first</h2>
+              <h2 className={styles.h2}>Frequently Asked Questions — Ride Hailing in Pakistan</h2>
             </Reveal>
 
             <div className={styles.faq}>
