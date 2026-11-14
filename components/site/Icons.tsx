@@ -258,3 +258,68 @@ export function AppleMark(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+/* ── the seats Vexa replaces, on the front door's hero ──────────────────── */
+
+export const Search = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="11" cy="11" r="7" />
+    <path d="m16.3 16.3 4.2 4.2" />
+  </Icon>
+);
+
+export const Pencil = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 20h16" />
+    <path d="M14.5 4.8a2 2 0 0 1 2.8 2.8L8.6 16.3l-3.6.9.9-3.6Z" />
+  </Icon>
+);
+
+export const Palette = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.8-.8 1.8-1.7 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.1 0-1 .8-1.7 1.7-1.7H16a5 5 0 0 0 5-5c0-4-4-7.3-9-7.3Z" />
+    <circle cx="7.8" cy="11.5" r="1.1" fill="currentColor" stroke="none" />
+    <circle cx="11" cy="7.8" r="1.1" fill="currentColor" stroke="none" />
+    <circle cx="15.4" cy="9.2" r="1.1" fill="currentColor" stroke="none" />
+  </Icon>
+);
+
+export const Mail = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="2.8" y="5" width="18.4" height="14" rx="2.6" />
+    <path d="m3.6 7 7.3 5.3a2 2 0 0 0 2.2 0L20.4 7" />
+  </Icon>
+);
+
+export const Headset = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 13.5v-1a8 8 0 0 1 16 0v1" />
+    <path d="M4 13h1.8a1.5 1.5 0 0 1 1.5 1.5v2.6A1.5 1.5 0 0 1 5.8 18.6H4Z" />
+    <path d="M20 13h-1.8a1.5 1.5 0 0 0-1.5 1.5v2.6a1.5 1.5 0 0 0 1.5 1.5H20Z" />
+    <path d="M18 18.6v.6a2.4 2.4 0 0 1-2.4 2.4H13" />
+  </Icon>
+);
+
+export const Cart = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M2.8 3.6h2.1l2.3 10.6a1.8 1.8 0 0 0 1.8 1.4h8.2a1.8 1.8 0 0 0 1.8-1.4l1.3-6.3H6" />
+    <circle cx="9.5" cy="19.6" r="1.5" />
+    <circle cx="17.4" cy="19.6" r="1.5" />
+  </Icon>
+);
+
+export const Gift = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3.4 11.4h17.2v8.2a1.6 1.6 0 0 1-1.6 1.6H5a1.6 1.6 0 0 1-1.6-1.6Z" />
+    <path d="M2.6 7.6h18.8v3.8H2.6z" />
+    <path d="M12 7.6v13.6" />
+    <path d="M12 7.6S10.8 3 8.4 3a2.3 2.3 0 0 0 0 4.6Z" />
+    <path d="M12 7.6S13.2 3 15.6 3a2.3 2.3 0 0 1 0 4.6Z" />
+  </Icon>
+);
+
+export const Crown = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 7.6 6.6 11l3.6-5.4a2 2 0 0 1 3.6 0L17.4 11 21 7.6v9.2a1.8 1.8 0 0 1-1.8 1.8H4.8A1.8 1.8 0 0 1 3 16.8Z" />
+  </Icon>
+);

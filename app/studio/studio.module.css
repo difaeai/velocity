@@ -4,7 +4,7 @@
 
 .hero {
   position: relative;
-  padding-block: clamp(120px, 14vw, 180px) clamp(64px, 8vw, 110px);
+  padding-block: clamp(28px, 3vw, 46px) clamp(56px, 7vw, 96px);
   overflow: hidden;
 }
 
@@ -20,183 +20,222 @@
 
 .heroGrid {
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
-  gap: clamp(32px, 5vw, 72px);
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+  gap: clamp(24px, 3vw, 44px);
+  width: min(1440px, calc(100% - 56px));
+  margin-inline: auto;
   align-items: center;
 }
 
-.heroActions {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-top: 32px;
-}
-
 .heroNote {
-  margin-top: 14px;
+  margin: 0;
   font-size: 14px;
   color: var(--text-dim);
 }
 
-/* ── the hero's offer, acted out (owner, 2026-11-14) ────────────────────
-   The eight seats a business would otherwise hire for, struck off one after
-   another until only Vexa and her price are left. It is the argument of the
-   page, so it moves rather than being read. */
+/* ── the hero, as the owner drew it (2026-11-14) ────────────────────────
+   The price is the headline and carries a drawn stroke; the eight seats are
+   named with their own icons rather than crossed out; the offer is one card
+   with the button in it; the demo and the day sit under it; and the line at
+   the bottom is only claims that are true on both ways of paying. */
 
-.swap {
+.heroPrice {
+  position: relative;
+  color: var(--lime);
+  white-space: nowrap;
+}
+
+.heroUnderline {
+  position: absolute;
+  left: 2%;
+  right: 2%;
+  bottom: -0.12em;
+  width: 96%;
+  height: 0.42em;
+  fill: none;
+  stroke: var(--lime);
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-dasharray: 340;
+  stroke-dashoffset: 340;
+  animation: drawUnder 900ms cubic-bezier(0.16, 1, 0.3, 1) 600ms forwards;
+}
+
+@keyframes drawUnder {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* The seats, named. */
+.seats {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 7px;
-  margin: 22px 0 26px;
+  gap: 9px;
+  margin: 26px 0 24px;
   padding: 0;
   list-style: none;
 }
 
-.swap li {
-  position: relative;
+.seat,
+.seatHer {
   display: inline-flex;
   align-items: center;
+  gap: 8px;
   border: 1px solid var(--line-hi);
   border-radius: 999px;
-  padding: 6px 13px;
-  font-size: 13px;
+  padding: 8px 15px;
+  font-size: 13.5px;
   font-weight: 650;
   line-height: 1.2;
-  color: var(--text-mut);
-  background: var(--card);
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
   white-space: nowrap;
+  animation: seatIn 520ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
-/* Each one arrives, then has a line drawn through it and falls back. */
-.swapGone {
-  animation: swapOut 700ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
-}
-
-.swapGone::after {
-  content: '';
-  position: absolute;
-  left: 9px;
-  right: 9px;
-  top: 50%;
-  height: 1.5px;
-  border-radius: 2px;
-  background: currentColor;
-  transform: scaleX(0);
-  transform-origin: left;
-  animation: strike 420ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  animation-delay: inherit;
-}
-
-@keyframes swapOut {
-  0% {
-    opacity: 0;
-    translate: 0 8px;
-  }
-  45% {
-    opacity: 1;
-    translate: 0 0;
-  }
-  100% {
-    opacity: 0.42;
-    translate: 0 0;
-  }
-}
-
-@keyframes strike {
-  to {
-    transform: scaleX(1);
-  }
-}
-
-/* The one that is left. It is the punchline of the row, so it is bigger than
-   the eight it replaced and carries the arrow into it. */
-.swap .swapHer {
-  border-color: var(--lime);
-  background: var(--lime);
-  color: var(--ink);
-  font-size: 14.5px;
-  font-weight: 900;
-  padding: 8px 16px;
-  box-shadow: 0 10px 26px -12px rgba(204, 255, 0, 0.9);
-  animation: swapHer 620ms cubic-bezier(0.2, 1.5, 0.4, 1) backwards;
-}
-
-@keyframes swapHer {
-  from {
-    opacity: 0;
-    scale: 0.6;
-  }
-}
-
-/* ── what the money buys, with a picture of it ──────────────────────────── */
-
-.priceStrip {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-top: 26px;
-  padding: 12px 18px 12px 12px;
-  border: 1px solid var(--line-hi);
-  border-radius: 20px;
-  background: linear-gradient(120deg, rgba(204, 255, 0, 0.1), rgba(255, 255, 255, 0.04) 55%, transparent);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  width: fit-content;
-  max-width: 100%;
-}
-
-/* A frame of what it actually makes, not a stock illustration. */
-.priceReel {
+.seatIcon {
+  width: 17px;
+  height: 17px;
   flex: none;
-  width: 72px;
-  height: 96px;
-  object-fit: cover;
-  border-radius: 13px;
-  box-shadow: 0 14px 30px -16px rgba(0, 0, 0, 0.9);
-}
-
-.priceWords {
-  display: grid;
-  gap: 5px;
-  min-width: 0;
-}
-
-.priceWords > b {
-  display: flex;
-  align-items: baseline;
-  gap: 3px;
-  font-family: var(--font-display), system-ui, sans-serif;
-  font-size: clamp(30px, 4.2vw, 40px);
-  font-weight: 900;
-  letter-spacing: -0.035em;
-  line-height: 1;
   color: var(--lime);
 }
 
-.priceWords > b small {
-  font-size: 14px;
+.seats .seatHer {
+  border-color: var(--lime);
+  background: var(--lime);
+  color: var(--ink);
+  font-weight: 900;
+  box-shadow: 0 10px 28px -12px rgba(204, 255, 0, 0.95);
+}
+
+.seats .seatHer .seatIcon {
+  color: var(--ink);
+}
+
+@keyframes seatIn {
+  from {
+    opacity: 0;
+    translate: 0 10px;
+  }
+}
+
+/* ── the offer, as one card ─────────────────────────────────────────────── */
+
+.buy {
+  position: relative;
+  margin-top: 30px;
+  padding: 20px;
+  border: 1px solid rgba(204, 255, 0, 0.42);
+  border-radius: 26px;
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(204, 255, 0, 0.13), transparent 58%),
+    rgba(255, 255, 255, 0.035);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 26px 60px -34px rgba(0, 0, 0, 0.95);
+  animation: buyIn 680ms cubic-bezier(0.16, 1, 0.3, 1) 420ms backwards;
+}
+
+@keyframes buyIn {
+  from {
+    opacity: 0;
+    translate: 0 18px;
+  }
+}
+
+.buyBadge {
+  position: absolute;
+  top: -13px;
+  left: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 13px;
+  border-radius: 999px;
+  background: var(--lime);
+  color: var(--ink);
+  font-size: 11.5px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.buyCrown {
+  width: 14px;
+  height: 14px;
+}
+
+.buyRow {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.buyArt {
+  flex: none;
+  width: 92px;
+  height: 122px;
+  object-fit: cover;
+  border-radius: 16px;
+  box-shadow: 0 18px 36px -18px rgba(0, 0, 0, 1);
+}
+
+.buyFigure {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  flex: 1 1 180px;
+}
+
+.buyFigure > b {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: clamp(38px, 5vw, 52px);
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: #fff;
+}
+
+.buyFigure > b small {
+  font-size: 15px;
   font-weight: 700;
   letter-spacing: 0;
   color: var(--text-mut);
 }
 
-.priceWords > span {
+.buyGets {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
   font-size: 13.5px;
-  color: var(--text-mut);
   line-height: 1.4;
+  color: var(--text-dim);
 }
 
-.priceLogos {
+.buyTick {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  margin-top: 1px;
+  color: var(--lime);
+}
+
+.buyLogos {
   display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 9px;
+  flex-wrap: nowrap;
   margin-top: 2px;
 }
 
-.priceLogos img {
-  width: 22px;
-  height: 22px;
+.buyLogos img {
+  width: 24px;
+  height: 24px;
   animation: logoIn 420ms cubic-bezier(0.2, 1.5, 0.4, 1) backwards;
 }
 
@@ -207,6 +246,658 @@
   }
 }
 
+.buyAct {
+  display: grid;
+  gap: 9px;
+  justify-items: center;
+  flex: 1 1 260px;
+}
+
+/* The ring and the stars the login button wears (owner, 2026-11-14), around
+   the one button that matters more. They live on a wrapper because the button
+   itself clips its own sheen, and a star outside it would be cut off. */
+@property --buy-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.buyWrap {
+  position: relative;
+  display: block;
+  width: 100%;
+  isolation: isolate;
+}
+
+.buyWrap::before {
+  content: '';
+  position: absolute;
+  inset: -2.5px;
+  z-index: -1;
+  border-radius: 20px;
+  background: conic-gradient(
+    from var(--buy-angle),
+    #ccff00,
+    #4ff5c4,
+    #8ec5ff,
+    #fbffc4,
+    #ccff00 62%,
+    #12a15e,
+    #ccff00
+  );
+  animation: buyTurn 3s linear infinite;
+}
+
+.buyWrap:hover::before {
+  animation-duration: 1.2s;
+}
+
+@keyframes buyTurn {
+  to {
+    --buy-angle: 360deg;
+  }
+}
+
+/* The red alert around it while this visitor's price still has time on it.
+   Behind the lime ring, so it reads as a glow rather than a second border. */
+.buyWrap::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  z-index: -2;
+  border-radius: 21px;
+  animation: buyAlert 2.6s ease-out infinite;
+  pointer-events: none;
+}
+
+@keyframes buyAlert {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 62, 62, 0.55), 0 0 24px 3px rgba(255, 62, 62, 0.42);
+  }
+  70% {
+    box-shadow: 0 0 0 15px rgba(255, 62, 62, 0), 0 0 24px 3px rgba(255, 62, 62, 0.14);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 62, 62, 0), 0 0 24px 3px rgba(255, 62, 62, 0.42);
+  }
+}
+
+.buyStars {
+  position: absolute;
+  inset: -11px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.buyStars i {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  background: #fbffc4;
+  clip-path: polygon(50% 0, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0 50%, 39% 39%);
+  opacity: 0;
+  animation: buyTwinkle 2.4s ease-in-out infinite;
+}
+
+.buyStars i:nth-child(1) {
+  top: 0;
+  left: 12%;
+}
+
+.buyStars i:nth-child(2) {
+  top: -3px;
+  right: 18%;
+  width: 8px;
+  height: 8px;
+  animation-delay: 0.6s;
+}
+
+.buyStars i:nth-child(3) {
+  bottom: -1px;
+  left: 34%;
+  width: 7px;
+  height: 7px;
+  background: #4ff5c4;
+  animation-delay: 1.2s;
+}
+
+.buyStars i:nth-child(4) {
+  bottom: 2px;
+  right: 7%;
+  animation-delay: 1.8s;
+}
+
+@keyframes buyTwinkle {
+  0%,
+  100% {
+    opacity: 0;
+    scale: 0.4;
+  }
+  45% {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+/* The button is the loudest thing on the page on purpose: big, heavy, and
+   every few seconds it takes a hit of lightning and shakes it off. */
+.buyBtn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  width: 100%;
+  padding: 21px 26px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #d9ff2e, var(--lime) 55%, #b8e800);
+  color: var(--ink);
+  font-size: clamp(16px, 1.5vw, 19px);
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  box-shadow: 0 18px 40px -18px rgba(204, 255, 0, 0.95);
+  transition: box-shadow 0.2s ease, filter 0.18s ease;
+  /* The shake lives on the element, so hover changes light rather than position. */
+  animation: buyShake 6s cubic-bezier(0.36, 0.07, 0.19, 0.97) 2.4s infinite;
+  transform-origin: center;
+}
+
+.buyBtn:hover {
+  filter: brightness(1.07);
+  box-shadow: 0 26px 52px -18px rgba(204, 255, 0, 1);
+}
+
+.buyBtn:active {
+  filter: brightness(0.96);
+}
+
+/* The strike: two hard flashes, the way lightning actually flickers. */
+.buyBtn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 40%, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.35) 45%, transparent 72%);
+  opacity: 0;
+  animation: buyFlash 6s linear 2.4s infinite;
+  pointer-events: none;
+}
+
+/* And the sheen that runs across it between strikes. */
+.buyBtn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 32%, rgba(255, 255, 255, 0.6) 50%, transparent 68%);
+  transform: translateX(-130%);
+  animation: buyShine 6s ease-in-out 3.4s infinite;
+  pointer-events: none;
+}
+
+@keyframes buyShine {
+  16%,
+  100% {
+    transform: translateX(130%);
+  }
+}
+
+@keyframes buyShake {
+  0%,
+  33%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  34.5% {
+    transform: translate3d(-4px, 0, 0) rotate(-1deg);
+  }
+  36% {
+    transform: translate3d(4px, 0, 0) rotate(1deg);
+  }
+  37.5% {
+    transform: translate3d(-3px, 0, 0) rotate(-0.7deg);
+  }
+  39% {
+    transform: translate3d(3px, 0, 0) rotate(0.7deg);
+  }
+  40.5% {
+    transform: translate3d(-1.5px, 0, 0) rotate(0deg);
+  }
+  42% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+}
+
+@keyframes buyFlash {
+  0%,
+  32%,
+  100% {
+    opacity: 0;
+  }
+  33% {
+    opacity: 0.95;
+  }
+  34% {
+    opacity: 0;
+  }
+  35.5% {
+    opacity: 0.7;
+  }
+  37% {
+    opacity: 0;
+  }
+}
+
+/* The bolt itself, struck across the button at the same instant. */
+.buyBolt {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 46px;
+  height: 46px;
+  translate: -50% -50%;
+  color: #fff;
+  opacity: 0;
+  filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.95));
+  animation: boltStrike 6s linear 2.4s infinite;
+  pointer-events: none;
+}
+
+@keyframes boltStrike {
+  0%,
+  32%,
+  100% {
+    opacity: 0;
+    scale: 0.6;
+  }
+  33% {
+    opacity: 1;
+    scale: 1.15;
+  }
+  34.5% {
+    opacity: 0;
+    scale: 1.3;
+  }
+  35.5% {
+    opacity: 0.85;
+    scale: 1.1;
+  }
+  37.5% {
+    opacity: 0;
+    scale: 1.35;
+  }
+}
+
+.buyLabel {
+  position: relative;
+  z-index: 1;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  background: linear-gradient(
+    100deg,
+    #06180f 0%,
+    #06180f 36%,
+    #2c6b45 47%,
+    #5ea878 50%,
+    #2c6b45 53%,
+    #06180f 64%,
+    #06180f 100%
+  );
+  background-size: 260% 100%;
+  background-position: 120% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.5));
+  animation: labelGloss 3.6s ease-in-out 1.2s infinite;
+}
+
+@keyframes labelGloss {
+  22%,
+  100% {
+    background-position: -40% 0;
+  }
+}
+
+.buyBtnIcon,
+.buyBtnArrow {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  position: relative;
+  z-index: 1;
+  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.45));
+}
+
+.buyUnder {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-mut);
+  text-align: center;
+}
+
+.buyUnderIcon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--lime);
+}
+
+/* The clock the pricing section runs, in one line under the button. It stands
+   in the line's place rather than beside it, so the card does not grow. */
+.buyTimer {
+  position: absolute;
+  top: -13px;
+  right: 20px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border: 1px solid rgba(255, 62, 62, 0.4);
+  border-radius: 999px;
+  background: rgba(46, 10, 10, 0.95);
+  color: #ffd9d9;
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  flex: none;
+}
+
+.buyTimer b {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.buyTimerBell {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: #ff6b6b;
+  animation: timerRing 2.6s ease-in-out infinite;
+  transform-origin: 50% 15%;
+}
+
+@keyframes timerRing {
+  0%,
+  72%,
+  100% {
+    rotate: 0deg;
+  }
+  76% {
+    rotate: -13deg;
+  }
+  80% {
+    rotate: 11deg;
+  }
+  84% {
+    rotate: -7deg;
+  }
+  88% {
+    rotate: 4deg;
+  }
+}
+
+/* ── the demo and the day ───────────────────────────────────────────────── */
+
+/* She is sized for the wider column she had before the offer card arrived, so
+   here she is held to her own column and brought in off the page's right edge
+   (owner, 2026-11-14) rather than being cropped against it. */
+/* ── her side of the hero ───────────────────────────────────────────────── */
+
+.heroFigure {
+  position: relative;
+  /* Tall enough to stand down the hero rather than leaving a hole under her,
+     and held off the page's right edge (owner, 2026-11-14). */
+  width: min(100%, 560px);
+  justify-self: end;
+  /* Level with the heading and the lead rather than centred against the whole
+     column, which the offer card had dragged her down past (owner). */
+  align-self: start;
+  translate: -3% 0;
+}
+
+/* A red cast behind her, turning against the lime halo she already stands in
+   so the two never settle into one flat colour (owner, 2026-11-14). */
+.heroFigure::before {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  left: 54%;
+  top: 44%;
+  width: 122%;
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(255, 46, 46, 0.42) 0%,
+    rgba(214, 24, 64, 0.3) 34%,
+    rgba(150, 16, 50, 0.16) 56%,
+    transparent 72%
+  );
+  filter: blur(20px);
+  animation: redShade 9s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+@keyframes redShade {
+  from {
+    transform: translate3d(-3%, 2%, 0) scale(0.96);
+    opacity: 0.75;
+  }
+  to {
+    transform: translate3d(4%, -3%, 0) scale(1.09);
+    opacity: 1;
+  }
+}
+
+/* The jobs that are actually running, floating over her. */
+.ticker {
+  position: absolute;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 15px;
+  border: 1px solid rgba(204, 255, 0, 0.3);
+  border-radius: 999px;
+  background: rgba(6, 22, 15, 0.86);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 14px 30px -16px rgba(0, 0, 0, 0.95);
+  color: #eaf5ee;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  animation: tickerIn 620ms cubic-bezier(0.16, 1, 0.3, 1) backwards, tickerFloat 6s ease-in-out infinite;
+}
+
+.tickerIcon {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  color: var(--lime);
+}
+
+/* "Online" is a live state, so its dot pulses rather than sitting there. */
+.tickerDot {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--lime);
+  box-shadow: 0 0 0 0 rgba(204, 255, 0, 0.75);
+  animation: tickerPulse 2.2s ease-out infinite;
+}
+
+.tickerA {
+  top: 11%;
+  left: -6%;
+  animation-delay: 700ms, 0s;
+}
+
+.tickerB {
+  top: 36%;
+  left: -12%;
+  animation-delay: 1000ms, 1.4s;
+}
+
+.tickerC {
+  bottom: 19%;
+  right: -4%;
+  animation-delay: 1300ms, 2.8s;
+}
+
+@keyframes tickerIn {
+  from {
+    opacity: 0;
+    translate: -14px 0;
+  }
+}
+
+@keyframes tickerFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-7px);
+  }
+}
+
+@keyframes tickerPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(204, 255, 0, 0.75);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 9px rgba(204, 255, 0, 0);
+  }
+}
+
+/* The line that closes the hero, under both columns. */
+.heroFoot {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px 32px;
+  flex-wrap: wrap;
+  margin-top: 30px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.heroActions {
+  display: flex;
+  align-items: stretch;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 20px;
+}
+
+.ghostBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 26px;
+  border: 1px solid var(--line-hi);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 750;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+}
+
+.ghostBtn:hover {
+  border-color: var(--lime);
+  background: rgba(204, 255, 0, 0.08);
+  transform: translateY(-1px);
+}
+
+.ghostIcon {
+  width: 17px;
+  height: 17px;
+  color: var(--lime);
+}
+
+.tryLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 20px 10px 16px;
+  border-left: 1px solid var(--line);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.tryLink span {
+  display: grid;
+  gap: 1px;
+  font-size: 14.5px;
+  font-weight: 750;
+}
+
+.tryLink small {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-mut);
+}
+
+.tryLink:hover span {
+  color: var(--lime);
+}
+
+.tryIcon {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  color: var(--lime);
+}
+
+/* ── the line that is only true claims ──────────────────────────────────── */
+
+.trust {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 26px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.trust li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-mut);
+}
+
+.trustIcon {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  color: var(--lime);
+}
+
 .heroNoteLink {
   color: var(--text);
   font-weight: 700;
@@ -214,31 +905,52 @@
   text-underline-offset: 2px;
 }
 
-@media (max-width: 560px) {
-  .priceStrip {
-    gap: 12px;
-    padding: 10px 14px 10px 10px;
+@media (max-width: 620px) {
+  .buyRow {
+    gap: 14px;
   }
-  .priceReel {
-    width: 56px;
-    height: 76px;
+  .buyArt {
+    width: 68px;
+    height: 92px;
+  }
+  .tryLink {
+    border-left: none;
+    padding-left: 0;
   }
 }
 
-/* Nothing here moves for anyone who asked for stillness: the lines are simply
-   already struck and the price already there. */
 @media (prefers-reduced-motion: reduce) {
-  .swapGone,
-  .swap .swapHer,
-  .priceLogos img {
+  .seat,
+  .seats .seatHer,
+  .buy,
+  .buyLogos img,
+  .buyBtn,
+  .buyBtn::before,
+  .buyBtn::after,
+  .buyBolt,
+  .buyWrap::before,
+  .buyWrap::after,
+  .buyStars i,
+  .buyTimerBell,
+  .buyLabel,
+  .heroFigure::before,
+  .ticker,
+  .tickerDot {
     animation: none;
   }
-  .swapGone {
-    opacity: 0.42;
+  .buyBolt {
+    display: none;
   }
-  .swapGone::after {
+  .buyBolt {
+    display: none;
+  }
+  .heroUnderline {
     animation: none;
-    transform: scaleX(1);
+    stroke-dashoffset: 0;
+  }
+  .buyBtn:hover,
+  .ghostBtn:hover {
+    transform: none;
   }
 }
 
@@ -641,7 +1353,7 @@
 }
 
 .hero {
-  padding-block: clamp(48px, 7vw, 90px) clamp(64px, 8vw, 110px);
+  padding-block: clamp(24px, 3vw, 40px) clamp(64px, 8vw, 110px);
 }
 
 .topSound {
