@@ -18,9 +18,6 @@ export type BusinessAdvertiserStatus = 'active' | 'suspended' | 'expired';
 /** A single ad creative. `removed` is a soft delete — the stats outlive the ad. */
 export type BusinessAdStatus = 'active' | 'paused' | 'removed';
 
-/** Plans are sold in whole-month blocks. */
-export type BusinessAdPlanMonths = 3 | 6 | 12;
-
 /** How the advertiser sent the money. Mirrors the partner-program rails. */
 export type BusinessAdPaymentMethod = 'bank' | 'easypaisa' | 'jazzcash';
 
@@ -33,13 +30,13 @@ export interface GeoCenter {
 }
 
 /**
- * One pricing band. `maxRadiusKm` is inclusive: a band of 3 covers 1–3 km, and
- * the next band up covers everything above 3 to its own ceiling.
+ * What one ad was sold for: the radius it reaches, the dollar price that radius
+ * came to, and the rupees asked for at the day's rate (see businessAds/config).
  */
-export interface BusinessAdTier {
-  key: string;
-  maxRadiusKm: number;
-  monthlyFee: number;
-  /** How many ads may be live at once on this band. */
-  adSlots: number;
+export interface BusinessAdQuote {
+  radiusKm: number;
+  priceUsd: number;
+  pricePkr: number;
+  /** Days the ad runs from approval. */
+  planDays: number;
 }

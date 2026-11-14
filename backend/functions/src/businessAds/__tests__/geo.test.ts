@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { candidateCells, encodeCell } from '../geo';
+import { candidateCells, encodeCell, WIDE_RADIUS_KM } from '../geo';
 
 /** Cities across Pakistan, so the longitude scaling is exercised at real lats. */
 const PLACES: [string, number, number][] = [
@@ -53,6 +53,23 @@ describe('candidateCells', () => {
   it('stays inside the Firestore `in` limit', () => {
     for (const [, lat, lng] of PLACES) {
       expect(candidateCells(lat, lng, 5).length).toBeLessThanOrEqual(30);
+    }
+  });
+
+  /**
+   * The sweep is capped at WIDE_RADIUS_KM and everything wider is read by its
+   * own query, because `candidateCells` hits the 30-value `in` limit before it
+   * covers a wide disc — and then SILENTLY truncates, which is an advertiser
+   * paying for a radius that reaches nobody. This is the line where that
+   * trade-off is set: if the sweep at the cap ever needs more than thirty
+   * cells, lower WIDE_RADIUS_KM rather than let the slice decide.
+   */
+  it('still fits the `in` limit at the widest radius it is used for', () => {
+    for (const [, lat, lng] of PLACES) {
+      const cells = candidateCells(lat, lng, WIDE_RADIUS_KM);
+      expect(cells.length).toBeLessThanOrEqual(30);
+      // Not truncated: the cap is the reason, not the result.
+      expect(new Set(cells).size).toBe(cells.length);
     }
   });
 

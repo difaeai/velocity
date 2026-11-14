@@ -23,9 +23,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { DEMO_OFFER, demoPreview } from '../../../src/ads/demoOffer';
 import { api } from '../../../src/api/client';
-import type { BusinessAd, BusinessAdDashboard } from '../../../src/api/client';
+import type { BusinessAd, BusinessAdDashboard, BusinessAdPlans } from '../../../src/api/client';
 import { colors } from '../../../src/config';
 import { useBusinessAdDashboard, useBusinessAdQueries } from '../../../src/hooks/businessAds';
+import {
+  adPriceLabel,
+  adPricing,
+  RADIUS_PICKER_MAX_KM,
+} from '../../../src/lib/adPricing';
+import { useCachedResource } from '../../../src/lib/cachedResource';
+import { Glass } from '../../../src/ui/Glass';
 import {
   registerForPushNotifications,
   useNotificationPermission,
@@ -170,10 +177,52 @@ const FEATURES = [
 ];
 
 const STEPS = [
-  { title: 'Choose your reach', body: 'Up to 3 km or up to 5 km, for 3, 6 or 12 months.' },
+  { title: 'Choose your reach', body: 'Drag the radius — the price moves with it. $1 covers the first km.' },
   { title: 'Publish your offer', body: 'Picture, business name and the deal — live after approval.' },
   { title: 'Get seen and asked', body: 'Watch who opened it and answer their questions.' },
 ];
+
+/**
+ * What it costs, the owner's way (2026-11-14): a dollar for one offer at one
+ * kilometre, twenty cents a kilometre after that. The numbers come from the
+ * same cached price list the subscribe screen reads — under the same key, so
+ * this paints from cache and agrees with the screen it leads to — and from this
+ * build's own ladder until that lands.
+ */
+function PriceLadder() {
+  const { data: plans } = useCachedResource<BusinessAdPlans>(
+    'businessAdPlans',
+    () => api.getBusinessAdPlans({}),
+    'Could not load the advertising prices.',
+  );
+  const p = adPricing(plans);
+  return (
+    <Glass radius={20} style={styles.ladder}>
+      <View style={styles.ladderTop}>
+        <Text style={styles.ladderPrice}>{adPriceLabel(p, p.includedKm)}</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.ladderTitle}>One offer, {p.includedKm} km around your door</Text>
+          <Text style={styles.ladderBody}>
+            Every extra kilometre adds {Math.round(p.perKmUsd * 100)}¢. You pick the radius —
+            the price follows it.
+          </Text>
+        </View>
+      </View>
+      <View style={styles.ladderRow}>
+        {[1, 5, 10, 25, 50].map((km) => (
+          <View key={km} style={styles.ladderCell}>
+            <Text style={styles.ladderKm}>{km} km</Text>
+            <Text style={styles.ladderAmt}>{adPriceLabel(p, km)}</Text>
+          </View>
+        ))}
+      </View>
+      <Text style={styles.ladderNote}>
+        Runs {p.planDays} days from approval. Wider than {RADIUS_PICKER_MAX_KM} km? Type the
+        number on the next screen.
+      </Text>
+    </Glass>
+  );
+}
 
 function Pitch({ data, onStart }: { data: BusinessAdDashboard; onStart: () => void }) {
   const reason = data.application?.rejectionReason;
@@ -212,32 +261,8 @@ function Pitch({ data, onStart }: { data: BusinessAdDashboard; onStart: () => vo
         </View>
       </View>
 
-      <SectionTitle>Choose your reach</SectionTitle>
-      <View style={styles.priceRow}>
-        <View style={styles.priceCard}>
-          <Text style={styles.priceRadius}>UP TO 3 KM</Text>
-          <Text style={styles.priceAmount}>{formatPKR(5500)}</Text>
-          <Text style={styles.priceMeta}>per month</Text>
-          <View style={styles.priceChip}>
-            <Text style={styles.priceChipTxt}>1 offer running</Text>
-          </View>
-        </View>
-        <View style={[styles.priceCard, styles.priceCardFeatured]}>
-          <View style={styles.priceBadge}>
-            <Text style={styles.priceBadgeTxt}>MORE REACH</Text>
-          </View>
-          <Text style={styles.priceRadius}>3–5 KM</Text>
-          <Text style={styles.priceAmount}>{formatPKR(7000)}</Text>
-          <Text style={styles.priceMeta}>per month</Text>
-          <View style={styles.priceChip}>
-            <Text style={styles.priceChipTxt}>3 offers running</Text>
-          </View>
-        </View>
-      </View>
-      <Text style={styles.priceNote}>
-        Live prices are confirmed on the next screen. Pay for 3, 6 or 12 months in
-        one transfer.
-      </Text>
+      <SectionTitle>What it costs</SectionTitle>
+      <PriceLadder />
 
       <PrimaryButton label="Get started" onPress={onStart} />
 
@@ -277,9 +302,9 @@ function Pending({ data }: { data: BusinessAdDashboard }) {
       {app ? (
         <View style={styles.summaryCard}>
           <Row label="Radius" value={`${app.radiusKm} km`} />
-          <Row label="Plan" value={`${app.months} months`} />
-          <Row label="Monthly" value={formatPKR(app.monthlyFee)} />
-          <Row label="Paid" value={formatPKR(app.totalFee)} strong />
+          <Row label="Runs for" value={`${app.planDays} days`} />
+          <Row label="Price" value={`$${app.priceUsd.toFixed(2)}`} />
+          <Row label="Paid" value={formatPKR(app.pricePkr)} strong />
         </View>
       ) : null}
 
@@ -333,7 +358,7 @@ function Live({
   const expired = data.stage === 'expired';
   const suspended = data.stage === 'suspended';
   const slotsFull = a.liveAds >= a.adSlots;
-  const planDays = Math.max(1, a.months * 30);
+  const planDays = Math.max(1, a.planDays);
   const daysLeftPct = a.daysLeft === null ? 0 : Math.min(100, Math.round((a.daysLeft / planDays) * 100));
   const stateLabel = suspended ? 'PAUSED' : expired ? 'ENDED' : a.liveAds > 0 ? 'LIVE' : 'READY';
 
@@ -772,40 +797,24 @@ const styles = themed(() => StyleSheet.create({
   featureTitle: { fontSize: 14, fontWeight: '900', color: colors.text },
   featureBody: { fontSize: 12, fontWeight: '600', color: colors.muted, lineHeight: 17 },
 
-  priceRow: { flexDirection: 'row', gap: 10 },
-  priceCard: {
+  /** The ladder: the dollar, what a kilometre adds, and the same four numbers again. */
+  ladder: { backgroundColor: colors.glassStrong, borderRadius: 20, padding: 16, gap: 14 },
+  ladderTop: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  ladderPrice: { fontSize: 40, fontWeight: '900', color: colors.primary, letterSpacing: -1 },
+  ladderTitle: { fontSize: 14, fontWeight: '900', color: colors.text },
+  ladderBody: { fontSize: 12, fontWeight: '600', color: colors.muted, lineHeight: 17, marginTop: 2 },
+  ladderRow: { flexDirection: 'row', gap: 8 },
+  ladderCell: {
     flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 14,
+    alignItems: 'center',
     gap: 2,
-  },
-  priceCardFeatured: { borderColor: colors.primary, borderWidth: 1.5 },
-  priceBadge: {
-    position: 'absolute',
-    top: -9,
-    right: 12,
-    borderRadius: 6,
-    backgroundColor: colors.primary,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-  },
-  priceBadgeTxt: { fontSize: 9, fontWeight: '900', color: colors.background, letterSpacing: 0.6 },
-  priceRadius: { fontSize: 11, fontWeight: '900', color: colors.muted, letterSpacing: 0.6 },
-  priceAmount: { fontSize: 21, fontWeight: '900', color: colors.text, marginTop: 4 },
-  priceMeta: { fontSize: 11, color: colors.muted, fontWeight: '600' },
-  priceChip: {
-    alignSelf: 'flex-start',
-    marginTop: 8,
-    borderRadius: 999,
+    paddingVertical: 9,
+    borderRadius: 12,
     backgroundColor: colors.glassChip,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
   },
-  priceChipTxt: { fontSize: 10, fontWeight: '800', color: colors.text },
-  priceNote: { fontSize: 11, color: colors.muted, fontWeight: '600', lineHeight: 16 },
+  ladderKm: { fontSize: 10.5, fontWeight: '800', color: colors.muted },
+  ladderAmt: { fontSize: 14, fontWeight: '900', color: colors.text },
+  ladderNote: { fontSize: 11, color: colors.muted, fontWeight: '600', lineHeight: 16 },
 
   stepsCard: {
     backgroundColor: colors.surface,

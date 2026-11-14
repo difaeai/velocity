@@ -25,6 +25,7 @@ import { db, FieldValue } from '../lib/firebase';
 import { docId, invalid, requireAdmin, requireAuth } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
 import { creativeSchema, isOwnStorageUrl, requireAdvertiser } from './applications';
+import { WIDE_RADIUS_KM } from './geo';
 import type { BusinessAdStatus } from './types';
 
 const createSchema = z.object({ creative: creativeSchema });
@@ -82,6 +83,8 @@ export const createBusinessAd = onCall(async (req) => {
     // Copied off the plan, never taken from the client.
     center: advertiser.get('center'),
     radiusKm: advertiser.get('radiusKm'),
+    /** Too wide for the cell sweep to find — see businessAds/geo WIDE_RADIUS_KM. */
+    wide: ((advertiser.get('radiusKm') as number | undefined) ?? 0) > WIDE_RADIUS_KM,
     city: advertiser.get('city') ?? null,
     contactPhone: advertiser.get('contactPhone') ?? null,
     /** Denormalised so the nearby query can skip ads whose plan lapsed. */
@@ -163,6 +166,7 @@ export const setBusinessAdStatus = onCall(async (req) => {
       // nearby query would keep skipping an ad that is paid for again.
       planExpiresAt: advertiser.get('expiresAt') ?? null,
       radiusKm: advertiser.get('radiusKm'),
+      wide: ((advertiser.get('radiusKm') as number | undefined) ?? 0) > WIDE_RADIUS_KM,
       center: advertiser.get('center'),
       updatedAt: FieldValue.serverTimestamp(),
     });
@@ -273,19 +277,15 @@ export const adminUpdateBusinessAdSettings = onCall(async (req) => {
   const admin = requireAdmin(req);
   const parsed = z
     .object({
-      tiers: z
-        .array(
-          z.object({
-            key: z.string().trim().min(1).max(24),
-            maxRadiusKm: z.number().min(0.5).max(50),
-            monthlyFee: z.number().min(0).max(10_000_000),
-            adSlots: z.number().int().min(1).max(20),
-          }),
-        )
-        .min(1)
-        .max(6)
-        .optional(),
-      currency: z.string().trim().min(1).max(8).optional(),
+      // The price ladder (owner, 2026-11-14): a dollar for the first kilometre,
+      // twenty cents for each one after it.
+      baseUsd: z.number().min(0).max(1000).optional(),
+      perKmUsd: z.number().min(0).max(1000).optional(),
+      includedKm: z.number().min(0.5).max(50).optional(),
+      maxRadiusKm: z.number().min(1).max(2000).optional(),
+      planDays: z.number().int().min(1).max(3650).optional(),
+      usdToPkr: z.number().min(1).max(100_000).optional(),
+      adSlots: z.number().int().min(1).max(20).optional(),
       notifyCooldownHours: z.number().min(1).max(720).optional(),
       maxNotifPerUserPerDay: z.number().int().min(1).max(20).optional(),
       payment: z
@@ -305,8 +305,9 @@ export const adminUpdateBusinessAdSettings = onCall(async (req) => {
 
   const patch: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
   const d = parsed.data;
-  if (d.tiers) patch.tiers = [...d.tiers].sort((a, b) => a.maxRadiusKm - b.maxRadiusKm);
-  if (d.currency) patch.currency = d.currency;
+  for (const key of ['baseUsd', 'perKmUsd', 'includedKm', 'maxRadiusKm', 'planDays', 'usdToPkr', 'adSlots'] as const) {
+    if (d[key] !== undefined) patch[key] = d[key];
+  }
   if (d.notifyCooldownHours !== undefined) patch.notifyCooldownHours = d.notifyCooldownHours;
   if (d.maxNotifPerUserPerDay !== undefined) {
     patch.maxNotifPerUserPerDay = d.maxNotifPerUserPerDay;

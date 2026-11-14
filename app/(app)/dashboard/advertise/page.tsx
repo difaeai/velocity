@@ -58,12 +58,11 @@ interface AdRequest {
   uid: string;
   status: string;
   radiusKm?: number;
-  tierKey?: string;
   adSlots?: number;
-  months?: number;
-  monthlyFee?: number;
-  totalFee?: number;
-  currency?: string;
+  planDays?: number;
+  /** The dollar price the radius came to, and the rupees asked for at that day's rate. */
+  priceUsd?: number;
+  pricePkr?: number;
   city?: string;
   contactPhone?: string;
   center?: { lat: number; lng: number; address?: string | null };
@@ -83,9 +82,9 @@ interface Advertiser {
   radiusKm?: number;
   adSlots?: number;
   liveAds?: number;
-  months?: number;
-  monthlyFee?: number;
-  totalFee?: number;
+  planDays?: number;
+  priceUsd?: number;
+  pricePkr?: number;
   expiresAt?: { seconds: number };
   totalNotified?: number;
   totalReach?: number;
@@ -333,13 +332,13 @@ function RequestRow({ r, busy, run }: { r: AdRequest; busy: string | null; run: 
           </div>
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: 22, fontWeight: 900, color: colors.primary }}>
-              {pkr(r.totalFee)}
+              {pkr(r.pricePkr)}
             </div>
             <div style={{ color: colors.muted, fontSize: 12 }}>
-              quoted · {pkr(r.monthlyFee)}/mo × {r.months} months
+              quoted · {usd(r.priceUsd ?? 0)} for {r.radiusKm} km
             </div>
             <div style={{ color: colors.muted, fontSize: 12 }}>
-              {r.radiusKm} km · {r.adSlots} offer{r.adSlots === 1 ? '' : 's'}
+              {r.planDays ?? 30} days · {r.adSlots} offer{r.adSlots === 1 ? '' : 's'}
             </div>
           </div>
         </div>
@@ -386,7 +385,7 @@ function RequestRow({ r, busy, run }: { r: AdRequest; busy: string | null; run: 
               <div style={{ padding: 12, color: colors.danger, fontSize: 13 }}>No screenshot attached.</div>
             )}
             <div style={{ padding: 12, fontSize: 12, color: colors.muted }}>
-              Must show <strong>{pkr(r.totalFee)}</strong>. Click to open full size.
+              Must show <strong>{pkr(r.pricePkr)}</strong>. Click to open full size.
               {r.center ? (
                 <>
                   {' '}
@@ -515,7 +514,7 @@ function Advertisers({ rows, busy, run }: { rows: Advertiser[]; busy: string | n
                   {a.liveAds ?? 0}/{a.adSlots ?? 1} offers live
                 </div>
                 <div style={{ color: colors.muted, fontSize: 12, marginTop: 2 }}>
-                  {a.months} months · {pkr(a.totalFee)} · expires {when(a.expiresAt)}
+                  {a.planDays ?? 30} days · {usd(a.priceUsd ?? 0)} · expires {when(a.expiresAt)}
                   {left !== null ? ` (${left} days)` : ''}
                 </div>
                 {a.suspensionReason ? (
@@ -881,8 +880,17 @@ function Queries({
  * sold is unaffected: the quote is snapshotted onto the application at submission.
  */
 function Settings() {
-  const [near, setNear] = useState({ maxRadiusKm: '3', monthlyFee: '5500', adSlots: '1' });
-  const [wide, setWide] = useState({ maxRadiusKm: '5', monthlyFee: '7000', adSlots: '3' });
+  // The ladder (owner, 2026-11-14): a dollar for the first kilometre, twenty
+  // cents for each one after it, and the rate the rupee figure is asked at.
+  const [ladder, setLadder] = useState({
+    baseUsd: '1',
+    perKmUsd: '0.2',
+    includedKm: '1',
+    maxRadiusKm: '300',
+    planDays: '30',
+    usdToPkr: '285',
+    adSlots: '1',
+  });
   const [cooldown, setCooldown] = useState('12');
   const [dailyCap, setDailyCap] = useState('6');
   const [pay, setPay] = useState({
@@ -902,21 +910,15 @@ function Settings() {
     const unsub = onSnapshot(doc(db, 'config', 'businessAdSettings'), (snap) => {
       const d = snap.data();
       if (!d) return;
-      const tiers = (d.tiers ?? []) as { maxRadiusKm?: number; monthlyFee?: number; adSlots?: number }[];
-      if (tiers[0]) {
-        setNear({
-          maxRadiusKm: String(tiers[0].maxRadiusKm ?? 3),
-          monthlyFee: String(tiers[0].monthlyFee ?? 5500),
-          adSlots: String(tiers[0].adSlots ?? 1),
-        });
-      }
-      if (tiers[1]) {
-        setWide({
-          maxRadiusKm: String(tiers[1].maxRadiusKm ?? 5),
-          monthlyFee: String(tiers[1].monthlyFee ?? 7000),
-          adSlots: String(tiers[1].adSlots ?? 3),
-        });
-      }
+      setLadder((prev) => ({
+        baseUsd: d.baseUsd !== undefined ? String(d.baseUsd) : prev.baseUsd,
+        perKmUsd: d.perKmUsd !== undefined ? String(d.perKmUsd) : prev.perKmUsd,
+        includedKm: d.includedKm !== undefined ? String(d.includedKm) : prev.includedKm,
+        maxRadiusKm: d.maxRadiusKm !== undefined ? String(d.maxRadiusKm) : prev.maxRadiusKm,
+        planDays: d.planDays !== undefined ? String(d.planDays) : prev.planDays,
+        usdToPkr: d.usdToPkr !== undefined ? String(d.usdToPkr) : prev.usdToPkr,
+        adSlots: d.adSlots !== undefined ? String(d.adSlots) : prev.adSlots,
+      }));
       if (d.notifyCooldownHours) setCooldown(String(d.notifyCooldownHours));
       if (d.maxNotifPerUserPerDay) setDailyCap(String(d.maxNotifPerUserPerDay));
       if (d.payment) {
@@ -942,21 +944,13 @@ function Settings() {
       await setDoc(
         doc(db, 'config', 'businessAdSettings'),
         {
-          tiers: [
-            {
-              key: 'near',
-              maxRadiusKm: Number(near.maxRadiusKm),
-              monthlyFee: Number(near.monthlyFee),
-              adSlots: Number(near.adSlots),
-            },
-            {
-              key: 'wide',
-              maxRadiusKm: Number(wide.maxRadiusKm),
-              monthlyFee: Number(wide.monthlyFee),
-              adSlots: Number(wide.adSlots),
-            },
-          ],
-          currency: 'PKR',
+          baseUsd: Number(ladder.baseUsd),
+          perKmUsd: Number(ladder.perKmUsd),
+          includedKm: Number(ladder.includedKm),
+          maxRadiusKm: Number(ladder.maxRadiusKm),
+          planDays: Number(ladder.planDays),
+          usdToPkr: Number(ladder.usdToPkr),
+          adSlots: Number(ladder.adSlots),
           notifyCooldownHours: Number(cooldown),
           maxNotifPerUserPerDay: Number(dailyCap),
           payment: {
@@ -982,16 +976,56 @@ function Settings() {
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       <Card>
-        <h3 style={{ margin: 0, color: colors.text, fontSize: 16 }}>Price bands</h3>
+        <h3 style={{ margin: 0, color: colors.text, fontSize: 16 }}>Price ladder</h3>
         <p style={{ color: colors.muted, fontSize: 13, marginTop: 6 }}>
-          A radius falls into the first band whose ceiling it does not exceed. The
-          band decides both the monthly price and how many offers may run at once.
-          Changing these never re-prices a plan already sold.
+          The radius is the price: an ad costs the base at the included radius and
+          the per-km rate for every kilometre after it. The phone does the same
+          arithmetic as the server, so a change here moves both. Changing these
+          never re-prices an application already submitted.
         </p>
-        <div style={{ display: 'grid', gap: 14, marginTop: 10 }}>
-          <TierEditor label="Band 1 (short radius)" value={near} onChange={setNear} />
-          <TierEditor label="Band 2 (wide radius)" value={wide} onChange={setWide} />
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 10 }}>
+          <Field
+            label="Base price (USD)"
+            value={ladder.baseUsd}
+            onChange={(v) => setLadder({ ...ladder, baseUsd: v })}
+          />
+          <Field
+            label="Included radius (km)"
+            value={ladder.includedKm}
+            onChange={(v) => setLadder({ ...ladder, includedKm: v })}
+          />
+          <Field
+            label="Per extra km (USD)"
+            value={ladder.perKmUsd}
+            onChange={(v) => setLadder({ ...ladder, perKmUsd: v })}
+          />
+          <Field
+            label="Widest radius sold (km)"
+            value={ladder.maxRadiusKm}
+            onChange={(v) => setLadder({ ...ladder, maxRadiusKm: v })}
+          />
+          <Field
+            label="Days one ad runs"
+            value={ladder.planDays}
+            onChange={(v) => setLadder({ ...ladder, planDays: v })}
+          />
+          <Field
+            label="PKR to the dollar"
+            value={ladder.usdToPkr}
+            onChange={(v) => setLadder({ ...ladder, usdToPkr: v })}
+          />
+          <Field
+            label="Offers at a time"
+            value={ladder.adSlots}
+            onChange={(v) => setLadder({ ...ladder, adSlots: v })}
+          />
         </div>
+        <p style={{ color: colors.muted, fontSize: 12, marginTop: 10 }}>
+          At these numbers: {usd(Number(ladder.baseUsd))} for{' '}
+          {ladder.includedKm} km, {usd(ladderPrice(ladder, 10))} for 10 km,{' '}
+          {usd(ladderPrice(ladder, 50))} for 50 km — and the shop is asked for{' '}
+          {pkr(Math.round(ladderPrice(ladder, 50) * Number(ladder.usdToPkr)))} at 50 km.
+        </p>
       </Card>
 
       <Card>
@@ -1037,37 +1071,23 @@ function Settings() {
   );
 }
 
-function TierEditor({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: { maxRadiusKm: string; monthlyFee: string; adSlots: string };
-  onChange: (v: { maxRadiusKm: string; monthlyFee: string; adSlots: string }) => void;
-}) {
-  return (
-    <div style={{ border: `1px solid ${colors.border}`, borderRadius: 12, padding: 12 }}>
-      <div style={{ fontSize: 13, fontWeight: 800, color: colors.text, marginBottom: 8 }}>{label}</div>
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        <Field
-          label="Radius ceiling (km)"
-          value={value.maxRadiusKm}
-          onChange={(v) => onChange({ ...value, maxRadiusKm: v })}
-        />
-        <Field
-          label="Monthly fee (PKR)"
-          value={value.monthlyFee}
-          onChange={(v) => onChange({ ...value, monthlyFee: v })}
-        />
-        <Field
-          label="Offers at a time"
-          value={value.adSlots}
-          onChange={(v) => onChange({ ...value, adSlots: v })}
-        />
-      </div>
-    </div>
-  );
+/**
+ * What a radius comes to under the numbers in the boxes — the same ladder as
+ * backend businessAds/config, so the admin sees the price before saving it.
+ */
+function ladderPrice(
+  l: { baseUsd: string; perKmUsd: string; includedKm: string; maxRadiusKm: string },
+  radiusKm: number,
+): number {
+  const km = Math.min(Math.max(radiusKm, 0.5), Number(l.maxRadiusKm) || radiusKm);
+  const extra = Math.max(0, km - (Number(l.includedKm) || 0));
+  const cents = Math.round(Number(l.baseUsd) * 100) + Math.round(Number(l.perKmUsd) * 100) * extra;
+  return Number.isFinite(cents) ? Math.max(0, Math.round(cents)) / 100 : 0;
+}
+
+/** "$10.80" — two decimals only when there are cents. */
+function usd(amount: number): string {
+  return `$${amount.toFixed(Math.round(amount * 100) % 100 === 0 ? 0 : 2)}`;
 }
 
 function Field({

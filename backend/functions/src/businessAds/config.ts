@@ -1,28 +1,58 @@
 /**
  * "Find your Customers" — the price list and the notification budget.
  * ----------------------------------------------------------------------------
- * Two bands, because that is what the product sells: a short radius that costs
- * less and carries one ad, and a wider radius that costs more and carries three.
- * Both live in `config/businessAdSettings` so an admin can reprice without
- * shipping a build — the same reason the partner-program fee does.
+ * THE PRICE IS THE RADIUS (owner, 2026-11-14)
+ * -------------------------------------------
+ * One ad costs a dollar and reaches one kilometre. Every kilometre past that is
+ * twenty cents, so a shop that wants the whole sector pays for the whole sector
+ * and the shop on the corner pays a dollar:
  *
- * The notification budget is the part that protects the users rather than the
- * revenue. An advertiser on a busy road would otherwise push the same commuter
- * every time they drove past, and the only thing a person can do about that is
- * turn Velocity notifications off — which also kills the ride alerts they
- * actually want. So: one push per ad per person per cooldown window, and a hard
- * daily ceiling across ALL advertisers.
+ *     1 km → $1.00      6 km → $2.00      26 km → $6.00
+ *     2 km → $1.20     11 km → $3.00      50 km → $10.80
+ *
+ * The bands this replaced (3 km / 5 km, 5,500 and 7,000 a month, 3/6/12-month
+ * plans) are gone: nobody could tell which band they were in, and the cheapest
+ * way in was a year of rupees. A dollar and a slider is a price a shopkeeper can
+ * say yes to in one go.
+ *
+ * WHY THE PRICE IS IN DOLLARS AND THE TRANSFER IS IN RUPEES
+ * ---------------------------------------------------------
+ * The owner set the list in dollars, and Velocity Studio already sells in them.
+ * The rails an Islamabad shop actually pays on are Easypaisa, JazzCash and a
+ * bank transfer, all in rupees — so every quote carries both: the dollar price
+ * it was bought at, and the rupees to send, converted at `usdToPkr`. Both are
+ * snapshotted onto the application, so a rate that moves during the review does
+ * not change what somebody already paid.
+ *
+ * THE NOTIFICATION BUDGET
+ * -----------------------
+ * This part protects the users rather than the revenue. An advertiser on a busy
+ * road would otherwise push the same commuter every time they drove past, and
+ * the only thing a person can do about that is turn Velocity notifications off
+ * — which also kills the ride alerts they actually want. So: one push per ad per
+ * person per cooldown window, and a hard daily ceiling across ALL advertisers.
  * ----------------------------------------------------------------------------
  */
 import { db } from '../lib/firebase';
-import type { BusinessAdPlanMonths, BusinessAdTier } from './types';
 
 export interface BusinessAdSettings {
-  /** Ordered by ceiling, smallest first. Always at least one band. */
-  tiers: BusinessAdTier[];
-  currency: string;
-  /** Plan lengths an advertiser may buy, in months. */
-  planMonths: BusinessAdPlanMonths[];
+  /** What one ad costs at `includedKm`, in US dollars. */
+  baseUsd: number;
+  /** Every kilometre past `includedKm`, in US dollars. */
+  perKmUsd: number;
+  /** The radius the base price already covers. */
+  includedKm: number;
+  /**
+   * The widest radius sold. The picker on the phone stops at 50 — past that
+   * there is no screen left — and the box under it types up to this.
+   */
+  maxRadiusKm: number;
+  /** How long one paid ad runs from the day it is approved. */
+  planDays: number;
+  /** Rupees to the dollar: the price list is USD, the transfer is PKR. */
+  usdToPkr: number;
+  /** How many offers one paid ad may have running at a time. */
+  adSlots: number;
   /**
    * Hours before the same ad may notify the same person again. This is a clock,
    * not a re-entry trigger: someone who lives inside the radius and never leaves
@@ -45,12 +75,16 @@ export interface BusinessAdSettings {
 }
 
 export const DEFAULT_BUSINESS_AD_SETTINGS: BusinessAdSettings = {
-  tiers: [
-    { key: 'near', maxRadiusKm: 3, monthlyFee: 5500, adSlots: 1 },
-    { key: 'wide', maxRadiusKm: 5, monthlyFee: 7000, adSlots: 3 },
-  ],
-  currency: 'PKR',
-  planMonths: [3, 6, 12],
+  baseUsd: 1,
+  perKmUsd: 0.2,
+  includedKm: 1,
+  // 50 is as far as the picker goes; the manual box goes to here.
+  maxRadiusKm: 300,
+  planDays: 30,
+  // Roughly the open-market rate in November 2026. An admin keeps it current —
+  // it only decides what rupee figure the payment step asks for.
+  usdToPkr: 285,
+  adSlots: 1,
   // Twice a day per offer. Anyone inside the radius hears from the advertiser
   // every 12 hours, whether they walked in or live there.
   notifyCooldownHours: 12,
@@ -68,22 +102,31 @@ export const DEFAULT_BUSINESS_AD_SETTINGS: BusinessAdSettings = {
   },
 };
 
-/** The widest radius any band sells — the cap the radius picker is clamped to. */
-export function maxRadiusKm(settings: BusinessAdSettings): number {
-  return settings.tiers[settings.tiers.length - 1].maxRadiusKm;
+/** A money amount in cents, so the ladder never lands on 1.2000000000000002. */
+function cents(usd: number): number {
+  return Math.round(usd * 100);
 }
 
 /**
- * The band a radius falls into. Bands are inclusive of their ceiling, so 3 km
- * is the cheap band and 3.1 km is the wide one. A radius above every ceiling
- * resolves to the widest band rather than throwing — the caller validates the
- * radius separately, and silently over-serving is worse than over-charging.
+ * What one ad at this radius costs, in US cents. The radius is clamped to what
+ * we sell: a client asking for 10,000 km is answered with the ceiling's price,
+ * and the caller refuses the radius separately — silently over-charging is
+ * worse than quoting the cap.
  */
-export function tierForRadius(settings: BusinessAdSettings, radiusKm: number): BusinessAdTier {
-  return (
-    settings.tiers.find((t) => radiusKm <= t.maxRadiusKm) ??
-    settings.tiers[settings.tiers.length - 1]
-  );
+export function adPriceCents(settings: BusinessAdSettings, radiusKm: number): number {
+  const km = Math.min(Math.max(radiusKm, 0.5), settings.maxRadiusKm);
+  const extra = Math.max(0, km - settings.includedKm);
+  return Math.max(0, Math.round(cents(settings.baseUsd) + cents(settings.perKmUsd) * extra));
+}
+
+/** The same price as dollars, to two decimal places. */
+export function adPriceUsd(settings: BusinessAdSettings, radiusKm: number): number {
+  return adPriceCents(settings, radiusKm) / 100;
+}
+
+/** The rupees to transfer for a dollar price, at the configured rate. */
+export function pricePkr(settings: BusinessAdSettings, priceUsd: number): number {
+  return Math.round(priceUsd * settings.usdToPkr);
 }
 
 function str(value: unknown): string | null {
@@ -98,7 +141,7 @@ function num(value: unknown, fallback: number, min: number, max: number): number
 
 /**
  * Reads the admin-configured settings, falling back field by field. A partially
- * written config doc (an admin who set the prices but never the bank accounts)
+ * written config doc (an admin who set the price but never the bank accounts)
  * must still produce a usable price list, not an empty one.
  */
 export async function getBusinessAdSettings(): Promise<BusinessAdSettings> {
@@ -106,36 +149,16 @@ export async function getBusinessAdSettings(): Promise<BusinessAdSettings> {
   const d = DEFAULT_BUSINESS_AD_SETTINGS;
   if (!snap.exists) return d;
 
-  const rawTiers = snap.get('tiers') as unknown;
-  let tiers = d.tiers;
-  if (Array.isArray(rawTiers) && rawTiers.length > 0) {
-    const parsed = rawTiers
-      .map((t, i) => {
-        const row = (t ?? {}) as Record<string, unknown>;
-        const fallback = d.tiers[Math.min(i, d.tiers.length - 1)];
-        return {
-          key: str(row.key) ?? fallback.key,
-          maxRadiusKm: num(row.maxRadiusKm, fallback.maxRadiusKm, 0.5, 50),
-          monthlyFee: num(row.monthlyFee, fallback.monthlyFee, 0, 10_000_000),
-          adSlots: Math.round(num(row.adSlots, fallback.adSlots, 1, 20)),
-        };
-      })
-      .sort((a, b) => a.maxRadiusKm - b.maxRadiusKm);
-    if (parsed.length > 0) tiers = parsed;
-  }
-
-  const rawMonths = snap.get('planMonths') as unknown;
-  const planMonths = Array.isArray(rawMonths)
-    ? (rawMonths.filter((m): m is BusinessAdPlanMonths => m === 3 || m === 6 || m === 12) as
-        BusinessAdPlanMonths[])
-    : d.planMonths;
-
   const payment = (snap.get('payment') as Record<string, unknown> | undefined) ?? {};
 
   return {
-    tiers,
-    currency: str(snap.get('currency')) ?? d.currency,
-    planMonths: planMonths.length > 0 ? planMonths : d.planMonths,
+    baseUsd: num(snap.get('baseUsd'), d.baseUsd, 0, 1000),
+    perKmUsd: num(snap.get('perKmUsd'), d.perKmUsd, 0, 1000),
+    includedKm: num(snap.get('includedKm'), d.includedKm, 0.5, 50),
+    maxRadiusKm: num(snap.get('maxRadiusKm'), d.maxRadiusKm, 1, 2000),
+    planDays: Math.round(num(snap.get('planDays'), d.planDays, 1, 3650)),
+    usdToPkr: num(snap.get('usdToPkr'), d.usdToPkr, 1, 100_000),
+    adSlots: Math.round(num(snap.get('adSlots'), d.adSlots, 1, 20)),
     notifyCooldownHours: num(snap.get('notifyCooldownHours'), d.notifyCooldownHours, 1, 720),
     maxNotifPerUserPerDay: Math.round(
       num(snap.get('maxNotifPerUserPerDay'), d.maxNotifPerUserPerDay, 1, 20),
@@ -150,11 +173,6 @@ export async function getBusinessAdSettings(): Promise<BusinessAdSettings> {
       jazzcashAccount: str(payment.jazzcashAccount),
     },
   };
-}
-
-/** What a plan costs in total: the band's monthly fee times the months bought. */
-export function quoteFee(monthlyFee: number, months: number): number {
-  return Math.round(monthlyFee * months);
 }
 
 /**

@@ -2087,7 +2087,7 @@ export const api = {
   getBusinessAdPlans: callable<Record<string, never>, BusinessAdPlans>('getBusinessAdPlans'),
   submitBusinessAdApplication: callable<
     BusinessAdApplicationInput,
-    { ok: boolean; status: 'pending'; totalFee: number; monthlyFee: number; adSlots: number }
+    { ok: boolean; status: 'pending'; priceUsd: number; pricePkr: number; planDays: number; adSlots: number }
   >('submitBusinessAdApplication'),
   getBusinessAdDashboard: callable<Record<string, never>, BusinessAdDashboard>(
     'getBusinessAdDashboard',
@@ -2229,7 +2229,6 @@ export const api = {
 // ── Find your Customers types ────────────────────────────────────────────────
 
 export type BusinessAdStatus = 'active' | 'paused' | 'removed';
-export type BusinessAdPlanMonths = 3 | 6 | 12;
 export type BusinessAdPaymentMethod = 'bank' | 'easypaisa' | 'jazzcash';
 
 /** Where the advertiser sits: no plan, in the queue, running, or lapsed. */
@@ -2242,21 +2241,23 @@ export type BusinessAdStage =
   | 'suspended'
   | 'expired';
 
-export interface BusinessAdTier {
-  key: string;
-  /** Inclusive ceiling: a 3 km band covers everything up to and including 3 km. */
-  maxRadiusKm: number;
-  monthlyFee: number;
-  /** How many offers may run at once on this band. */
-  adSlots: number;
-}
-
+/**
+ * The price ladder, not a list of plans (owner, 2026-11-14): what one ad costs
+ * at `includedKm`, what every kilometre after it adds, and how far we will sell.
+ * The phone does the arithmetic itself — see src/lib/adPricing.
+ */
 export interface BusinessAdPlans {
   ok: boolean;
-  tiers: BusinessAdTier[];
-  currency: string;
-  planMonths: BusinessAdPlanMonths[];
+  baseUsd: number;
+  perKmUsd: number;
+  includedKm: number;
   maxRadiusKm: number;
+  /** Days one paid ad runs from approval. */
+  planDays: number;
+  /** Rupees to the dollar: the price is in USD, the transfer is in PKR. */
+  usdToPkr: number;
+  /** Offers one paid ad may run at a time. */
+  adSlots: number;
   notifyCooldownHours: number;
   payment: {
     bankName: string | null;
@@ -2278,7 +2279,6 @@ export interface BusinessAdCreative {
 
 export interface BusinessAdApplicationInput {
   radiusKm: number;
-  months: BusinessAdPlanMonths;
   lat: number;
   lng: number;
   address?: string;
@@ -2367,10 +2367,9 @@ export interface BusinessAdDashboard {
   application: {
     status: string;
     radiusKm: number;
-    months: number;
-    monthlyFee: number;
-    totalFee: number;
-    currency: string;
+    planDays: number;
+    priceUsd: number;
+    pricePkr: number;
     rejectionReason: string | null;
     draft: BusinessAdCreative | null;
     submittedAtMs: number | null;
@@ -2382,10 +2381,9 @@ export interface BusinessAdDashboard {
     radiusKm: number;
     adSlots: number;
     liveAds: number;
-    months: number;
-    monthlyFee: number;
-    totalFee: number;
-    currency: string;
+    planDays: number;
+    priceUsd: number;
+    pricePkr: number;
     expiresAtMs: number | null;
     daysLeft: number | null;
     suspensionReason: string | null;

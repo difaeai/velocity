@@ -1,41 +1,70 @@
 /**
- * Find your Customers — buying a campaign.
+ * Find your Customers — buying an ad.
  *
- * Three steps, in the order the decisions actually get made:
+ * THE RADIUS IS THE PRICE (owner, 2026-11-14)
+ * -------------------------------------------
+ * "1 Ad 1 dollar ka hoga or uska radius 1 kilometer mai jaye ga … each
+ * kilometer k 20 cents increase krty jayen gy". So there is no price list to
+ * read and no plan to choose: there is a slider, and the figure above it moves
+ * as the thumb does. The three bands and the 3/6/12-month plans this replaced
+ * are gone — they made a shopkeeper read a table before they could find out
+ * what their own shop would cost.
  *
- *   1. THE OFFER + THE RADIUS. The radius is the price, so it belongs next to
- *      the offer rather than buried after it — every tap on the radius chips
- *      re-prices the plan in front of them, and the ad-slot count changes with
- *      it. The offer itself is captured here (not after approval) because the
- *      reviewer has to see what would be pushed to thousands of phones before
- *      saying yes to it.
- *   2. THE PLAN. 3, 6 or 12 months × the band's monthly fee, paid in one go.
- *   3. THE TRANSFER. Our accounts, their screenshot, their reference.
+ * The slider stops at 50 km because that is where the screen runs out; past
+ * that the box underneath takes a typed number and prices it the same way.
  *
- * Prices, bands and accounts all come from the backend, so they can change
- * without a new build and no real account number sits in the repo.
+ * TWO STEPS, NOT THREE
+ * The offer and its reach, then the transfer. The plan step had nothing left in
+ * it once the months went.
+ *
+ * IT IS PRICED ON THE FIRST FRAME
+ * The ladder is five numbers and the app ships them (src/lib/adPricing), so
+ * nothing on this screen waits for a cold function: `getBusinessAdPlans` is
+ * still read through the cache and still overrides them the moment it lands,
+ * which is what keeps a reprice a config change rather than a release. The
+ * server re-derives the price when the application arrives, so what the phone
+ * works out is what the screen shows, never what anybody is charged.
+ *
+ * THE MONEY
+ * The list is in dollars, the rails are rupees: every quote carries both, and
+ * the payment step asks for the rupee figure at `usdToPkr`.
  *
  * The shop's coordinates come from the device, because "within 3 km" has to be
  * 3 km of somewhere real. There is no address-only path: a typed address we
  * cannot geocode would silently produce a campaign centred on nothing.
  */
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
-import { Alert, Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Alert,
+  Animated,
+  Easing,
+  Image,
+  PanResponder,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 
 import { api } from '../../../src/api/client';
 import type {
   BusinessAdPaymentMethod,
-  BusinessAdPlanMonths,
   BusinessAdPlans,
-  BusinessAdTier,
 } from '../../../src/api/client';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
 import { useCurrentLocation } from '../../../src/hooks/location';
 import { useCachedResource } from '../../../src/lib/cachedResource';
+import {
+  adPriceLabel,
+  adPricePkr,
+  adPricing,
+  RADIUS_PICKER_MAX_KM,
+  type AdPricing,
+} from '../../../src/lib/adPricing';
 import {
   uploadBusinessAdImage,
   uploadBusinessAdPaymentProof,
@@ -43,11 +72,12 @@ import {
 import { themed } from '../../../src/theme';
 import { Text, TextInput } from '../../../src/ui/Text';
 import { PrimaryButton } from '../../../src/ui/components';
+import { Glass } from '../../../src/ui/Glass';
 import { pickPhoto } from '../../../src/ui/onboarding';
-import { ErrorState, formatPKR, Skeleton } from '../../../src/ui/partner';
+import { formatPKR } from '../../../src/ui/partner';
 
-/** Radius options, in km. The band each one falls into comes from the backend. */
-const RADIUS_STEPS = [1, 2, 3, 4, 5];
+/** The jumps the chips offer. Anything between them is a drag of the slider. */
+const RADIUS_STEPS = [1, 2, 5, 10, 25, 50];
 
 const METHODS: { key: BusinessAdPaymentMethod; label: string }[] = [
   { key: 'easypaisa', label: 'Easypaisa' },
@@ -61,26 +91,17 @@ export default function BusinessAdSubscribe() {
   const location = useCurrentLocation();
 
   /**
-   * The price list, from the cache first.
-   *
-   * It used to be a bare callable fired on mount, with every field on this
-   * screen held behind two grey skeletons until it answered — so opening
-   * "Get started" on a cold function meant staring at nothing for seconds
-   * before a single box could be typed into. The prices change about never,
-   * which makes them exactly what the stale-while-revalidate layer is for:
-   * last session's list paints on the first frame and the server's answer
-   * replaces it a moment later.
+   * The ladder, from the cache first and the server a moment later. Nothing
+   * renders behind it — `adPricing` falls back to this build's own numbers — so
+   * the screen is complete on its first frame even on a cold function.
    */
-  const {
-    data: plans,
-    error: plansError,
-    reload: loadPlans,
-  } = useCachedResource<BusinessAdPlans>(
+  const { data: plans } = useCachedResource<BusinessAdPlans>(
     'businessAdPlans',
     () => api.getBusinessAdPlans({}),
     'Could not load the advertising prices.',
   );
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const pricing = adPricing(plans);
+  const [step, setStep] = useState<1 | 2>(1);
 
   // Step 1 — the offer and the reach.
   const [businessName, setBusinessName] = useState('');
@@ -97,37 +118,29 @@ export default function BusinessAdSubscribe() {
   const [addressEdit, setAddressEdit] = useState<string | null>(null);
   const address = addressEdit ?? location.address ?? '';
   const [contactPhone, setContactPhone] = useState('');
-  const [radiusKm, setRadiusKm] = useState(3);
+  const [radiusKm, setRadiusKm] = useState(1);
 
-  // Step 2 — how long.
-  const [months, setMonths] = useState<BusinessAdPlanMonths>(3);
-
-  // Step 3 — the transfer.
+  // Step 2 — the transfer.
   const [method, setMethod] = useState<BusinessAdPaymentMethod>('easypaisa');
   const [reference, setReference] = useState('');
   const [proofUri, setProofUri] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // The backend decides which plan lengths are on sale; if the one we defaulted
-  // to isn't, fall back to the shortest that is. Runs whenever the list arrives
-  // or changes, which now includes the cached copy on the very first frame.
+  const priceUsd = adPriceLabel(pricing, radiusKm);
+  const pkr = adPricePkr(pricing, radiusKm);
+
+  // The step slides in rather than cutting: the screen is one flow, and a card
+  // arriving from the right says "next" without a word.
+  const [turn] = useState(() => new Animated.Value(1));
   useEffect(() => {
-    if (!plans) return;
-    const first = plans.planMonths[0];
-    if (first && !plans.planMonths.includes(months)) setMonths(first);
-  }, [plans, months]);
-
-  const tier: BusinessAdTier | null = useMemo(() => {
-    if (!plans || plans.tiers.length === 0) return null;
-    return (
-      plans.tiers.find((t) => radiusKm <= t.maxRadiusKm) ??
-      plans.tiers[plans.tiers.length - 1] ??
-      null
-    );
-  }, [plans, radiusKm]);
-
-  const monthlyFee = tier?.monthlyFee ?? 0;
-  const totalFee = monthlyFee * months;
+    turn.setValue(0);
+    Animated.timing(turn, {
+      toValue: 1,
+      duration: 260,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [step, turn]);
 
   const step1Valid =
     businessName.trim().length >= 2 &&
@@ -158,7 +171,6 @@ export default function BusinessAdSubscribe() {
 
       await api.submitBusinessAdApplication({
         radiusKm,
-        months,
         lat: location.coords.lat,
         lng: location.coords.lng,
         address: address.trim() || undefined,
@@ -191,25 +203,24 @@ export default function BusinessAdSubscribe() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <Pressable onPress={() => (step === 1 ? router.back() : setStep(step === 3 ? 2 : 1))} hitSlop={12}>
+        <Pressable onPress={() => (step === 1 ? router.back() : setStep(1))} hitSlop={12}>
           <Text style={styles.back}>←</Text>
         </Pressable>
-        <Text style={styles.headerTitle}>Step {step} of 3</Text>
+        <Text style={styles.headerTitle}>Step {step} of 2</Text>
         <View style={{ width: 22 }} />
       </View>
 
       <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: `${(step / 3) * 100}%` }]} />
+        <View style={[styles.progressFill, { width: `${(step / 2) * 100}%` }]} />
       </View>
 
-      {/* Only a failure with nothing cached takes the screen away. Everything on
-          step 1 except the price belongs to the user, not to the server, so it
-          renders while the price list is still in the air. */}
-      {plansError && !plans ? (
-        <View style={{ padding: 16 }}>
-          <ErrorState message={plansError} onRetry={loadPlans} />
-        </View>
-      ) : (
+      <Animated.View
+        style={{
+          flex: 1,
+          opacity: turn,
+          transform: [{ translateX: turn.interpolate({ inputRange: [0, 1], outputRange: [26, 0] }) }],
+        }}
+      >
         <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
           {step === 1 ? (
             <>
@@ -301,50 +312,17 @@ export default function BusinessAdSubscribe() {
               </View>
 
               <Text style={styles.sectionLabel}>HOW FAR TO REACH</Text>
-              {plans && tier ? (
-                <>
-                  <View style={styles.radiusRow}>
-                    {RADIUS_STEPS.filter((km) => km <= plans.maxRadiusKm).map((km) => (
-                      <Pressable
-                        key={km}
-                        style={[styles.radiusChip, radiusKm === km && styles.radiusChipOn]}
-                        onPress={() => setRadiusKm(km)}
-                      >
-                        <Text style={[styles.radiusTxt, radiusKm === km && { color: colors.primary }]}>
-                          {km} km
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-
-                  <View style={styles.quoteCard}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.quoteAmount}>{formatPKR(monthlyFee)}</Text>
-                      <Text style={styles.quoteMeta}>
-                        per month · {tier.adSlots} offer{tier.adSlots === 1 ? '' : 's'} running at a time
-                      </Text>
-                    </View>
-                    <Text style={styles.quoteRadius}>{radiusKm} km</Text>
-                  </View>
-                  <Text style={styles.hint}>
-                    Everyone inside your radius gets your offer as a notification, and
-                    again every {plans.notifyCooldownHours} hours while your plan runs.
-                  </Text>
-                </>
-              ) : (
-                /* First open on a fresh install. One strip and a line that says
-                   what is happening — not a screenful of grey over fields the
-                   user could already be filling in. */
-                <View style={{ gap: 8 }}>
-                  <Skeleton height={44} radius={12} />
-                  <Skeleton height={64} radius={16} />
-                  <Text style={styles.blockerHint}>Loading today&apos;s prices…</Text>
-                </View>
-              )}
+              <ReachCard
+                pricing={pricing}
+                radiusKm={radiusKm}
+                onRadius={setRadiusKm}
+                priceUsd={priceUsd}
+                pkr={pkr}
+              />
 
               <PrimaryButton
-                label="Choose your plan →"
-                disabled={!step1Valid || !plans || !tier}
+                label={`Continue · ${priceUsd}`}
+                disabled={!step1Valid}
                 onPress={() => {
                   if (!step1Valid) {
                     Alert.alert('Almost there', 'Add your picture, offer and business details first.');
@@ -359,53 +337,12 @@ export default function BusinessAdSubscribe() {
                 </Text>
               ) : null}
             </>
-          ) : !plans || !tier ? (
-            /* Unreachable in practice — step 1's button stays disabled until the
-               price list is in hand — but steps 2 and 3 quote real money, so
-               they are written so they cannot render without it. */
-            <View style={{ gap: 12 }}>
-              <Skeleton height={120} />
-              <Skeleton height={90} />
-            </View>
-          ) : step === 2 ? (
-            <>
-              <Text style={styles.stepTitle}>How long?</Text>
-              <Text style={styles.stepSub}>
-                One transfer covers the whole plan — {formatPKR(monthlyFee)} per month for
-                your {radiusKm} km radius.
-              </Text>
-
-              {plans.planMonths.map((m) => (
-                <Pressable
-                  key={m}
-                  style={[styles.planRow, months === m && styles.planRowOn]}
-                  onPress={() => setMonths(m)}
-                >
-                  <View style={[styles.radio, months === m && styles.radioOn]} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.planName}>{m === 12 ? '1 year' : `${m} months`}</Text>
-                    <Text style={styles.planMeta}>{formatPKR(monthlyFee)} × {m} months</Text>
-                  </View>
-                  <Text style={styles.planTotal}>{formatPKR(monthlyFee * m)}</Text>
-                </Pressable>
-              ))}
-
-              <View style={styles.totalCard}>
-                <Text style={styles.totalLabel}>One-time payment</Text>
-                <Text style={styles.totalAmount}>{formatPKR(totalFee)}</Text>
-                <Text style={styles.totalMeta}>
-                  {radiusKm} km · {tier.adSlots} offer{tier.adSlots === 1 ? '' : 's'} ·{' '}
-                  {months === 12 ? '1 year' : `${months} months`}
-                </Text>
-              </View>
-
-              <PrimaryButton label="Continue to payment →" onPress={() => setStep(3)} />
-            </>
           ) : (
             <>
-              <Text style={styles.stepTitle}>Send {formatPKR(totalFee)}</Text>
+              <Text style={styles.stepTitle}>Send {formatPKR(pkr)}</Text>
               <Text style={styles.stepSub}>
-                Transfer to one of the accounts below, then upload the screenshot.
+                {priceUsd} for {radiusKm} km, {pricing.planDays} days. Transfer to one of the
+                accounts below, then upload the screenshot.
               </Text>
 
               <View style={styles.methodRow}>
@@ -447,13 +384,13 @@ export default function BusinessAdSubscribe() {
               <View style={styles.termsCard}>
                 <Text style={styles.termsTxt}>
                   By submitting you agree that Velocity Rides reviews your offer before it
-                  goes out, and may take down an offer that misleads users. Your plan
-                  starts the day it is approved.
+                  goes out, and may take down an offer that misleads users. Your {pricing.planDays}{' '}
+                  days start the day it is approved.
                 </Text>
               </View>
 
               <PrimaryButton
-                label={submitting ? 'Submitting…' : `Submit for approval · ${formatPKR(totalFee)}`}
+                label={submitting ? 'Submitting…' : `Submit for approval · ${formatPKR(pkr)}`}
                 loading={submitting}
                 disabled={!proofUri || submitting}
                 onPress={submit}
@@ -464,8 +401,169 @@ export default function BusinessAdSubscribe() {
             </>
           )}
         </ScrollView>
-      )}
+      </Animated.View>
     </SafeAreaView>
+  );
+}
+
+/**
+ * The reach, and what it costs — one piece of glass, because the two are the
+ * same decision. The price above the slider is the only number on the screen
+ * that moves, so it is the biggest thing on it and it pops when it changes.
+ */
+// Exported for the same reason as PoolBox: a preview route renders it on web.
+export function ReachCard({
+  pricing,
+  radiusKm,
+  onRadius,
+  priceUsd,
+  pkr,
+}: {
+  pricing: AdPricing;
+  radiusKm: number;
+  onRadius: (km: number) => void;
+  priceUsd: string;
+  pkr: number;
+}) {
+  const [pop] = useState(() => new Animated.Value(1));
+  useEffect(() => {
+    pop.setValue(0.92);
+    Animated.spring(pop, { toValue: 1, friction: 5, tension: 220, useNativeDriver: true }).start();
+  }, [priceUsd, pop]);
+
+  // What the box holds: null while they have not typed in it, so it shows the
+  // slider's own number instead of fighting it.
+  const [typed, setTyped] = useState<string | null>(null);
+  const over = radiusKm > RADIUS_PICKER_MAX_KM;
+
+  return (
+    <Glass radius={20} style={styles.reach}>
+      <View style={styles.reachTop}>
+        <View style={{ flex: 1 }}>
+          <Animated.View style={{ transform: [{ scale: pop }], alignSelf: 'flex-start' }}>
+            <Text style={styles.reachPrice}>{priceUsd}</Text>
+          </Animated.View>
+          <Text style={styles.reachPkr}>{formatPKR(pkr)} to transfer</Text>
+        </View>
+        <View style={styles.reachKmBox}>
+          <Text style={styles.reachKm}>{radiusKm}</Text>
+          <Text style={styles.reachKmUnit}>km</Text>
+        </View>
+      </View>
+
+      <RadiusSlider
+        value={Math.min(radiusKm, RADIUS_PICKER_MAX_KM)}
+        max={RADIUS_PICKER_MAX_KM}
+        onChange={(km) => {
+          setTyped(null);
+          onRadius(km);
+        }}
+      />
+
+      <View style={styles.chipRow}>
+        {RADIUS_STEPS.map((km) => (
+          <Pressable
+            key={km}
+            style={[styles.chip, radiusKm === km && styles.chipOn]}
+            onPress={() => {
+              setTyped(null);
+              onRadius(km);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={`${km} kilometres`}
+          >
+            <Text style={[styles.chipTxt, radiusKm === km && { color: colors.primary }]}>{km}</Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {/* Past the slider's end there is no screen left, so the number is typed
+          (owner, 2026-11-14) and priced as it is typed. */}
+      <View style={[styles.manual, over && styles.manualOn]}>
+        <Text style={styles.manualLabel}>Wider than {RADIUS_PICKER_MAX_KM} km? Type it</Text>
+        <TextInput
+          style={styles.manualField}
+          value={typed ?? (over ? String(radiusKm) : '')}
+          onChangeText={(t) => {
+            const clean = t.replace(/[^0-9.]/g, '').slice(0, 6);
+            setTyped(clean);
+            const km = Number(clean);
+            if (Number.isFinite(km) && km >= 0.5) onRadius(Math.min(km, pricing.maxRadiusKm));
+          }}
+          keyboardType="decimal-pad"
+          placeholder={`${RADIUS_PICKER_MAX_KM + 1}–${pricing.maxRadiusKm}`}
+          placeholderTextColor={colors.muted}
+          maxLength={6}
+        />
+        <Text style={styles.manualUnit}>km</Text>
+      </View>
+
+      <Text style={styles.reachNote}>
+        {pricing.includedKm} km is in the {adPriceLabel(pricing, pricing.includedKm)}; every km
+        after that adds {Math.round(pricing.perKmUsd * 100)}¢. One offer, {pricing.planDays} days,
+        and everyone inside your radius gets it — again every {pricing.notifyCooldownHours} hours
+        while it runs.
+      </Text>
+    </Glass>
+  );
+}
+
+/**
+ * The radius itself: drag the thumb, or tap anywhere on the track. Built on
+ * PanResponder (as the travel-mate cards are) rather than a slider package —
+ * it is a line, a dot and a width.
+ */
+function RadiusSlider({
+  value,
+  max,
+  onChange,
+}: {
+  value: number;
+  max: number;
+  onChange: (km: number) => void;
+}) {
+  const [width, setWidth] = useState(0);
+  // The responder is made once and closes over refs: the live width, and the
+  // caller's latest callback.
+  const w = useRef(0);
+  w.current = width;
+  const cb = useRef(onChange);
+  cb.current = onChange;
+
+  const pan = useMemo(() => {
+    const toKm = (x: number) => {
+      if (w.current <= 0) return 1;
+      const ratio = Math.max(0, Math.min(1, x / w.current));
+      return Math.max(1, Math.round(1 + ratio * (max - 1)));
+    };
+    const at = (x: number) => cb.current(toKm(x));
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (e) => at(e.nativeEvent.locationX),
+      onPanResponderMove: (e) => at(e.nativeEvent.locationX),
+    });
+  }, [max]);
+
+  const pct = ((Math.max(1, value) - 1) / (max - 1)) * 100;
+  return (
+    <View
+      style={styles.sliderHit}
+      onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
+      accessibilityRole="adjustable"
+      accessibilityLabel={`Radius ${value} kilometres`}
+      accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+      onAccessibilityAction={(e) => {
+        if (e.nativeEvent.actionName === 'increment') onChange(Math.min(max, value + 1));
+        if (e.nativeEvent.actionName === 'decrement') onChange(Math.max(1, value - 1));
+      }}
+      {...pan.panHandlers}
+    >
+      <View style={styles.sliderTrack}>
+        <View style={[styles.sliderFill, { width: `${pct}%` }]} />
+      </View>
+      <View style={[styles.sliderThumb, { left: `${pct}%` }]} />
+    </View>
   );
 }
 
@@ -477,32 +575,34 @@ function AccountCard({
   plans,
   method,
 }: {
-  plans: BusinessAdPlans;
+  plans: BusinessAdPlans | null;
   method: BusinessAdPaymentMethod;
 }) {
-  const p = plans.payment;
+  const p = plans?.payment;
   const account =
-    method === 'bank' ? p.bankAccount : method === 'easypaisa' ? p.easypaisaAccount : p.jazzcashAccount;
+    method === 'bank' ? p?.bankAccount : method === 'easypaisa' ? p?.easypaisaAccount : p?.jazzcashAccount;
   const title =
     method === 'bank'
-      ? p.bankAccountTitle
+      ? p?.bankAccountTitle
       : method === 'easypaisa'
-        ? p.easypaisaTitle
-        : p.jazzcashTitle;
+        ? p?.easypaisaTitle
+        : p?.jazzcashTitle;
 
   if (!account) {
     return (
       <View style={styles.accountCard}>
         <Text style={styles.accountMissing}>
-          This account isn&apos;t set up yet. Pick another method, or contact support.
+          {plans
+            ? "This account isn't set up yet. Pick another method, or contact support."
+            : 'Fetching the account to pay into…'}
         </Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.accountCard}>
-      {method === 'bank' && p.bankName ? <Text style={styles.accountBank}>{p.bankName}</Text> : null}
+    <Glass radius={16} style={styles.accountCard}>
+      {method === 'bank' && p?.bankName ? <Text style={styles.accountBank}>{p.bankName}</Text> : null}
       <Text style={styles.accountNumber}>{account}</Text>
       {title ? <Text style={styles.accountTitle}>Account title: {title}</Text> : null}
       <Pressable
@@ -514,7 +614,7 @@ function AccountCard({
       >
         <Text style={styles.copyTxt}>Copy number</Text>
       </Pressable>
-    </View>
+    </Glass>
   );
 }
 
@@ -542,7 +642,6 @@ const styles = themed(() => StyleSheet.create({
     letterSpacing: 0.6,
     marginTop: 6,
   },
-  hint: { fontSize: 11, color: colors.muted, fontWeight: '600', lineHeight: 16 },
   blockerHint: { fontSize: 11, color: colors.muted, fontWeight: '600', textAlign: 'center' },
 
   photoPicker: {
@@ -615,68 +714,72 @@ const styles = themed(() => StyleSheet.create({
   locWarnTxt: { flex: 1, fontSize: 11, fontWeight: '700', color: colors.muted, lineHeight: 16 },
   locBtn: { fontSize: 12, fontWeight: '900', color: colors.primary },
 
-  radiusRow: { flexDirection: 'row', gap: 8 },
-  radiusChip: {
+  /** The reach and its price: one glass panel. */
+  reach: { backgroundColor: colors.glassStrong, padding: 16, gap: 14 },
+  reachTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  reachPrice: { fontSize: 40, fontWeight: '900', color: colors.primary, letterSpacing: -1 },
+  reachPkr: { fontSize: 12, fontWeight: '700', color: colors.muted, marginTop: 2 },
+  reachKmBox: {
+    alignItems: 'center',
+    minWidth: 66,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    backgroundColor: colors.glassChip,
+  },
+  reachKm: { fontSize: 22, fontWeight: '900', color: colors.text },
+  reachKmUnit: { fontSize: 10, fontWeight: '800', color: colors.muted, letterSpacing: 0.8 },
+  reachNote: { fontSize: 11, fontWeight: '600', color: colors.muted, lineHeight: 16 },
+
+  /** The slider: a tall touch area so a thumb can find a 6 px line. */
+  sliderHit: { height: 40, justifyContent: 'center' },
+  sliderTrack: { height: 6, borderRadius: 3, backgroundColor: colors.glassChip, overflow: 'hidden' },
+  sliderFill: { height: 6, borderRadius: 3, backgroundColor: colors.primary },
+  sliderThumb: {
+    position: 'absolute',
+    width: 26,
+    height: 26,
+    marginLeft: -13,
+    borderRadius: 13,
+    backgroundColor: colors.primary,
+    borderWidth: 3,
+    borderColor: colors.background,
+  },
+
+  chipRow: { flexDirection: 'row', gap: 8 },
+  chip: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 9,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
   },
-  radiusChipOn: { borderColor: colors.primary, backgroundColor: colors.glassLime, borderWidth: 1.5 },
-  radiusTxt: { fontSize: 13, fontWeight: '800', color: colors.text },
+  chipOn: { borderColor: colors.primary, backgroundColor: colors.glassLime, borderWidth: 1.5 },
+  chipTxt: { fontSize: 13, fontWeight: '800', color: colors.text },
 
-  quoteCard: {
+  manual: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    backgroundColor: colors.glassLime,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: colors.primary,
-    padding: 16,
-  },
-  quoteAmount: { fontSize: 22, fontWeight: '900', color: colors.primary },
-  quoteMeta: { fontSize: 11, fontWeight: '700', color: colors.muted, marginTop: 2 },
-  quoteRadius: { fontSize: 16, fontWeight: '900', color: colors.text },
-
-  planRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: colors.surface,
-    borderRadius: 14,
+    gap: 8,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: 14,
-  },
-  planRowOn: { borderColor: colors.primary, borderWidth: 1.5, backgroundColor: colors.glassLime },
-  radio: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: colors.border,
-  },
-  radioOn: { borderColor: colors.primary, backgroundColor: colors.primary },
-  planName: { fontSize: 15, fontWeight: '900', color: colors.text },
-  planMeta: { fontSize: 11, fontWeight: '600', color: colors.muted, marginTop: 1 },
-  planTotal: { fontSize: 15, fontWeight: '900', color: colors.text },
-
-  totalCard: {
     backgroundColor: colors.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 16,
-    gap: 2,
-    marginTop: 4,
+    paddingHorizontal: 12,
   },
-  totalLabel: { fontSize: 11, fontWeight: '800', color: colors.muted, letterSpacing: 0.5 },
-  totalAmount: { fontSize: 28, fontWeight: '900', color: colors.primary },
-  totalMeta: { fontSize: 12, fontWeight: '600', color: colors.muted },
+  manualOn: { borderColor: colors.primary, borderWidth: 1.5 },
+  manualLabel: { flex: 1, fontSize: 11.5, fontWeight: '700', color: colors.muted },
+  manualField: {
+    width: 86,
+    height: 44,
+    textAlign: 'right',
+    fontSize: 15,
+    fontWeight: '900',
+    color: colors.text,
+  },
+  manualUnit: { fontSize: 11, fontWeight: '800', color: colors.muted },
 
   methodRow: { flexDirection: 'row', gap: 8 },
   methodChip: {

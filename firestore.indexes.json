@@ -553,6 +553,20 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "wide",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "businessAds",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
           "fieldPath": "ownerUid",
           "order": "ASCENDING"
         },

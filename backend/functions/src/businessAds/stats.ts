@@ -25,7 +25,7 @@ import { onCall } from 'firebase-functions/v2/https';
 
 import { db, Timestamp } from '../lib/firebase';
 import { requireAuth } from '../lib/guards';
-import { getBusinessAdSettings, pkDay, tierForRadius } from './config';
+import { adPriceUsd, getBusinessAdSettings, pkDay, pricePkr } from './config';
 import type { BusinessAdStatus } from './types';
 
 interface DayRow {
@@ -72,10 +72,9 @@ export const getBusinessAdDashboard = onCall(async (req) => {
         ? {
             status: appSnap.get('status') as string,
             radiusKm: appSnap.get('radiusKm') as number,
-            months: appSnap.get('months') as number,
-            monthlyFee: appSnap.get('monthlyFee') as number,
-            totalFee: appSnap.get('totalFee') as number,
-            currency: appSnap.get('currency') as string,
+            planDays: (appSnap.get('planDays') as number | undefined) ?? settings.planDays,
+            priceUsd: (appSnap.get('priceUsd') as number | undefined) ?? 0,
+            pricePkr: (appSnap.get('pricePkr') as number | undefined) ?? 0,
             rejectionReason: (appSnap.get('rejectionReason') as string | null) ?? null,
             draft: (appSnap.get('draft') as Record<string, string> | null) ?? null,
             submittedAtMs: ms(appSnap.get('submittedAt')),
@@ -165,8 +164,6 @@ export const getBusinessAdDashboard = onCall(async (req) => {
     { notified: 0, reach: 0, clicks: 0, viewers: 0, queries: 0 },
   );
 
-  const tier = tierForRadius(settings, radiusKm);
-
   return {
     ok: true,
     stage: status === 'suspended' ? 'suspended' : expired ? 'expired' : 'active',
@@ -176,12 +173,14 @@ export const getBusinessAdDashboard = onCall(async (req) => {
       city: (advertiserSnap.get('city') as string | null) ?? null,
       contactPhone: (advertiserSnap.get('contactPhone') as string | null) ?? null,
       radiusKm,
-      adSlots: (advertiserSnap.get('adSlots') as number) ?? tier.adSlots,
+      adSlots: (advertiserSnap.get('adSlots') as number) ?? settings.adSlots,
       liveAds: ads.filter((a) => a.status === 'active').length,
-      months: (advertiserSnap.get('months') as number) ?? 0,
-      monthlyFee: (advertiserSnap.get('monthlyFee') as number) ?? tier.monthlyFee,
-      totalFee: (advertiserSnap.get('totalFee') as number) ?? 0,
-      currency: (advertiserSnap.get('currency') as string) ?? settings.currency,
+      planDays: (advertiserSnap.get('planDays') as number) ?? settings.planDays,
+      priceUsd:
+        (advertiserSnap.get('priceUsd') as number | undefined) ?? adPriceUsd(settings, radiusKm),
+      pricePkr:
+        (advertiserSnap.get('pricePkr') as number | undefined) ??
+        pricePkr(settings, adPriceUsd(settings, radiusKm)),
       expiresAtMs,
       daysLeft:
         expiresAtMs === null ? null : Math.max(0, Math.ceil((expiresAtMs - Date.now()) / 86_400_000)),

@@ -10,6 +10,19 @@
 /** Geohash precision used for ad centres. Cell size ≈ 4.9 km × 4.9 km. */
 export const GEO_PRECISION = 5;
 
+/**
+ * The radius above which an ad is swept separately.
+ *
+ * Since the radius became the price (owner, 2026-11-14) an advertiser can buy
+ * 50 km, or type more. The cell sweep below cannot answer that: a 50 km disc is
+ * hundreds of 4.9 km cells and Firestore's `in` takes thirty, so a wide sweep
+ * would silently come back with an arbitrary thirty of them — an advertiser
+ * paying for a radius that reaches almost nobody. So the sweep stays small and
+ * every ad wider than this carries `wide: true` and is read by a second query
+ * that distance-checks the lot (see nearby.ts).
+ */
+export const WIDE_RADIUS_KM = 10;
+
 /** Grid spacing for the candidate sweep, in km. MUST stay under the cell size. */
 const SWEEP_STEP_KM = 2;
 

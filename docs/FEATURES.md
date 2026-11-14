@@ -326,6 +326,13 @@ minutes of the saved time, the rider is pushed a “join this pool” alert
 Tapping it opens the pool-join screen. **Nobody is ever auto-booked into someone
 else's ride.**
 
+A route is then **quiet for 90 minutes** (`matchedAtMs` on the route,
+`MATCH_COOLDOWN_MS`). Before that, every pool opened on a busy corridor was
+another push, which is what the owner meant by "the notifications keep being
+sent" (2026-11-14) — and the ride-sharing screen's **My Routes** now carries the
+switch that stops them altogether (`notify: false`, honoured by both the match
+alerts and the before-your-time reminder).
+
 ### 3.9 Support
 
 `app/passenger/support-chat.tsx` — in-app support thread.
@@ -1002,28 +1009,38 @@ Code: `backend/functions/src/businessAds/*`. Screens:
 `app/passenger/business-ads/{index,subscribe,compose,analytics}.tsx` and the
 offer viewer `app/passenger/offer/[adId].tsx`. Admin page: **Advertise**.
 
-#### 9.2.1 The price list
+#### 9.2.1 The price ladder
 
-Two bands, because that is what the product sells: a short radius that costs less
-and carries one ad, and a wider radius that costs more and carries three. Live in
-`config/businessAdSettings` so an admin can reprice without shipping a build.
+**The radius is the price** (owner, 2026-11-14). One ad costs a dollar and
+reaches a kilometre; every kilometre after that is twenty cents. The five numbers
+live in `config/businessAdSettings` so an admin can reprice without shipping a
+build, and the app ships the same five so the screen is priced on its first
+frame (`apps/mobile/src/lib/adPricing.ts`).
 
-| Band | Radius | Monthly fee | Live ads at once |
-|---|---|---|---|
-| `near` | up to **3 km** | **5,500 PKR** | 1 |
-| `wide` | up to **5 km** | **7,000 PKR** | 3 |
+| Radius | Price | | Radius | Price |
+|---|---|---|---|---|
+| 1 km | **$1.00** | | 25 km | $5.80 |
+| 2 km | $1.20 | | 50 km | $10.80 |
+| 6 km | $2.00 | | 120 km | $24.80 |
 
-- Bands are **inclusive of their ceiling**: 3.0 km is the cheap band, 3.1 km is
-  the wide one.
-- Radius is chosen in **0.5 km steps** and clamped to the widest band sold.
-- Plans are bought in whole-month blocks: **3, 6 or 12 months**, paid up front.
-  Total = monthly fee × months.
+- `baseUsd` 1 at `includedKm` 1, `perKmUsd` 0.2, `maxRadiusKm` 300, `planDays` 30,
+  `adSlots` 1.
+- The picker on the phone runs **1–50 km**; past that a box takes a typed number
+  and prices it the same way.
+- One ad runs **30 days** from approval. The three-band / 3-6-12-month plans this
+  replaced are gone.
+- The list is in **dollars**, the rails are in **rupees**: every quote carries
+  both and the payment step asks for `priceUsd × usdToPkr`, snapshotted onto the
+  application so a moving rate cannot change what somebody already paid.
+- Ads wider than `WIDE_RADIUS_KM` (10 km) carry `wide: true` and are swept by
+  their own query — the geohash cell sweep cannot cover a 50 km disc inside
+  Firestore's 30-value `in` limit (`businessAds/geo.ts`).
 
 #### 9.2.2 Buying a campaign
 
 `submitBusinessAdApplication` (rate-limited to 5/hour). The shop submits:
 
-- desired **radius** and **plan length**;
+- desired **radius** (0.5 km and up, to `maxRadiusKm`);
 - the shop's **own coordinates** (centre of every radius check) + address + city;
 - a contact phone;
 - the **creative**: title (3–80 chars), business name, offer details (5–600
@@ -1035,8 +1052,8 @@ and carries one ad, and a wider radius that costs more and carries three. Live i
 Both images must live in Velocity's own Storage bucket — never a URL the client
 made up.
 
-The backend **re-derives the quote** (band, monthly fee, ad slots, total) from
-live settings and snapshots it onto the application. An admin reviewing a receipt
+The backend **re-derives the quote** (radius, dollar price, rupees asked for,
+ad slots, days) from live settings and snapshots it onto the application. An admin reviewing a receipt
 next week therefore compares it against the price the applicant actually saw, not
 against a rate that has since changed.
 
@@ -1171,14 +1188,14 @@ that doesn't throttle itself.
 #### 9.2.9 The SME's journey, end to end
 
 1. Drawer → **Business** → **Find your Customers**.
-2. Read the pitch; pick a radius on the map around the shop (up to 5 km) and see
-   the price for that band.
-3. Choose 3, 6 or 12 months. Pay into the bank / Easypaisa / JazzCash account
-   shown, upload the screenshot.
+2. Read the pitch; drag the radius and watch the price move with it — the slider
+   runs to 50 km, the box under it takes anything wider.
+3. Pay the rupee figure shown into the bank / Easypaisa / JazzCash account shown,
+   upload the screenshot.
 4. Write the offer — headline, business name, details, photo — and submit.
 5. Wait for review; a push announces the verdict.
-6. On approval: publish the offer (prefilled from the draft). One live offer on
-   the near band, three on the wide band.
+6. On approval: publish the offer (prefilled from the draft). One live offer per
+   paid ad (`adSlots`), for 30 days.
 7. Anyone using Velocity inside the radius receives it as a photo notification,
    at most once every 12 hours, within the platform-wide 6-a-day ceiling.
 8. Watch **sent / people reached / opened / CTR** and the 7-day chart. Pause,

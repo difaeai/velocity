@@ -38,8 +38,8 @@ import { notifyUser } from '../lib/fcm';
 import { db, FieldValue, Timestamp } from '../lib/firebase';
 import { docId, invalid, requireAuth } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
-import { getBusinessAdSettings, maxRadiusKm, pkDay } from './config';
-import { candidateCells } from './geo';
+import { getBusinessAdSettings, pkDay } from './config';
+import { candidateCells, WIDE_RADIUS_KM } from './geo';
 import { businessesBlockedByCustomer } from './moderation';
 
 const nearbySchema = z.object({
@@ -96,25 +96,32 @@ export const checkNearbyBusinessAds = onCall(async (req) => {
   const { lat, lng } = parsed.data;
 
   const settings = await getBusinessAdSettings();
-  // Swept against the WIDEST band we sell, not against any one ad's radius —
-  // which ads are in range is only known after the distance check below.
-  const cells = candidateCells(lat, lng, maxRadiusKm(settings));
-
-  const snap = await db
-    .collection('businessAds')
-    .where('status', '==', 'active')
-    .where('center.geohash', 'in', cells)
-    .limit(60)
-    .get();
+  // Two sweeps, because the radius is now the price and an advertiser may buy
+  // 50 km (owner, 2026-11-14). The cell sweep covers every ordinary ad around
+  // the caller; the second reads the handful of wide ones, wherever they are,
+  // and both go through the same distance check below — which is what decides
+  // whether an ad is in range, never the sweep.
+  const cells = candidateCells(lat, lng, Math.min(settings.maxRadiusKm, WIDE_RADIUS_KM));
+  const live = db.collection('businessAds').where('status', '==', 'active');
+  const [nearSnap, wideSnap] = await Promise.all([
+    live.where('center.geohash', 'in', cells).limit(60).get(),
+    // shortcut: every wide ad in the country, 60 at a time. They cost $3 and up,
+    // so there are a handful; past a few hundred, index them by a coarse cell
+    // (3 characters of center.geohash) and sweep those instead.
+    live.where('wide', '==', true).limit(60).get(),
+  ]);
+  // A wide ad near the caller comes back from both queries.
+  const seen = new Set(nearSnap.docs.map((d) => d.id));
+  const docs = [...nearSnap.docs, ...wideSnap.docs.filter((d) => !seen.has(d.id))];
 
   const nowMs = Date.now();
   // A customer who blocked a business in Queries has said they want nothing
   // from it — its offers stop reaching them too.
-  const blockedOwners = snap.empty ? new Set<string>() : await businessesBlockedByCustomer(uid);
+  const blockedOwners = docs.length === 0 ? new Set<string>() : await businessesBlockedByCustomer(uid);
   const cooldownMs = settings.notifyCooldownHours * 3600 * 1000;
 
   // Inside the radius the advertiser paid for, and on a plan that has not lapsed.
-  const inRange = snap.docs
+  const inRange = docs
     .map((doc) => {
       const center = doc.get('center') as { lat: number; lng: number } | undefined;
       if (!center) return null;
@@ -126,7 +133,7 @@ export const checkNearbyBusinessAds = onCall(async (req) => {
       if (distanceM > radiusKm * 1000) return null;
       return { doc, distanceM };
     })
-    .filter((x): x is { doc: (typeof snap.docs)[number]; distanceM: number } => x !== null)
+    .filter((x): x is { doc: (typeof docs)[number]; distanceM: number } => x !== null)
     // Closest first: if the daily budget only covers one push, it should be the
     // shop the person is actually standing next to.
     .sort((a, b) => a.distanceM - b.distanceM);
