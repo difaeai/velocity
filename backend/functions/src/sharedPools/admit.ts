@@ -105,11 +105,16 @@ export async function recordAdmission(
     refuse: !decision.ok && settings.mode === 'live',
   };
 
-  // The rider's seat does not wait on the ledger, and never fails because of it.
-  void write(ctx, admission, settings).catch((error) => {
+  const recorded = write(ctx, admission, settings).catch((error) => {
     // `error:` not `message:` — the firebase logger overwrites `message`.
     logger.warn('pooling admission not recorded', { poolId: ctx.poolId, error });
   });
+  // A rider being SEATED does not wait on the ledger, and never fails because
+  // of it. A rider being REFUSED does: the caller throws the moment this
+  // returns, and a refusal that went unrecorded is the one row the desk most
+  // needs — it is also the only evidence the rider was turned away at all.
+  // Waiting costs that request nothing, since it is failing regardless.
+  if (admission.refuse) await recorded;
   return admission;
 }
 

@@ -1289,7 +1289,20 @@ async function seatOnPool(
     // Booking cutoff: a timed pool stops taking seats this close to departure,
     // so a car that is about to be asked for is not re-priced under its riders.
     // 0 (the default) is no cutoff, which is how this engine shipped.
-    if (departTime && pooling.bookingCutoffMin > 0) {
+    //
+    // Only a JOIN is ever late. The first seat belongs to whoever is creating
+    // the pool and choosing its time, and refusing them would make a 10-minute
+    // pool uncreatable under a 30-minute cutoff — which is what it did.
+    //
+    // It also only applies to a car still gathering. Once the car is out, the
+    // rider takes a seat in it above (joinPoolTripAsRider) and its own join
+    // window governs that, not a cutoff for a departure already under way.
+    //
+    // shortcut: a rider inside the window is refused rather than rolled on to
+    // the next departure, so a daily pool is unbookable for its last few
+    // minutes each day. Roll `dueMs` to the departure after next if the owner
+    // ever sets a cutoff above zero.
+    if (departTime && bookings.length > 0 && pooling.bookingCutoffMin > 0) {
       const departsMs = nextDepartureMs(departTime, nowMs);
       if (departsMs - nowMs < pooling.bookingCutoffMin * 60_000) {
         throw new HttpsError(
