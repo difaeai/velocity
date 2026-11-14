@@ -1,19 +1,20 @@
 /**
  * "Find your Customers" — buying a campaign, and the admin review that starts it.
  * ----------------------------------------------------------------------------
- * The shape of the deal: a business picks a radius, is quoted the band price for
- * it, buys 3, 6 or 12 months up front, and uploads a screenshot of the transfer.
- * A human looks at the screenshot and at the offer they intend to push, and only
- * an approval mints `businessAdvertisers/{uid}` — the document every publishing
+ * The shape of the deal (owner, 2026-11-14): a business picks a radius, the
+ * radius is the price — Rs 300 for the first kilometre and Rs 60 for each one
+ * after it — and they upload a screenshot of the transfer. A human
+ * looks at the screenshot and at the offer they intend to push, and only an
+ * approval mints `businessAdvertisers/{uid}` — the document every publishing
  * and notification path keys off.
  *
  * The screenshot is checked by a person, not by code. The backend cannot tell a
  * real receipt from an edited one, and pretending otherwise would just be
  * theatre. What the backend CAN do is make sure the numbers the advertiser was
- * shown are the numbers on file: the radius, the band, the monthly fee and the
- * total are all re-derived here from the live settings and written as a snapshot,
- * so an admin comparing a receipt next week compares it against the price the
- * applicant actually saw — not against a rate that changed since.
+ * shown are the numbers on file: the radius and the price it comes to are
+ * re-derived here from the live settings and written as a snapshot, so an admin
+ * comparing a receipt next week compares it against the price the applicant
+ * actually saw — not against a list that changed since.
  *
  * The creative arrives twice on purpose. It comes in with the application so the
  * reviewer can see what would be pushed to thousands of phones before saying
@@ -30,12 +31,8 @@ import { encodeGeohash } from '../lib/geohash';
 import { docId, invalid, requireAdmin, requireAuth } from '../lib/guards';
 import { notifyUser } from '../lib/fcm';
 import { rateLimit } from '../lib/ratelimit';
-import { getBusinessAdSettings, maxRadiusKm, quoteFee, tierForRadius } from './config';
-import type {
-  BusinessAdApplicationStatus,
-  BusinessAdPlanMonths,
-  BusinessAdvertiserStatus,
-} from './types';
+import { adPrice, getBusinessAdSettings } from './config';
+import type { BusinessAdApplicationStatus, BusinessAdvertiserStatus } from './types';
 
 /** Documents must live in our own bucket — never a URL the client made up. */
 export function isOwnStorageUrl(url: string): boolean {
@@ -53,10 +50,12 @@ export const creativeSchema = z.object({
   imageUrl: z.string().url().max(2048),
 });
 
+/** The widest radius the schema will even parse; the live cap is in settings. */
+const RADIUS_CEILING_KM = 2000;
+
 const submitSchema = z.object({
-  /** Radius in km, in 0.5 steps. The band — and so the price — follows from it. */
-  radiusKm: z.number().min(0.5).max(50),
-  months: z.union([z.literal(3), z.literal(6), z.literal(12)]),
+  /** Radius in km. The price follows from it — see businessAds/config. */
+  radiusKm: z.number().min(0.5).max(RADIUS_CEILING_KM),
   /** The shop's own coordinates: the centre of every radius check. */
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
@@ -78,25 +77,29 @@ const reviewSchema = z.object({
   reason: z.string().trim().max(500).optional(),
   /**
    * An admin may approve onto a different radius than was asked for — e.g. the
-   * transfer that landed only covers the cheaper band. Approving down is kinder
+   * transfer that landed only covers a shorter one. Approving down is kinder
    * than rejecting outright and making them start over.
    */
-  radiusKm: z.number().min(0.5).max(50).optional(),
-  months: z.union([z.literal(3), z.literal(6), z.literal(12)]).optional(),
+  radiusKm: z.number().min(0.5).max(RADIUS_CEILING_KM).optional(),
 });
 
 /**
- * Public: the price list, the plan lengths and the accounts to pay into. The
- * subscribe screen reads this so prices can change without a new build.
+ * Public: the price ladder, the ceiling and the accounts to pay into.
+ *
+ * It is five numbers, not a list of plans, so the phone prices every radius
+ * itself — the screen is instant and stays instant while this call is still in
+ * the air (the app ships the same defaults). Prices still move without a build.
  */
 export const getBusinessAdPlans = onCall(async () => {
   const s = await getBusinessAdSettings();
   return {
     ok: true,
-    tiers: s.tiers,
-    currency: s.currency,
-    planMonths: s.planMonths,
-    maxRadiusKm: maxRadiusKm(s),
+    basePkr: s.basePkr,
+    perKmPkr: s.perKmPkr,
+    includedKm: s.includedKm,
+    maxRadiusKm: s.maxRadiusKm,
+    planDays: s.planDays,
+    adSlots: s.adSlots,
     notifyCooldownHours: s.notifyCooldownHours,
     payment: s.payment,
   };
@@ -139,10 +142,8 @@ export const submitBusinessAdApplication = onCall(async (req) => {
   }
 
   const settings = await getBusinessAdSettings();
-  const cap = maxRadiusKm(settings);
-  if (data.radiusKm > cap) invalid(`The widest radius we sell is ${cap} km.`);
-  if (!settings.planMonths.includes(data.months as BusinessAdPlanMonths)) {
-    invalid('Choose one of the plan lengths on offer.');
+  if (data.radiusKm > settings.maxRadiusKm) {
+    invalid(`The widest radius we sell is ${settings.maxRadiusKm} km.`);
   }
 
   // An advertiser whose plan is still running renews from the advertise home,
@@ -159,8 +160,7 @@ export const submitBusinessAdApplication = onCall(async (req) => {
     invalid('Your advertising request is already awaiting approval.');
   }
 
-  const tier = tierForRadius(settings, data.radiusKm);
-  const totalFee = quoteFee(tier.monthlyFee, data.months);
+  const price = adPrice(settings, data.radiusKm);
 
   await appRef.set({
     uid,
@@ -168,12 +168,9 @@ export const submitBusinessAdApplication = onCall(async (req) => {
     // The quote, snapshotted. Everything downstream reads these, never the live
     // settings, so a reprice mid-review cannot change what someone already paid.
     radiusKm: data.radiusKm,
-    tierKey: tier.key,
-    adSlots: tier.adSlots,
-    months: data.months,
-    monthlyFee: tier.monthlyFee,
-    totalFee,
-    currency: settings.currency,
+    adSlots: settings.adSlots,
+    planDays: settings.planDays,
+    price,
 
     center: {
       lat: data.lat,
@@ -200,19 +197,14 @@ export const submitBusinessAdApplication = onCall(async (req) => {
     updatedAt: FieldValue.serverTimestamp(),
   });
 
-  logger.info('Business ad application submitted', {
-    uid,
-    radiusKm: data.radiusKm,
-    months: data.months,
-    totalFee,
-  });
+  logger.info('Business ad application submitted', { uid, radiusKm: data.radiusKm, price });
 
   return {
     ok: true,
     status: 'pending' as BusinessAdApplicationStatus,
-    totalFee,
-    monthlyFee: tier.monthlyFee,
-    adSlots: tier.adSlots,
+    price,
+    planDays: settings.planDays,
+    adSlots: settings.adSlots,
   };
 });
 
@@ -235,8 +227,13 @@ export const adminReviewBusinessAdApplication = onCall(async (req) => {
 
   const settings = await getBusinessAdSettings();
   const radiusKm = parsed.data.radiusKm ?? (snap.get('radiusKm') as number);
-  const months = parsed.data.months ?? (snap.get('months') as number);
-  const tier = tierForRadius(settings, radiusKm);
+  // An approval onto a narrower radius re-prices with it; otherwise the price
+  // the applicant was quoted stands, whatever the list says today.
+  const price =
+    parsed.data.radiusKm !== undefined
+      ? adPrice(settings, radiusKm)
+      : ((snap.get('price') as number | undefined) ?? adPrice(settings, radiusKm));
+  const planDays = (snap.get('planDays') as number | undefined) ?? settings.planDays;
 
   // The clock starts at approval, not at payment: the advertiser should not lose
   // days to the review queue. A renewal extends from whichever is later — the
@@ -247,8 +244,7 @@ export const adminReviewBusinessAdApplication = onCall(async (req) => {
     (advertiserSnap.get('expiresAt') as { toMillis?: () => number } | null | undefined)?.toMillis?.() ??
     0;
   const startMs = Math.max(Date.now(), prevExpiryMs);
-  const expiresAt = new Date(startMs);
-  expiresAt.setMonth(expiresAt.getMonth() + months);
+  const expiresAt = new Date(startMs + planDays * 86_400_000);
 
   await db.runTransaction(async (tx) => {
     const now = FieldValue.serverTimestamp();
@@ -256,7 +252,7 @@ export const adminReviewBusinessAdApplication = onCall(async (req) => {
     tx.update(appRef, {
       status,
       approvedRadiusKm: decision === 'approve' ? radiusKm : null,
-      approvedMonths: decision === 'approve' ? months : null,
+      approvedPrice: decision === 'approve' ? price : null,
       rejectionReason: decision === 'approve' ? null : reason,
       reviewedAt: now,
       reviewedBy: admin.uid,
@@ -274,12 +270,9 @@ export const adminReviewBusinessAdApplication = onCall(async (req) => {
           contactPhone: snap.get('contactPhone') ?? null,
           center: snap.get('center'),
           radiusKm,
-          tierKey: tier.key,
-          adSlots: tier.adSlots,
-          months,
-          monthlyFee: snap.get('monthlyFee') ?? tier.monthlyFee,
-          totalFee: snap.get('totalFee') ?? quoteFee(tier.monthlyFee, months),
-          currency: snap.get('currency') ?? settings.currency,
+          adSlots: snap.get('adSlots') ?? settings.adSlots,
+          planDays,
+          price,
           /** Prefills the ad composer so approval isn't followed by retyping. */
           draft: snap.get('draft') ?? null,
           expiresAt,
@@ -303,7 +296,7 @@ export const adminReviewBusinessAdApplication = onCall(async (req) => {
       actor: admin.uid,
       targetUid: uid,
       radiusKm: decision === 'approve' ? radiusKm : null,
-      months: decision === 'approve' ? months : null,
+      price: decision === 'approve' ? price : null,
       reason: reason ?? null,
       createdAt: now,
     });
@@ -312,7 +305,7 @@ export const adminReviewBusinessAdApplication = onCall(async (req) => {
   const copy: Record<BusinessAdApplicationStatus, { title: string; body: string }> = {
     approved: {
       title: 'Your advertising plan is live 🎉',
-      body: `Approved for ${radiusKm} km and ${months} months. Open Find my Customers from the menu to publish your offer.`,
+      body: `Approved for ${radiusKm} km, ${planDays} days. Open Find my Customers from the menu to publish your offer.`,
     },
     rejected: {
       title: 'Advertising request rejected',

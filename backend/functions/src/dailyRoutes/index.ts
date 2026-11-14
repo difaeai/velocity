@@ -16,6 +16,11 @@
  *     radiusKm, time "HH:MM", notify, createdAt, updatedAt
  *   }
  *
+ * Two fields on it are the server's: `remindedOn` (reminders.ts, one reminder
+ * per Pakistan day) and `matchedAtMs` (here, the cooldown between match
+ * alerts). `notify: false` — the switch on the ride-sharing screen's My Routes
+ * — silences both.
+ *
  * The match runs server-side (admin SDK) via a collection-group scan, so it
  * sees every rider's routes without any per-collection rule exception.
  */
@@ -31,6 +36,26 @@ interface DailyRouteDoc {
   radiusKm?: number;
   time?: string;   // "HH:MM"
   notify?: boolean;
+  /** When this route last produced a match alert — see `matchCooledDown`. */
+  matchedAtMs?: number;
+}
+
+/**
+ * How long a route stays quiet after a match alert (owner, 2026-11-14: "the
+ * notifications keep being sent over and over").
+ *
+ * Every public pool opened on a rider's route used to be another push, so a
+ * busy corridor at eight in the morning could reach the same person five times
+ * before they got to work — which teaches people to switch Velocity's
+ * notifications off altogether, ride alerts included. The matching window is
+ * already ±60 minutes around their saved time, so ninety minutes means at most
+ * one alert per route for the morning and one for the evening.
+ */
+export const MATCH_COOLDOWN_MS = 90 * 60 * 1000;
+
+/** Whether this route may alert again — quiet for MATCH_COOLDOWN_MS after the last one. */
+export function matchCooledDown(route: { matchedAtMs?: number }, nowMs: number): boolean {
+  return typeof route.matchedAtMs !== 'number' || nowMs - route.matchedAtMs >= MATCH_COOLDOWN_MS;
 }
 
 const DEFAULT_RADIUS_KM = 3;
@@ -98,17 +123,22 @@ export async function notifyDailyRouteMatches(opts: {
   rideType: string;
 }): Promise<void> {
   const { tripId, hostUid, shareCode, pickup, dropoff, rideType } = opts;
-  const nowMinutes = karachiMinutes();
+  const nowMs = Date.now();
+  const nowMinutes = karachiMinutes(new Date(nowMs));
 
   const snap = await db.collectionGroup('dailyRoutes').get();
   if (snap.empty) return;
 
-  const matched = new Set<string>();
+  // The route that matched, per rider: one alert each, and the route is what
+  // carries the cooldown stamp afterwards.
+  const matched = new Map<string, FirebaseFirestore.DocumentReference>();
   for (const doc of snap.docs) {
     const uid = doc.ref.parent.parent?.id; // users/{uid}/dailyRoutes/{routeId}
     if (!uid || uid === hostUid || matched.has(uid)) continue; // one alert per rider
-    if (routeMatchesPool(doc.data() as DailyRouteDoc, { pickup, dropoff, nowMinutes })) {
-      matched.add(uid);
+    const route = doc.data() as DailyRouteDoc;
+    if (!matchCooledDown(route, nowMs)) continue;
+    if (routeMatchesPool(route, { pickup, dropoff, nowMinutes })) {
+      matched.set(uid, doc.ref);
     }
   }
 
@@ -123,6 +153,10 @@ export async function notifyDailyRouteMatches(opts: {
   const data: Record<string, string> = { tripId, screen: 'pool-join' };
   if (shareCode) data.code = shareCode;
 
-  await Promise.all([...matched].map((uid) => notifyUser(uid, title, body, 'ride', data)));
+  await Promise.all([...matched.keys()].map((uid) => notifyUser(uid, title, body, 'ride', data)));
+  // Stamped after the push, so an alert that never went out does not buy quiet.
+  const batch = db.batch();
+  for (const ref of matched.values()) batch.set(ref, { matchedAtMs: nowMs }, { merge: true });
+  await batch.commit();
   logger.info('Daily-route pool alerts sent', { tripId, riders: matched.size });
 }

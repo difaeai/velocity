@@ -7,7 +7,7 @@
  * a 00:10 pool are 20 minutes apart, not 1420.
  */
 import { describe, it, expect } from 'vitest';
-import { routeMatchesPool, minuteGap } from '../index';
+import { routeMatchesPool, minuteGap, matchCooledDown, MATCH_COOLDOWN_MS } from '../index';
 
 // F-8 Markaz → Blue Area (Islamabad), a ~2 km commute.
 const routePickup  = { lat: 33.700, lng: 73.050, address: 'F-8 Markaz' };
@@ -57,6 +57,22 @@ describe('routeMatchesPool', () => {
   it('uses the default radius when none is stored', () => {
     const noRadius = { ...baseRoute, radiusKm: undefined };
     expect(routeMatchesPool(noRadius, near(540))).toBe(true);
+  });
+});
+
+describe('matchCooledDown', () => {
+  const now = 1_763_000_000_000;
+
+  it('lets a route that has never alerted through', () => {
+    expect(matchCooledDown({}, now)).toBe(true);
+  });
+
+  it('keeps a route quiet right after an alert', () => {
+    expect(matchCooledDown({ matchedAtMs: now - 60_000 }, now)).toBe(false);
+  });
+
+  it('opens again once the cooldown has passed', () => {
+    expect(matchCooledDown({ matchedAtMs: now - MATCH_COOLDOWN_MS }, now)).toBe(true);
   });
 });
 
