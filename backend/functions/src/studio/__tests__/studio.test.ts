@@ -20,6 +20,7 @@ import {
   adminManageStudioCustomer,
   applyManage,
   studioCreateWorkspace,
+  studioSaveBusiness,
   studioSubmitPayment,
   txnKey,
 } from '../index';
@@ -79,12 +80,18 @@ async function approvedTrial(uid = OWNER, plan = 'content'): Promise<string> {
   return payRef.id;
 }
 
+/**
+ * Both halves of sign-up, as the page runs them: the workspace is opened on the
+ * payment alone, and the business is described afterwards — in between is where
+ * the customer connects their Facebook Page (owner, 2026-11-14).
+ */
 async function signUp(plan = 'content'): Promise<string> {
   // Only when the test has not already paid for something itself — a paid plan must stay the one that wins.
   if (!(await db().doc(`studioUsers/${OWNER}`).get()).get('prepaid')) await approvedTrial(OWNER, plan);
-  const res = (await studioCreateWorkspace.run(asUser({ ...SIGN_UP, plan }, OWNER, VERIFIED))) as {
-    workspaceId: string;
-  };
+  const res = (await studioCreateWorkspace.run(
+    asUser({ platforms: SIGN_UP.platforms }, OWNER, VERIFIED),
+  )) as { workspaceId: string };
+  await studioSaveBusiness.run(asUser(SIGN_UP, OWNER, { ...VERIFIED, ws: res.workspaceId }));
   return res.workspaceId;
 }
 
@@ -127,6 +134,74 @@ describe('signing up', () => {
     expect((await admin.auth().getUser(OWNER)).customClaims?.ws).toBe(wid);
   });
 
+  it('opens the workspace on the payment alone, as a shell with nothing described in it', async () => {
+    await approvedTrial(OWNER, 'content');
+    const { workspaceId } = (await studioCreateWorkspace.run(asUser({}, OWNER, VERIFIED))) as {
+      workspaceId: string;
+    };
+    const ws = (await db().doc(`workspaces/${workspaceId}`).get()).data()!;
+    // Paid for and real — a Facebook Page has something to connect to — but not a described business yet.
+    expect(ws.plan).toBe('content');
+    expect(ws.setupAtMs).toBeNull();
+    expect(ws.brand.what).toBe('');
+    expect(ws.name).toBe('owner@bakehouse.test');
+    // Nothing is made until the owner says go: the daily run is off by default and nothing turned it on.
+    const settings = (await db().doc(`workspaces/${workspaceId}/system/socialAutomation`).get()).data()!;
+    expect(settings.brief.about).toBe('');
+    expect(settings.enabled).toBeUndefined();
+  });
+
+  it('describes the business afterwards: the brand, the brief, the competitors and the stamp', async () => {
+    const wid = await signUp();
+    const ws = (await db().doc(`workspaces/${wid}`).get()).data()!;
+    expect(ws.setupAtMs).toBeGreaterThan(0);
+    expect(ws.name).toBe('Bake House');
+    expect(ws.brand.what).toContain('Fresh bread');
+    // The payment was filed under the email before there was a name for the business.
+    const payments = await db().collection('studioPayments').where('wid', '==', wid).get();
+    expect(payments.docs.map((d) => d.get('business'))).toEqual(['Bake House']);
+  });
+
+  it('keeps the owner’s own words and their competitors, and drops a blank row', async () => {
+    await approvedTrial(OWNER, 'content');
+    const { workspaceId } = (await studioCreateWorkspace.run(asUser({}, OWNER, VERIFIED))) as {
+      workspaceId: string;
+    };
+    await studioSaveBusiness.run(
+      asUser(
+        {
+          ...SIGN_UP,
+          notes: 'We are quiet in Ramzan.',
+          competitors: [
+            { name: 'Rival Bakers', url: 'rivalbakers.pk', instagram: '@rivalbakers' },
+            { name: '  ', url: '' },
+          ],
+        },
+        OWNER,
+        { ...VERIFIED, ws: workspaceId },
+      ),
+    );
+    const settings = (await db().doc(`workspaces/${workspaceId}/system/socialAutomation`).get()).data()!;
+    expect(settings.brief.about).toContain('We are quiet in Ramzan.');
+    expect(settings.competitors).toEqual([
+      { name: 'Rival Bakers', url: 'rivalbakers.pk', instagram: 'rivalbakers' },
+    ]);
+  });
+
+  it('refuses to describe the business twice, so an open sign-up tab cannot wipe the brief', async () => {
+    const wid = await signUp();
+    await expect(
+      studioSaveBusiness.run(asUser(SIGN_UP, OWNER, { ...VERIFIED, ws: wid })),
+    ).rejects.toThrow(/already set up/);
+  });
+
+  it('refuses to describe somebody else’s workspace', async () => {
+    const wid = await signUp();
+    await expect(
+      studioSaveBusiness.run(asUser(SIGN_UP, 'intruder', { ...VERIFIED, ws: wid })),
+    ).rejects.toThrow(/not yours/);
+  });
+
   it('never touches the Velocity desk', async () => {
     await signUp();
     expect((await db().collection('socialEmployees').get()).size).toBe(0);
@@ -135,12 +210,12 @@ describe('signing up', () => {
 
   it('refuses a second workspace for the same person', async () => {
     await signUp();
-    await expect(studioCreateWorkspace.run(asUser(SIGN_UP, OWNER, VERIFIED))).rejects.toThrow(/already has/);
+    await expect(studioCreateWorkspace.run(asUser({}, OWNER, VERIFIED))).rejects.toThrow(/already has/);
   });
 
   it('refuses an email nobody has proved yet', async () => {
     await expect(
-      studioCreateWorkspace.run(asUser(SIGN_UP, OWNER, { email: 'owner@bakehouse.test', email_verified: false })),
+      studioCreateWorkspace.run(asUser({}, OWNER, { email: 'owner@bakehouse.test', email_verified: false })),
     ).rejects.toThrow(/Verify your email/);
   });
 
@@ -277,7 +352,7 @@ describe('paying', () => {
     await expect(studioSubmitPayment.run(asUser(prepay('content', 'EP-777889'), OWNER, VERIFIED))).resolves.toMatchObject({ ok: true });
 
     // Nothing is free any more, not even the day (owner, 2026-11-11).
-    await expect(studioCreateWorkspace.run(asUser(SIGN_UP, OWNER, VERIFIED))).rejects.toThrow(/before your team starts/);
+    await expect(studioCreateWorkspace.run(asUser({}, OWNER, VERIFIED))).rejects.toThrow(/before your team starts/);
     expect((await db().collection('workspaces').get()).empty).toBe(true);
   });
 

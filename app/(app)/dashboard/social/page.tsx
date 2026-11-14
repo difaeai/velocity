@@ -280,6 +280,32 @@ export default function SocialOverview() {
         : 'Done — every piece waits for your Approve, and goes out the moment you press it.',
     );
 
+  /**
+   * The one question the console opens with. Answering it is also what starts
+   * the work — which is the whole point of asking it here (owner, 2026-11-14).
+   *
+   * Two calls on purpose: the goal is saved on its own first, so that a refusal
+   * to start the daily run (an empty office is one) never loses the answer and
+   * never asks the question twice.
+   */
+  async function answerGoal(goal: string) {
+    setSwitching(true);
+    setNotice(null);
+    setError(null);
+    try {
+      setSettings((await socialApi.updateSettings({ goal })).settings);
+      const res = await socialApi.updateSettings(RUN_ON);
+      setSettings(res.settings);
+      setNotice(
+        `Got it — everything I make is aimed at that from now on, starting today at ${localHourLabel(res.settings.runHour)}.`,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save that.');
+    } finally {
+      setSwitching(false);
+    }
+  }
+
   const setRunning = (on: boolean) =>
     save(on ? RUN_ON : { enabled: false }, (s) =>
       on
@@ -336,6 +362,9 @@ export default function SocialOverview() {
 
       {/* what is actually stopping it, if anything */}
       {readiness ? <Blockers blockers={blockers} /> : null}
+
+      {/* Asked once, on the first day, and read by every employee on every job afterwards. */}
+      {settings && !settings.goal?.trim() ? <GoalBox busy={switching} onSave={answerGoal} /> : null}
 
       {settings ? (
         <div id="make" style={{ scrollMarginTop: 16 }}>
@@ -445,6 +474,80 @@ export default function SocialOverview() {
 }
 
 /** The networks picked at sign-up that are not connected yet, with the connect itself on the home page. */
+/** Four answers that cover most businesses, so nobody has to invent the words — the box takes anything. */
+const GOALS: { icon: string; label: string; text: string }[] = [
+  { icon: '💰', label: 'More sales', text: 'Sell more of what we already sell — turn the audience into paying customers.' },
+  { icon: '📞', label: 'More enquiries', text: 'Bring in enquiries we can follow up and close.' },
+  { icon: '📣', label: 'Be known', text: 'Get our name known where we sell. Reach and recognition first, sales after.' },
+  { icon: '🚀', label: 'Launch something', text: 'Launch something new and get people trying it.' },
+];
+
+/**
+ * The one thing the console asks before it starts: what is all this for?
+ *
+ * It is not a setting among settings — it goes into every employee's prompt on
+ * every job (`briefBlock`), because a team told to sell writes a different post
+ * from a team told to be liked. Asked once; after that it lives in Settings.
+ */
+function GoalBox({ busy, onSave }: { busy: boolean; onSave: (goal: string) => void }) {
+  const [goal, setGoal] = useState('');
+  return (
+    // `--i` is the stagger the fx cards rise on; this one is first.
+    <section className="fx-card fx-rise" style={{ ['--i' as string]: 1 } as React.CSSProperties} aria-labelledby="goal-h">
+      <div className="fx-head">
+        <span className="fx-ico" style={{ background: '#eef8d2' }} aria-hidden>
+          🎯
+        </span>
+        <div>
+          <h2 id="goal-h" className="fx-h2">
+            What do you want out of this?
+          </h2>
+          <p className="fx-sub">Tell me once. Everything I make from now on is aimed at it.</p>
+        </div>
+        <span className="fx-pill" style={{ marginLeft: 'auto', background: 'var(--lime)', color: 'var(--ink)' }}>
+          <span className="fx-live" /> Answer once
+        </span>
+      </div>
+
+      <div className="fx-seg" style={{ marginBottom: 10 }}>
+        {GOALS.map((g) => (
+          <button
+            key={g.label}
+            type="button"
+            aria-checked={goal === g.text}
+            role="radio"
+            disabled={busy}
+            onClick={() => setGoal(g.text)}
+          >
+            <span aria-hidden>{g.icon}</span>
+            {g.label}
+          </button>
+        ))}
+      </div>
+
+      <textarea
+        className="fx-input"
+        rows={3}
+        value={goal}
+        disabled={busy}
+        onChange={(e) => setGoal(e.target.value)}
+        aria-label="What you want out of your business"
+        placeholder="In your own words — e.g. fill the shop on weekdays, not just weekends"
+      />
+
+      <button
+        type="button"
+        className="fx-btn"
+        style={{ marginTop: 12 }}
+        disabled={busy || goal.trim().length < 4}
+        onClick={() => onSave(goal.trim())}
+      >
+        {busy ? 'Saving…' : 'Save it and start working'}
+      </button>
+    </section>
+  );
+}
+
 function ChosenPlatforms({ platforms, accounts }: { platforms: SocialPlatform[]; accounts: SocialAccountDoc[] }) {
   const by = (p: SocialPlatform) => accounts.find((x) => x.platform === p);
   const open = platforms.filter((p) => by(p)?.status !== 'connected');

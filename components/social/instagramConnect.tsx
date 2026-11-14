@@ -291,9 +291,10 @@ export function InstagramConnect({
               </>
             ) : (
               <>
-                Sign in with the Facebook account that manages the Velocity Rides Page and tick it. We read
-                the Page back, find the Instagram Business account attached to it, and store a Page token
-                that does not expire — no token pasting, no ids to look up.
+                {/* Used by Studio customers during sign-up too, so the Page is theirs, not ours. */}
+                Sign in with the Facebook account that manages your Page and tick it. We read the Page back, find the
+                Instagram Business account attached to it, and store a Page token that does not expire — no token
+                pasting, no ids to look up.
               </>
             )}
           </p>

@@ -309,6 +309,139 @@ textarea.input {
   }
 }
 
+/* ── connect, your business, ready (owner, 2026-11-14) ──────────────────── */
+
+/* The console's own connect card, dropped into the sign-up: it keeps its
+   behaviour, it only has to stop looking like a second page. */
+.connectHost > * {
+  margin-bottom: 0 !important;
+  border-radius: 14px !important;
+}
+
+/* "or", with a rule either side of it. */
+.orLine {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.orLine::before,
+.orLine::after {
+  content: '';
+  height: 1px;
+  background: var(--line);
+}
+
+.connectedLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 13px;
+  border-radius: 12px;
+  border: 1px solid #bfe3cb;
+  background: #eef8f1;
+  color: var(--green);
+  font-size: 13.5px;
+  font-weight: 700;
+  animation: bubbleIn 0.4s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+.connectedLine span {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--green);
+  color: var(--lime);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+/* A line of explanation under a field's own label; `.sub` is a page subtitle and far too big here. */
+.hint {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--muted);
+  margin-top: -2px;
+}
+
+/* Who else is in their market: a name and a page, three times, all optional. */
+.rivals {
+  display: grid;
+  gap: 6px;
+}
+.rivalRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+  gap: 6px;
+}
+
+/* The one button at the end of sign-up. It is meant to be pressed. */
+.goBtn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  padding: 18px;
+  border: none;
+  border-radius: 16px;
+  background: linear-gradient(135deg, var(--green) 0%, #046b41 55%, #0a8a53 100%);
+  color: var(--lime);
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: 0.22em;
+  text-indent: 0.22em;
+  cursor: pointer;
+  overflow: hidden;
+  box-shadow: 0 18px 38px -18px rgba(0, 76, 49, 0.95);
+  animation: goIn 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  transition: transform 0.16s, box-shadow 0.16s;
+}
+.goBtn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 24px 46px -18px rgba(0, 76, 49, 1);
+}
+.goBtn:active {
+  transform: scale(0.99);
+}
+.goBtn::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 45%;
+  background: linear-gradient(100deg, transparent, rgba(204, 255, 0, 0.35), transparent);
+  transform: translateX(-200%);
+  animation: shine 3.4s ease-in-out 0.9s infinite;
+  pointer-events: none;
+}
+@keyframes goIn {
+  from {
+    opacity: 0;
+    transform: scale(0.88);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .connectedLine,
+  .goBtn,
+  .goBtn::after {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  .goBtn:hover {
+    transform: none;
+  }
+}
+
+
 .link {
   border: none;
   background: none;
@@ -652,7 +785,7 @@ textarea.input {
   color: var(--green);
 }
 
-/* The three plans, small. */
+/* The three plans: the reel is the card, and the money is read off it. */
 .planBoxes {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -661,34 +794,57 @@ textarea.input {
 .planBox {
   position: relative;
   display: grid;
-  gap: 4px;
-  justify-items: start;
-  padding: 8px 8px 10px;
+  gap: 0;
+  padding: 0;
   border: 1.5px solid var(--line);
-  border-radius: 14px;
+  border-radius: 16px;
   background: #fff;
   font: inherit;
   text-align: left;
   color: var(--text);
   cursor: pointer;
-  transition: border-color 0.18s, box-shadow 0.18s, transform 0.18s;
+  overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.22s, transform 0.22s;
+  animation: boxIn 0.42s cubic-bezier(0.2, 0.8, 0.3, 1) both;
 }
 .planBox:hover {
   border-color: var(--line-hi);
-  transform: translateY(-2px);
+  transform: translateY(-3px);
 }
 .planBoxOn {
   border-color: var(--green);
-  box-shadow: 0 10px 26px -14px rgba(0, 76, 49, 0.55);
+  box-shadow: 0 16px 34px -16px rgba(0, 76, 49, 0.6), 0 0 0 3px rgba(204, 255, 0, 0.3);
+  transform: translateY(-3px);
 }
-.boxFilm {
+@keyframes boxIn {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.96);
+  }
+}
+
+/* The picture, and everything that sits on it. */
+.boxArt {
   position: relative;
   display: block;
   width: 100%;
-  aspect-ratio: 16 / 10;
-  border-radius: 9px;
+  /* Portrait, like the reels it is showing. */
+  aspect-ratio: 3 / 4;
+  background: #0b1f18;
   overflow: hidden;
-  background: #eef3f0;
+}
+.boxFilm {
+  position: absolute;
+  inset: 0;
+  display: block;
+  /* The ones not chosen pull back so the chosen one is obviously the chosen one. */
+  filter: saturate(0.45) brightness(0.82);
+  transform: scale(1.01);
+  transition: filter 0.3s, transform 0.5s;
+}
+.planBoxOn .boxFilm {
+  filter: none;
+  transform: scale(1.06);
 }
 .boxFilm video,
 .boxFilm img {
@@ -697,53 +853,132 @@ textarea.input {
   object-fit: cover;
   display: block;
 }
+/* The name and the price, read off the picture. */
+.boxOver {
+  position: absolute;
+  inset: auto 0 0 0;
+  display: grid;
+  gap: 1px;
+  padding: 22px 9px 9px;
+  background: linear-gradient(to top, rgba(2, 18, 13, 0.92) 18%, rgba(2, 18, 13, 0.55) 55%, transparent);
+  pointer-events: none;
+}
+.boxName {
+  font-size: 13.5px;
+  font-weight: 750;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+}
+.boxCost {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: 19px;
+  font-weight: 800;
+  color: var(--lime);
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  animation: costFlip 0.34s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+.boxCost small {
+  font-size: 11px;
+  font-weight: 650;
+  color: rgba(255, 255, 255, 0.72);
+  letter-spacing: 0;
+}
+@keyframes costFlip {
+  from {
+    opacity: 0;
+    transform: translateY(-7px);
+  }
+}
 .boxTick {
   position: absolute;
-  inset: auto 5px 5px auto;
-  width: 20px;
-  height: 20px;
+  inset: 7px 7px auto auto;
+  width: 22px;
+  height: 22px;
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: var(--green);
-  color: var(--lime);
+  background: var(--lime);
+  color: var(--green);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 900;
   opacity: 0;
-  transform: scale(0.6);
-  transition: opacity 0.18s, transform 0.18s;
+  transform: scale(0.5);
+  transition: opacity 0.2s, transform 0.2s;
 }
 .planBoxOn .boxTick {
   opacity: 1;
   transform: scale(1);
 }
-.boxName {
-  font-size: 14px;
-  font-weight: 750;
-  margin-top: 2px;
-}
-.boxCost {
-  font-family: var(--font-display), system-ui, sans-serif;
-  font-size: 17px;
-  font-weight: 700;
-  color: var(--green);
-  letter-spacing: -0.02em;
-}
-.boxCost small {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--muted);
-}
+/* The networks it works on, as a row under the picture. One row, always: a
+   second one would make that card's picture shorter than the other two. */
 .boxLogos {
   display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-  margin-top: 2px;
+  gap: 5px;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  padding: 8px 9px 9px;
+  background: #fff;
+}
+.boxLogos img {
+  flex: none;
 }
 .boxLogos img {
   width: 16px;
   height: 16px;
-  opacity: 0.85;
+  opacity: 0.45;
+  transition: opacity 0.25s;
+  animation: logoPop 0.3s cubic-bezier(0.2, 1.5, 0.4, 1) both;
+}
+.planBoxOn .boxLogos img {
+  opacity: 1;
+}
+@keyframes logoPop {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
+/* Monthly or yearly, as one switch rather than two loose chips. */
+.billSeg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+}
+.billHalf {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: none;
+  border-radius: 999px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.22s, color 0.22s, box-shadow 0.22s;
+}
+.billHalf[aria-checked='true'] {
+  background: var(--green);
+  color: #fff;
+  box-shadow: 0 6px 16px -8px rgba(0, 76, 49, 0.9);
+}
+.billSave {
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--lime);
+  color: var(--green);
 }
 
 /* What the picked plan does, ticked off. */
@@ -1398,7 +1633,7 @@ textarea.input {
 }
 
 /* The plan you pick catches the light once, and its tick springs in. */
-.planBoxOn .boxFilm::after {
+.planBoxOn .boxArt::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -1502,7 +1737,10 @@ textarea.input {
   .stepOn .stepNum,
   .stepDone .stepNum,
   .planBoxOn .boxTick,
-  .planBoxOn .boxFilm::after,
+  .planBoxOn .boxArt::after,
+  .planBox,
+  .boxCost,
+  .boxLogos img,
   .page::before,
   .primary::after {
     animation: none;
@@ -1510,7 +1748,12 @@ textarea.input {
     transform: none;
   }
   .payWayOn,
+  .planBoxOn,
   .planBox:active {
+    transform: none;
+  }
+  .boxFilm,
+  .planBoxOn .boxFilm {
     transform: none;
   }
   .lookingRing {

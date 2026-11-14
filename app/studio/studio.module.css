@@ -38,6 +38,210 @@
   color: var(--text-dim);
 }
 
+/* ── the hero's offer, acted out (owner, 2026-11-14) ────────────────────
+   The eight seats a business would otherwise hire for, struck off one after
+   another until only Vexa and her price are left. It is the argument of the
+   page, so it moves rather than being read. */
+
+.swap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin: 22px 0 26px;
+  padding: 0;
+  list-style: none;
+}
+
+.swap li {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line-hi);
+  border-radius: 999px;
+  padding: 6px 13px;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.2;
+  color: var(--text-mut);
+  background: var(--card);
+  white-space: nowrap;
+}
+
+/* Each one arrives, then has a line drawn through it and falls back. */
+.swapGone {
+  animation: swapOut 700ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.swapGone::after {
+  content: '';
+  position: absolute;
+  left: 9px;
+  right: 9px;
+  top: 50%;
+  height: 1.5px;
+  border-radius: 2px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left;
+  animation: strike 420ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation-delay: inherit;
+}
+
+@keyframes swapOut {
+  0% {
+    opacity: 0;
+    translate: 0 8px;
+  }
+  45% {
+    opacity: 1;
+    translate: 0 0;
+  }
+  100% {
+    opacity: 0.42;
+    translate: 0 0;
+  }
+}
+
+@keyframes strike {
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* The one that is left. It is the punchline of the row, so it is bigger than
+   the eight it replaced and carries the arrow into it. */
+.swap .swapHer {
+  border-color: var(--lime);
+  background: var(--lime);
+  color: var(--ink);
+  font-size: 14.5px;
+  font-weight: 900;
+  padding: 8px 16px;
+  box-shadow: 0 10px 26px -12px rgba(204, 255, 0, 0.9);
+  animation: swapHer 620ms cubic-bezier(0.2, 1.5, 0.4, 1) backwards;
+}
+
+@keyframes swapHer {
+  from {
+    opacity: 0;
+    scale: 0.6;
+  }
+}
+
+/* ── what the money buys, with a picture of it ──────────────────────────── */
+
+.priceStrip {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 26px;
+  padding: 12px 18px 12px 12px;
+  border: 1px solid var(--line-hi);
+  border-radius: 20px;
+  background: linear-gradient(120deg, rgba(204, 255, 0, 0.1), rgba(255, 255, 255, 0.04) 55%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  width: fit-content;
+  max-width: 100%;
+}
+
+/* A frame of what it actually makes, not a stock illustration. */
+.priceReel {
+  flex: none;
+  width: 72px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: 13px;
+  box-shadow: 0 14px 30px -16px rgba(0, 0, 0, 0.9);
+}
+
+.priceWords {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.priceWords > b {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: clamp(30px, 4.2vw, 40px);
+  font-weight: 900;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  color: var(--lime);
+}
+
+.priceWords > b small {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: var(--text-mut);
+}
+
+.priceWords > span {
+  font-size: 13.5px;
+  color: var(--text-mut);
+  line-height: 1.4;
+}
+
+.priceLogos {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.priceLogos img {
+  width: 22px;
+  height: 22px;
+  animation: logoIn 420ms cubic-bezier(0.2, 1.5, 0.4, 1) backwards;
+}
+
+@keyframes logoIn {
+  from {
+    opacity: 0;
+    scale: 0.4;
+  }
+}
+
+.heroNoteLink {
+  color: var(--text);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+@media (max-width: 560px) {
+  .priceStrip {
+    gap: 12px;
+    padding: 10px 14px 10px 10px;
+  }
+  .priceReel {
+    width: 56px;
+    height: 76px;
+  }
+}
+
+/* Nothing here moves for anyone who asked for stillness: the lines are simply
+   already struck and the price already there. */
+@media (prefers-reduced-motion: reduce) {
+  .swapGone,
+  .swap .swapHer,
+  .priceLogos img {
+    animation: none;
+  }
+  .swapGone {
+    opacity: 0.42;
+  }
+  .swapGone::after {
+    animation: none;
+    transform: scaleX(1);
+  }
+}
+
 /* ── how it works ──────────────────────────────────────────────────────── */
 .steps {
   display: grid;
@@ -541,6 +745,13 @@
     translate: 0 20px;
     filter: blur(7px);
   }
+}
+
+.heroCopy > :nth-child(6) {
+  animation-delay: 600ms;
+}
+.heroCopy > :nth-child(7) {
+  animation-delay: 700ms;
 }
 
 /* A second light, low and to her left, drifting against the first. */

@@ -400,6 +400,20 @@
   width: 100%;
 }
 
+/* The demo, under the plan's own button: there, but never competing with it. */
+.demoCta {
+  width: 100%;
+  margin-top: 8px;
+  padding-block: 9px;
+  font-size: 13.5px;
+  background: transparent;
+  color: var(--text-mut);
+}
+
+.demoCta:hover {
+  color: var(--text);
+}
+
 /* A glint that runs across the button. */
 .cta::after {
   content: "";

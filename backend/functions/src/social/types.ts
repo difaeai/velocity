@@ -892,6 +892,13 @@ export interface SocialSettings {
   crewInstructions: string;
   /** The long brief: everything you want them to know, in one place. */
   brief: SocialBrief;
+  /**
+   * What the owner wants out of all this, in their own words — sales, leads,
+   * a name people know. Asked once on the console's first day and read by
+   * every employee on every job (`briefBlock`), because a team told to post
+   * and a team told to sell write different posts. Empty until it is answered.
+   */
+  goal: string;
 
   /**
    * Render the reel ourselves rather than stopping at the brief.
@@ -1027,6 +1034,7 @@ export const DEFAULT_SETTINGS: SocialSettings = {
 
   crewInstructions: '',
   brief: { ...EMPTY_BRIEF },
+  goal: '',
   autoRenderVideo: true,
   autoPublish: false,
   publishModeChosen: false,

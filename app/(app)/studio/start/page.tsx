@@ -45,7 +45,15 @@ import { ref, uploadBytes } from 'firebase/storage';
 
 import { auth, db, storage } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth';
-import { SOCIAL_PLATFORMS, studioApi, type SocialPlatform, type StudioPaymentDoc } from '@/lib/api';
+import {
+  socialApi,
+  studioApi,
+  type LaunchStateDoc,
+  type SocialAccountDoc,
+  type SocialPlatform,
+  type StudioPaymentDoc,
+} from '@/lib/api';
+import { InstagramConnect } from '@/components/social/instagramConnect';
 import { useStudioMoney } from '@/lib/useStudioMoney';
 import { useStudioPriceRaised } from '@/lib/useStudioPriceRaised';
 import {
@@ -59,18 +67,18 @@ import {
   studioUsd,
   type StudioBilling,
   type StudioPlanId,
+  type StudioWorkspace,
 } from '@/lib/studio';
 import { VelocityIcon } from '@/components/BrandMark';
 import { useReducedMotion, useSaveData } from '@/components/site/useReducedMotion';
 import { FieldError } from '@/components/states';
-import { PLATFORM_META } from '@/components/social/shared';
 import { carried } from '../StudioAuth';
 import s from '../auth.module.css';
 import a from '../../dashboard/social/account.module.css';
 
-const STAGES = ['Account', 'Verify email', 'Pay or try', 'Your business', 'Platforms'];
+const STAGES = ['Account', 'Verify email', 'Pay', 'Connect', 'Your business', 'Ready'];
 
-/** The five answers that become the team's brief. */
+/** The answers that become the team's brief. */
 interface Brand {
   businessName: string;
   what: string;
@@ -79,7 +87,21 @@ interface Brand {
   language: string;
   differences: string;
   website: string;
+  /** Anything else the owner wanted to say, in their own words. */
+  notes: string;
 }
+
+/** The page Vexa was pointed at once a network is connected (or a website given), and where she would post. */
+interface Connected {
+  /** The address she reads: the connected Page's own, or the website they typed. */
+  link: string;
+  platforms: SocialPlatform[];
+  /** How they got here, for the line she says on the next screen. */
+  how: 'instagram' | 'facebook' | 'website';
+}
+
+/** Three is enough to aim the morning research; all of it is optional. */
+const COMPETITOR_ROWS = 3;
 
 export default function StudioStartPage() {
   return (
@@ -102,16 +124,24 @@ function Start() {
   // The token's own flag only changes after a refresh; this carries the moment between.
   const [verifiedNow, setVerifiedNow] = useState(false);
   const verified = Boolean(user?.emailVerified) || verifiedNow;
-  const [brand, setBrand] = useState<Brand | null>(null);
-  /** The networks Vexa picked out for this business when she read their page; the next step opens on them. */
-  const [suggested, setSuggested] = useState<SocialPlatform[]>([]);
   const [payments, setPayments] = useState<StudioPaymentDoc[]>([]);
+  /** Their workspace once the money has cleared; `setupAtMs === null` while sign-up is unfinished. */
+  const [ws, setWs] = useState<StudioWorkspace | null>(null);
+  /** The page they connected, and what Vexa read off it. */
+  const [connected, setConnected] = useState<Connected | null>(null);
+  const [found, setFound] = useState<LookUpResult | null>(null);
+  /** The brief, saved: from here the analysis runs and GO opens the console. */
+  const [saved, setSaved] = useState<{ knowledge: string; links: string[] } | null>(null);
+  const [opening, setOpening] = useState<string | null>(null);
 
   useEffect(() => {
     if (initializing) return;
     if (!user) router.replace(`/studio/signup${keep}`);
-    else if (workspaceId) router.replace('/dashboard/social');
-  }, [initializing, user, workspaceId, keep, router]);
+    // A finished workspace belongs in the console. One still being set up —
+    // opened the moment the money cleared, so a Page had something to connect
+    // to — stays here until its owner presses GO.
+    else if (workspaceId && ws && ws.setupAtMs !== null) router.replace('/dashboard/social');
+  }, [initializing, user, workspaceId, ws, keep, router]);
 
   // Puts someone who has not finished on the admin's Users list.
   const uid = user?.uid;
@@ -128,12 +158,54 @@ function Start() {
       () => setPayments([]),
     );
   }, [uid]);
+  // Their workspace, from the moment it exists: the connect step reads it and the redirect above waits on it.
+  useEffect(() => {
+    // Only ever null → set, for the length of this page: a claim is not taken away mid sign-up.
+    if (!workspaceId) return;
+    return onSnapshot(
+      doc(db, 'workspaces', workspaceId),
+      (snap) => setWs(snap.exists() ? (snap.data() as StudioWorkspace) : null),
+      () => setWs(null),
+    );
+  }, [workspaceId]);
+
   const prepay = payments.filter((p) => p.wid === null).sort((x, y) => y.createdAtMs - x.createdAtMs)[0] ?? null;
   const paid = prepay?.status === 'approved' ? prepay : null;
 
+  /**
+   * Paid for, so the workspace is opened now rather than at the end of sign-up
+   * (owner, 2026-11-14): connecting a Facebook Page needs a workspace to connect
+   * it to. It is a shell until the business is described — no brief, and the
+   * daily run is off — and `setupAtMs: null` is what keeps the console from
+   * opening on it.
+   */
+  const making = useRef(false);
+  useEffect(() => {
+    if (!paid || workspaceId || isAdmin || making.current) return;
+    making.current = true;
+    void (async () => {
+      try {
+        await studioApi.createWorkspace({});
+        // The workspace claim only reaches this page in a fresh token.
+        await auth.currentUser?.getIdToken(true);
+      } catch (e) {
+        making.current = false;
+        setOpening(e instanceof Error ? e.message : 'Your workspace could not be opened.');
+      }
+    })();
+  }, [paid, workspaceId, isAdmin]);
+
+  /**
+   * The plan that was paid for. `prepay` only finds the payment while it has no
+   * workspace on it — and opening the workspace is what puts one there — so once
+   * that has happened the workspace itself is the proof, and the record of which
+   * plan. Without this the page drops back to the pay step the moment it succeeds.
+   */
+  const bought = paid?.plan ?? ws?.plan ?? null;
+
   // Nothing is free any more, not even the day (owner, 2026-11-11): the only way
   // past the pay step is an approved payment, a month of a plan or a dollar for a day.
-  const stage = !verified ? 2 : !paid ? 3 : !brand ? 4 : 5;
+  const stage = !verified ? 2 : !bought ? 3 : !connected ? 4 : !saved ? 5 : 6;
   // The pay step is two columns, so it needs the room; every other step is one.
   const paying = stage === 3 && !isAdmin && prepay?.status !== 'pending' && !(params.get('paid') === 'card' && !prepay);
 
@@ -196,23 +268,35 @@ function Start() {
                     rejected={prepay?.status === 'rejected' ? prepay : null}
                   />
                 )
-              ) : stage === 4 ? (
-                // Stage 4 and 5 are only reachable once `paid` is set, which is what the stage above checks.
+              ) : // Stage 4 and after are only reachable once `paid` is set, which is what the stage above checks.
+              stage === 4 ? (
+                workspaceId && ws ? (
+                  <ConnectCard
+                    wid={workspaceId}
+                    onDone={(c, f) => {
+                      setFound(f);
+                      setConnected(c);
+                    }}
+                  />
+                ) : (
+                  <OpeningCard error={opening} />
+                )
+              ) : stage === 5 ? (
                 <BusinessCard
-                  plan={(paid as StudioPaymentDoc).plan}
+                  found={found}
+                  connected={connected as Connected}
+                  plan={bought as StudioPlanId}
                   email={user.email}
                   onSignOut={signOut}
-                  onDone={(b, picked) => {
-                    setSuggested(picked);
-                    setBrand(b);
-                  }}
+                  onBack={() => setConnected(null)}
+                  onSaved={(knowledge, links) => setSaved({ knowledge, links })}
                 />
               ) : (
-                <PlatformsCard
-                  brand={brand as Brand}
-                  plan={(paid as StudioPaymentDoc).plan}
-                  suggested={suggested}
-                  onBack={() => setBrand(null)}
+                <ReadyCard
+                  wid={workspaceId as string}
+                  name={ws?.brand.name || 'your business'}
+                  knowledge={(saved as { knowledge: string }).knowledge}
+                  links={(saved as { links: string[] }).links}
                 />
               )}
             </div>
@@ -417,32 +501,53 @@ function PlanBoxes({
 }) {
   return (
     <div className={s.planBoxes} role="radiogroup" aria-label="Plan">
-      {STUDIO_PLAN_IDS.map((id) => {
+      {STUDIO_PLAN_IDS.map((id, i) => {
         const on = id === plan;
         return (
-          <button key={id} type="button" role="radio" aria-checked={on} className={`${s.planBox} ${on ? s.planBoxOn : ''}`} onClick={() => onPlan(id)}>
-            <span className={s.boxFilm} aria-hidden>
-              {on && !still ? (
-                <video autoPlay muted loop playsInline poster={`${PLAN_FILM[id]}.jpg`}>
-                  <source src={`${PLAN_FILM[id]}.mp4`} type="video/mp4" />
-                </video>
-              ) : (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={`${PLAN_FILM[id]}.jpg`} alt="" />
-              )}
+          <button
+            key={id}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            className={`${s.planBox} ${on ? s.planBoxOn : ''}`}
+            // Each card arrives after the one before it; `still` stops the whole sequence dead.
+            style={still ? undefined : { animationDelay: `${0.06 * i}s` }}
+            onClick={() => onPlan(id)}
+          >
+            {/* The reel is the card: the price and the name are read off it, not under it. */}
+            <span className={s.boxArt}>
+              <span className={s.boxFilm} aria-hidden>
+                {on && !still ? (
+                  <video autoPlay muted loop playsInline poster={`${PLAN_FILM[id]}.jpg`}>
+                    <source src={`${PLAN_FILM[id]}.mp4`} type="video/mp4" />
+                  </video>
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={`${PLAN_FILM[id]}.jpg`} alt="" />
+                )}
+              </span>
+              <span className={s.boxOver}>
+                <b className={s.boxName}>{PLAN_SHORT[id]}</b>
+                <span key={`${billing}-${raised}`} className={s.boxCost}>
+                  {studioUsd(studioPriceUsd(id, billing, raised))}
+                  <small>/{billing === 'year' ? 'year' : 'month'}</small>
+                </span>
+              </span>
               <span className={s.boxTick} aria-hidden>
                 ✓
               </span>
             </span>
-            <b className={s.boxName}>{PLAN_SHORT[id]}</b>
-            <span className={s.boxCost}>
-              {studioUsd(studioPriceUsd(id, billing, raised))}
-              <small>/{billing === 'year' ? 'year' : 'month'}</small>
-            </span>
             <span className={s.boxLogos} aria-hidden>
-              {PLAN_LOGOS[id].map((f) => (
+              {PLAN_LOGOS[id].map((f, n) => (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img key={f} src={`/site/logos/${f}.svg`} alt="" width={16} height={16} />
+                <img
+                  key={f}
+                  src={`/site/logos/${f}.svg`}
+                  alt=""
+                  width={16}
+                  height={16}
+                  style={still ? undefined : { animationDelay: `${0.18 + 0.05 * n}s` }}
+                />
               ))}
             </span>
           </button>
@@ -604,10 +709,19 @@ function PayCard({
           {trial ? null : (
             <div className={s.field} role="radiogroup" aria-label="Billing">
               Billing
-              <div className={s.plans}>
+              {/* One track, two halves, the chosen one filled: a switch rather than two loose chips. */}
+              <div className={s.billSeg}>
                 {(['month', 'year'] as const).map((b) => (
-                  <button key={b} type="button" role="radio" aria-checked={billing === b} className={s.planChip} onClick={() => onBilling(b)}>
-                    {b === 'month' ? 'Monthly' : `Yearly — save ${STUDIO_YEAR_DISCOUNT_PCT}%`}
+                  <button
+                    key={b}
+                    type="button"
+                    role="radio"
+                    aria-checked={billing === b}
+                    className={s.billHalf}
+                    onClick={() => onBilling(b)}
+                  >
+                    {b === 'month' ? 'Monthly' : 'Yearly'}
+                    {b === 'year' ? <i className={s.billSave}>save {STUDIO_YEAR_DISCOUNT_PCT}%</i> : null}
                   </button>
                 ))}
               </div>
@@ -902,27 +1016,81 @@ function WaitingCard({ payment }: { payment: StudioPaymentDoc }) {
 
 /** What Vexa says while she is reading, so the wait shows the work rather than a bar. */
 const LOOKING = [
-  'Finding your page…',
+  'Opening your page…',
   'Reading what you sell…',
   'Working out who buys it…',
   'Picking the networks that suit you…',
 ];
 
+/** Vexa, with whatever she is saying beside her. */
+function VexaSays({ children }: { children: React.ReactNode }) {
+  return (
+    <div className={s.vexaSays}>
+      <span className={s.vexaFig} aria-hidden>
+        {/* A cut-out with its own alpha: next/image would only re-encode it. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/site/vexa.webp" alt="" width={854} height={853} draggable={false} />
+      </span>
+      <p className={s.vexaBubble}>{children}</p>
+    </div>
+  );
+}
+
+/** The second between the money clearing and the workspace existing — and the one place it can fail. */
+function OpeningCard({ error }: { error: string | null }) {
+  return (
+    <div className={s.card}>
+      <VexaSays>
+        {error
+          ? 'Your payment is in, but I could not open your workspace just now. Nothing has been lost — your plan is paid for.'
+          : 'Thank you — your payment is in. Opening your workspace…'}
+      </VexaSays>
+      {error ? (
+        <>
+          <p className={s.error} role="alert">
+            {error}
+          </p>
+          <button type="button" className={s.primary} onClick={() => window.location.reload()}>
+            Try again
+          </button>
+        </>
+      ) : (
+        <div className={s.looking} aria-live="polite">
+          <span className={s.lookingRing} aria-hidden />
+          <b className={s.lookingLine}>Hiring your team…</b>
+          <small>A moment. Your money is already on your plan.</small>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
- * Vexa reading the customer's own page, rather than the customer typing it out.
+ * Step four: connect the page Vexa is about to work on.
  *
- * The owner's objection (2026-11-12) was that a product that claims to think
- * should not open with seven empty boxes. So the step opens with a choice:
- * hand her the page you already have and she fills the brief in, or type it
- * yourself. What she finds is shown in the same editable form either way —
- * nothing is saved behind the customer's back, and a field she could not find
- * stays empty rather than being invented.
+ * Connecting comes before anything is asked about the business (owner,
+ * 2026-11-14), because the whole point is that she tells them what their
+ * business is rather than making them type it. Instagram and Facebook are one
+ * Facebook sign-in — the same handshake the console uses, against the
+ * workspace the payment just opened. Anyone with neither gives a website
+ * instead, and she reads that the same way.
  */
-function LookUpCard({ onFound, onType }: { onFound: (found: LookUpResult) => void; onType: () => void }) {
-  const [link, setLink] = useState('');
+function ConnectCard({ wid, onDone }: { wid: string; onDone: (c: Connected, found: LookUpResult) => void }) {
+  const [accounts, setAccounts] = useState<SocialAccountDoc[]>([]);
+  const [site, setSite] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [line, setLine] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(
+    () =>
+      onSnapshot(
+        collection(db, `workspaces/${wid}/socialAccounts`),
+        (snap) => setAccounts(snap.docs.map((d) => d.data() as SocialAccountDoc)),
+        () => setAccounts([]),
+      ),
+    [wid],
+  );
 
   useEffect(() => {
     if (!busy) return;
@@ -930,157 +1098,201 @@ function LookUpCard({ onFound, onType }: { onFound: (found: LookUpResult) => voi
     return () => clearInterval(id);
   }, [busy]);
 
-  async function look() {
+  const ig = accounts.find((a) => a.platform === 'instagram');
+  const fb = accounts.find((a) => a.platform === 'facebook');
+  const igOn = ig?.status === 'connected' ? ig : null;
+  const fbOn = fb?.status === 'connected' ? fb : null;
+  const handle = igOn?.handle ? igOn.handle.replace(/^@/, '') : null;
+  // What is connected gives Vexa a real address to read; otherwise whatever they typed.
+  const from: Connected | null = handle
+    ? { link: `instagram.com/${handle}`, platforms: fbOn ? ['instagram', 'facebook'] : ['instagram'], how: 'instagram' }
+    : fbOn?.externalId
+      ? { link: `facebook.com/${fbOn.externalId}`, platforms: ['facebook'], how: 'facebook' }
+      : null;
+  const typed = site.trim();
+
+  async function go() {
+    const base: Connected = from ?? { link: typed, platforms: [], how: 'website' };
     setBusy(true);
     setError(null);
     setLine(0);
     try {
-      onFound(await studioApi.lookUp({ link: link.trim() }));
+      const look = await studioApi.lookUp({ link: base.link });
+      // Hers and theirs both: a network she suggests is worth offering even when nothing is connected to it yet.
+      onDone({ ...base, platforms: Array.from(new Set([...base.platforms, ...look.platforms])) }, look);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'I could not read that page. Try another address, or tell me yourself.');
+      setError(e instanceof Error ? e.message : 'I could not read that page. Try another address.');
       setBusy(false);
     }
   }
 
-  return (
-    <div className={s.card}>
-      <div className={s.vexaSays}>
-        <span className={s.vexaFig} aria-hidden>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/site/vexa.webp" alt="" width={854} height={853} draggable={false} />
-        </span>
-        <p className={s.vexaBubble}>
-          I would rather work your business out than make you type it. Give me the page you already have — your website,
-          your Instagram, your Facebook — and I will read it and come back with what you sell, who buys it and where I
-          think you should be posting.
-        </p>
-      </div>
-
-      {busy ? (
+  if (busy) {
+    return (
+      <div className={s.card}>
+        <VexaSays>Give me a few seconds with it — I am actually reading the page, not guessing.</VexaSays>
         <div className={s.looking} aria-live="polite">
           <span className={s.lookingRing} aria-hidden />
           <b key={line} className={s.lookingLine}>
             {LOOKING[line]}
           </b>
-          <small>This takes a few seconds — I am actually reading it.</small>
+          <small>Then I will show you what I found and you can correct me.</small>
         </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={s.card}>
+      <VexaSays>
+        Connect the page you already post on and I will do the rest — read it, work out what you sell and who buys it,
+        and have your first month planned before you have typed a word.
+      </VexaSays>
+
+      {/* The real Facebook handshake, exactly as the console runs it: Instagram and the Page in one sign-in. */}
+      <div className={s.connectHost}>
+        <InstagramConnect account={ig} />
+      </div>
+
+      {from ? (
+        <p className={s.connectedLine}>
+          <span aria-hidden>✓</span>
+          Connected — {igOn?.displayName ?? (handle ? `@${handle}` : null) ?? fbOn?.displayName ?? 'your Facebook Page'}
+        </p>
       ) : (
-        <form
-          className={s.doors}
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (link.trim().length >= 3) void look();
-          }}
-        >
-          <div className={`${s.door} ${s.doorOn}`}>
-            <span className={s.doorIcon} aria-hidden>
-              <svg viewBox="0 0 24 24" width={22} height={22} fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="11" cy="11" r="7" />
-                <path d="m16.3 16.3 4.2 4.2" />
-              </svg>
-            </span>
-            <b>Connect your page — I work it out</b>
-            <small>Your website, Instagram, Facebook or Google listing. One address is enough.</small>
+        <>
+          <div className={s.orLine} aria-hidden>
+            <span>or</span>
+          </div>
+          <label className={s.field}>
+            No Instagram or Facebook yet? Give me your website.
             <input
               className={s.input}
-              value={link}
-              onChange={(e) => setLink(e.target.value)}
+              value={site}
+              onChange={(e) => setSite(e.target.value)}
               placeholder="bakehouse.pk"
-              aria-label="Your website or page address"
-              autoFocus
+              aria-label="Your website address"
             />
-            {error ? (
-              <p className={s.error} role="alert">
-                {error}
-              </p>
-            ) : null}
-            <button type="submit" className={s.primary} disabled={link.trim().length < 3}>
-              Look me up
-            </button>
-          </div>
-
-          <div className={s.door}>
-            <span className={s.doorIcon} aria-hidden>
-              <svg viewBox="0 0 24 24" width={22} height={22} fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
-                <path d="M4 20h16" />
-                <path d="M14.5 4.8a2 2 0 0 1 2.8 2.8L8.6 16.3l-3.6.9.9-3.6Z" />
-              </svg>
-            </span>
-            <b>I&rsquo;ll tell you myself</b>
-            <small>Four short answers. Quicker if you have nothing online yet.</small>
-            <button type="button" className={s.ghost} onClick={onType}>
-              Fill it in myself
-            </button>
-          </div>
-        </form>
+          </label>
+        </>
       )}
+
+      {error ? (
+        <p className={s.error} role="alert">
+          {error}
+        </p>
+      ) : null}
+
+      <button type="button" className={s.primary} disabled={!from && typed.length < 3} onClick={() => void go()}>
+        {from ? 'Next — read my page' : 'Next — read my website'}
+      </button>
     </div>
   );
 }
 
 type LookUpResult = Awaited<ReturnType<typeof studioApi.lookUp>>;
 
+/** What the owner knows about their own market, in their words, for the read that follows. */
+function knowledgeFrom(f: Brand, rivals: { name: string; url: string }[]): string {
+  const named = rivals.map((r) => r.name).filter(Boolean);
+  return [
+    `${f.businessName} — ${f.what}`,
+    `Customers: ${f.audience}. Where: ${f.market}. Posts are written in ${f.language}.`,
+    f.differences ? `Why people pick us: ${f.differences}` : '',
+    f.notes,
+    named.length ? `Who we are up against: ${named.join(', ')}.` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+/**
+ * Step five: what she read, for them to correct.
+ *
+ * Nothing here was invented — a field she could not find off the page comes
+ * back empty rather than plausible, which is the only version of this worth
+ * showing. Two boxes are theirs alone: anything she could not know, and who
+ * else is in their market, which is what the morning research reads around.
+ */
 function BusinessCard({
+  found,
+  connected,
   plan,
   email,
   onSignOut,
-  onDone,
+  onBack,
+  onSaved,
 }: {
-  /** Always the plan that was paid for — a month of it, or the day. It cannot be changed here. */
+  /** Null only if the look-up somehow returned nothing; the form is then empty and theirs to fill. */
+  found: LookUpResult | null;
+  connected: Connected;
+  /** Always the plan that was paid for. It cannot be changed here. */
   plan: StudioPlanId;
   email: string | null;
   onSignOut: () => void;
-  onDone: (brand: Brand, suggested: SocialPlatform[]) => void;
+  onBack: () => void;
+  onSaved: (knowledge: string, links: string[]) => void;
 }) {
-  /** The chooser, then the form — reached either by her reading the page or by the customer picking to type. */
-  const [asking, setAsking] = useState(true);
-  const [found, setFound] = useState<LookUpResult | null>(null);
   const [f, setF] = useState<Brand>({
-    businessName: '',
-    what: '',
-    audience: '',
-    market: '',
-    language: 'English',
-    differences: '',
-    website: '',
+    businessName: found?.businessName ?? '',
+    what: found?.what ?? '',
+    audience: found?.audience ?? '',
+    market: found?.market ?? '',
+    language: found?.language || 'English',
+    differences: found?.differences ?? '',
+    website: found?.website || (connected.how === 'website' ? connected.link : ''),
+    notes: '',
   });
+  const [rivals, setRivals] = useState(() =>
+    Array.from({ length: COMPETITOR_ROWS }, () => ({ name: '', url: '' })),
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const set = (k: keyof Brand) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setF({ ...f, [k]: e.target.value });
+  const setRival = (i: number, k: 'name' | 'url', v: string) =>
+    setRivals((rs) => rs.map((r, n) => (n === i ? { ...r, [k]: v } : r)));
 
   const ready = f.businessName.trim().length >= 2 && f.what.trim().length >= 5 && f.audience.trim() && f.market.trim();
 
-  if (asking) {
-    return (
-      <LookUpCard
-        onType={() => setAsking(false)}
-        onFound={(r) => {
-          // Whatever she could not find stays empty for the customer to fill; nothing is guessed into the box.
-          setF({
-            businessName: r.businessName,
-            what: r.what,
-            audience: r.audience,
-            market: r.market,
-            language: r.language || 'English',
-            differences: r.differences,
-            website: r.website,
-          });
-          setFound(r);
-          setAsking(false);
-        }}
-      />
-    );
+  async function send() {
+    setBusy(true);
+    setError(null);
+    const competitors = rivals
+      .filter((r) => r.name.trim())
+      .map((r) => ({ name: r.name.trim(), url: r.url.trim() }));
+    try {
+      await studioApi.saveBusiness({
+        businessName: f.businessName.trim(),
+        what: f.what.trim(),
+        audience: f.audience.trim(),
+        market: f.market.trim(),
+        language: f.language.trim() || 'English',
+        differences: f.differences.trim(),
+        notes: f.notes.trim(),
+        website: f.website.trim(),
+        competitors,
+        platforms: connected.platforms,
+      });
+      // Everything she now has a reason to read, handed to the market analysis as its own starting point.
+      const links = [f.website, connected.how === 'website' ? connected.link : '', ...competitors.map((c) => c.url)]
+        .map((l) => l.trim())
+        .filter(Boolean);
+      onSaved(knowledgeFrom(f, competitors), Array.from(new Set(links)));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'That did not work.');
+      setBusy(false);
+    }
   }
 
   return (
     <div className={s.card}>
       <div style={{ display: 'grid', gap: 4 }}>
         <h1 className={s.cardTitle} style={{ fontSize: 24 }}>
-          {found ? 'Here is what I found' : 'Tell your team about the business'}
+          {found ? 'Here is your business' : 'Tell me about the business'}
         </h1>
         <p className={s.signedAs}>
-          {found
-            ? 'Fix anything I got wrong — this becomes your team’s brief on day one. '
-            : 'Five answers become your team’s brief on day one. '}
+          {found ? 'Fix anything I got wrong — this becomes your team’s brief on day one. ' : ''}
           Signed in as {email}.{' '}
           <button type="button" onClick={onSignOut} className={s.link}>
             Not you?
@@ -1088,24 +1300,17 @@ function BusinessCard({
         </p>
       </div>
 
-      {found ? (
-        <div className={s.vexaSays}>
-          <span className={s.vexaFig} aria-hidden>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/site/vexa.webp" alt="" width={854} height={853} draggable={false} />
-          </span>
-          <p className={s.vexaBubble}>
-            {found.thin
-              ? 'I could not get much from that address, so most of this is still guesswork — correct it and I will work from yours.'
-              : found.plan || 'That is what I read off your page. Correct anything I got wrong.'}
-          </p>
-        </div>
-      ) : null}
+      <VexaSays>
+        {found?.thin
+          ? 'I could not get much from that page, so most of this is still guesswork — correct it and I will work from yours.'
+          : found?.plan || 'That is what I read off your page. Correct anything I got wrong.'}
+      </VexaSays>
+
       <form
         style={{ display: 'grid', gap: 12 }}
         onSubmit={(e) => {
           e.preventDefault();
-          if (ready) onDone(f, found?.platforms ?? []);
+          if (ready && !busy) void send();
         }}
       >
         <label className={s.field}>
@@ -1140,99 +1345,162 @@ function BusinessCard({
           />
         </label>
         <label className={s.field}>
+          Anything else I should know? (optional)
+          <textarea
+            className={s.input}
+            value={f.notes}
+            onChange={set('notes')}
+            placeholder="e.g. we are quiet in Ramzan, our best month is December, never mention the old branch"
+          />
+        </label>
+
+        {/* Named by the owner, not guessed: this is who the morning research reads around. */}
+        <div className={s.field}>
+          Who else is in your market? (optional)
+          <small className={s.hint}>I read around them every morning — never copy them.</small>
+          <div className={s.rivals}>
+            {rivals.map((r, i) => (
+              <div key={i} className={s.rivalRow}>
+                <input
+                  className={s.input}
+                  value={r.name}
+                  onChange={(e) => setRival(i, 'name', e.target.value)}
+                  placeholder={i === 0 ? 'Their name' : ''}
+                  aria-label={`Competitor ${i + 1} name`}
+                />
+                <input
+                  className={s.input}
+                  value={r.url}
+                  onChange={(e) => setRival(i, 'url', e.target.value)}
+                  placeholder={i === 0 ? 'their website or page' : ''}
+                  aria-label={`Competitor ${i + 1} page`}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <label className={s.field}>
           Website (optional)
           <input className={s.input} value={f.website} onChange={set('website')} placeholder="https://" />
         </label>
 
         <p className={s.fine}>
-          Your plan: <b>{STUDIO_PLANS[plan].name}</b> — paid. It starts the moment your console opens.{' '}
-          {found ? null : (
-            <button type="button" className={s.link} onClick={() => setAsking(true)}>
-              Let me read your page instead
-            </button>
-          )}
+          Your plan: <b>{STUDIO_PLANS[plan].name}</b> — paid.
         </p>
 
-        <button type="submit" className={s.primary} disabled={!ready}>
-          Next: where you post
+        {error ? (
+          <p className={s.error} role="alert">
+            {error}
+          </p>
+        ) : null}
+
+        <button type="submit" className={s.primary} disabled={!ready || busy}>
+          {busy ? <span className={s.spinner} aria-hidden /> : null}
+          {busy ? 'Saving…' : 'Submit — go and work it out'}
         </button>
       </form>
+      <div className={s.row}>
+        <button type="button" className={s.link} onClick={onBack} disabled={busy}>
+          ← Connect a different page
+        </button>
+        <span />
+      </div>
     </div>
   );
 }
 
-/** The networks Vexa should post on; the console opens with each one ready to connect. */
-function PlatformsCard({
-  brand,
-  plan,
-  suggested,
-  onBack,
-}: {
-  brand: Brand;
-  plan: StudioPlanId;
-  /** What Vexa picked out after reading their page; empty when nobody asked her to. */
-  suggested: SocialPlatform[];
-  onBack: () => void;
-}) {
-  const router = useRouter();
-  const [chosen, setChosen] = useState<SocialPlatform[]>(suggested.length ? suggested : ['instagram', 'facebook']);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const toggle = (p: SocialPlatform) => setChosen((c) => (c.includes(p) ? c.filter((x) => x !== p) : [...c, p]));
+/** The lines on the last screen: what she is doing, while she does it. */
+const WORKING = [
+  'Reading your pages end to end…',
+  'Searching your market…',
+  'Sizing up who you are up against…',
+  'Putting a test audience in front of your offer…',
+  'Writing your brief…',
+];
 
-  async function go() {
-    setBusy(true);
-    setError(null);
-    try {
-      await studioApi.createWorkspace({ ...brand, plan, platforms: chosen });
-      // The workspace claim only reaches the console in a fresh token.
-      await auth.currentUser?.getIdToken(true);
-      router.replace('/dashboard/social');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'That did not work.');
-      setBusy(false);
-    }
-  }
+/**
+ * Step six: she goes away and does the work, then says she is ready.
+ *
+ * This is the real market read (`adminLaunchMarket`) — their own pages, a live
+ * search and the audience test — not a progress bar over nothing. It is the
+ * first box of the launch sequence, so the console picks the same run up where
+ * this leaves it. GO lights up when it is done; the line underneath is there
+ * because a read that takes three minutes must never hold a paying customer
+ * out of their own console.
+ */
+function ReadyCard({ wid, name, knowledge, links }: { wid: string; name: string; knowledge: string; links: string[] }) {
+  const router = useRouter();
+  const [state, setState] = useState<LaunchStateDoc | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [line, setLine] = useState(0);
+  const fired = useRef(false);
+
+  useEffect(() => {
+    if (fired.current) return;
+    fired.current = true;
+    // Minutes, not seconds — the page watches the state document rather than this promise.
+    socialApi
+      .launchMarket({ knowledge, links })
+      .catch((e) => setError(e instanceof Error ? e.message : 'I could not finish reading your market.'));
+  }, [knowledge, links]);
+
+  useEffect(
+    () =>
+      onSnapshot(
+        doc(db, `workspaces/${wid}/socialLaunch/state`),
+        (snap) => setState(snap.exists() ? (snap.data() as LaunchStateDoc) : null),
+        () => undefined,
+      ),
+    [wid],
+  );
+
+  const market = state?.steps?.market;
+  // `needs_you` means she finished and wants a decision — which is a question for the console, not for this screen.
+  const done = market?.status === 'done' || market?.status === 'needs_you' || Boolean(error);
+
+  useEffect(() => {
+    if (done) return;
+    const id = setInterval(() => setLine((n) => (n + 1) % WORKING.length), 3200);
+    return () => clearInterval(id);
+  }, [done]);
 
   return (
     <div className={s.card}>
-      <div style={{ display: 'grid', gap: 4 }}>
-        <h1 className={s.cardTitle} style={{ fontSize: 24 }}>
-          Where do you post?
-        </h1>
-        <p className={s.signedAs}>
-          {suggested.length
-            ? 'These are the ones I would start you on, from what I read about you. Change any of them. '
-            : 'Pick the networks Vexa should post on. '}
-          Your console opens with each one ready to connect — Instagram and Facebook take one Facebook sign-in. You can
-          add more later.
-        </p>
-      </div>
-      <div className={s.field} role="group" aria-label="Networks">
-        <div className={s.plans}>
-          {SOCIAL_PLATFORMS.map((p) => (
-            <button key={p} type="button" role="checkbox" aria-checked={chosen.includes(p)} className={s.planChip} onClick={() => toggle(p)}>
-              {chosen.includes(p) ? '✓ ' : ''}
-              {PLATFORM_META[p].label}
+      <VexaSays>
+        {done
+          ? error
+            ? `I have your brief for ${name} and I can start. I will finish reading the market from inside.`
+            : `I have read your pages, searched your market and written your brief. I am ready to work for ${name}.`
+          : `Give me a minute or two with ${name} — I am reading everything you gave me.`}
+      </VexaSays>
+
+      {done ? (
+        <>
+          {market?.note ? <p className={s.fine}>{market.note}</p> : null}
+          <button type="button" className={s.goBtn} onClick={() => router.replace('/dashboard/social')}>
+            GO
+          </button>
+          <p className={s.fine}>One last thing inside: tell me what you want out of all this.</p>
+        </>
+      ) : (
+        <>
+          <div className={s.looking} aria-live="polite">
+            <span className={s.lookingRing} aria-hidden />
+            <b key={line} className={s.lookingLine}>
+              {WORKING[line]}
+            </b>
+            <small>Nothing is posted anywhere until you tell me to.</small>
+          </div>
+          <p className={s.fine}>
+            Taking a while?{' '}
+            <button type="button" className={s.link} onClick={() => router.replace('/dashboard/social')}>
+              Go in and watch it there
             </button>
-          ))}
-        </div>
-      </div>
-      {error ? (
-        <p className={s.error} role="alert">
-          {error}
-        </p>
-      ) : null}
-      <button type="button" className={s.primary} disabled={busy} onClick={go}>
-        {busy ? <span className={s.spinner} aria-hidden /> : null}
-        {busy ? 'Setting up your team — keep this page open…' : 'Open my console'}
-      </button>
-      <div className={s.row}>
-        <button type="button" className={s.link} onClick={onBack} disabled={busy}>
-          ← Your business
-        </button>
-        <span />
-      </div>
+            .
+          </p>
+        </>
+      )}
     </div>
   );
 }

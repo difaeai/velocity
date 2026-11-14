@@ -29,6 +29,7 @@ import {
   type StudioPlanId,
 } from '@/lib/studio';
 import { PlanAsk, planVoice, useVexa } from './Assistant';
+import { DemoButton } from './DemoButton';
 import { ArrowRight } from './Icons';
 import { PlanJobs } from './PlanJobs';
 import { usePriceRaised } from './priceClock';
@@ -242,6 +243,9 @@ export function StudioPlans() {
                   >
                     Try a day for {studioUsd(STUDIO_TRIAL_USD)} <ArrowRight />
                   </Link>
+                  {/* The same demo the header and the hero open: nobody should have to
+                      scroll back up to see it work before they pay (owner, 2026-11-14). */}
+                  <DemoButton className={`${site.btn} ${site.btnGhost} ${styles.demoCta}`}>Watch the demo</DemoButton>
                 </div>
               </article>
             </div>

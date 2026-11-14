@@ -620,6 +620,7 @@ export {
 // Velocity Studio — the desk sold to other businesses: sign-up, manual payments, approvals
 export {
   studioCreateWorkspace,
+  studioSaveBusiness,
   studioSubmitPayment,
   adminDecideStudioPayment,
   adminManageStudioCustomer,
