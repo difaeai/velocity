@@ -146,7 +146,10 @@ const TRUST: { label: string; icon: typeof Search }[] = [
 ];
 
 /** The networks the whole-team plan works on, as the logo files in /site/logos. */
-const HERO_LOGOS = ['facebook', 'instagram', 'google-ads', 'youtube', 'tiktok', 'gmail'];
+/* Google's own mark rides beside the Ads one: the Ads triangle on its own
+   means nothing to a shopkeeper (owner, 2026-11-14). The whole-team plan does
+   cover both — its research reads Google, its ads run on Google Ads. */
+const HERO_LOGOS = ['facebook', 'instagram', 'google', 'google-ads', 'youtube', 'tiktok', 'gmail'];
 
 const MAKES = [
   { icon: Mic, text: 'Reels with real footage, music and a voice-over' },
