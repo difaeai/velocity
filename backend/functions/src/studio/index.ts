@@ -79,7 +79,17 @@ export const STUDIO_ANGLES = [
 
 const text = (max: number) => z.string().trim().max(max);
 
-const signUpSchema = z.object({
+/**
+ * Making the workspace takes nothing but the payment that is already on file.
+ * Everything about the business arrives afterwards, through
+ * `studioSaveBusiness`, because the customer connects their Facebook Page
+ * first — and a Page can only be connected to a workspace that exists.
+ */
+const createSchema = z.object({
+  platforms: z.array(z.enum(PLATFORMS)).max(PLATFORMS.length).optional().default([]),
+});
+
+const businessSchema = z.object({
   businessName: text(80).min(2),
   website: text(200).optional().default(''),
   what: text(600).min(5),
@@ -87,16 +97,34 @@ const signUpSchema = z.object({
   market: text(120).min(2),
   language: text(80).min(2),
   differences: text(1200).optional().default(''),
-  plan: z.enum(PLAN_IDS as [PlanId, ...PlanId[]]),
+  /** Anything else the owner wanted to say, in their own words; it joins the brief. */
+  notes: text(1200).optional().default(''),
+  /**
+   * Who else is in this market, named by the owner: the morning research reads
+   * around them. A row left blank is dropped below rather than refused — the
+   * form shows three of them and most people fill in one.
+   */
+  competitors: z
+    .array(
+      z.object({
+        name: text(80),
+        url: text(300).optional().default(''),
+        instagram: text(31).regex(/^@?[A-Za-z0-9._]{0,30}$/).optional(),
+      }),
+    )
+    .max(8)
+    .optional()
+    .default([]),
   platforms: z.array(z.enum(PLATFORMS)).max(PLATFORMS.length).optional().default([]),
 });
 
 /** The brief's first box, written from the sign-up answers so the team knows the business on day one. */
-export function aboutFrom(s: z.infer<typeof signUpSchema>): string {
+export function aboutFrom(s: z.infer<typeof businessSchema>): string {
   return [
     `${s.businessName} — ${s.what}`,
     `Customers: ${s.audience}. Where: ${s.market}. Posts are written in ${s.language}.`,
     s.differences ? `Why people pick us: ${s.differences}` : '',
+    s.notes ? `In the owner's own words: ${s.notes}` : '',
     s.website ? `Website: ${s.website}` : '',
   ]
     .filter(Boolean)
@@ -113,8 +141,8 @@ export const studioCreateWorkspace = onCall(async (req) => {
   if (ctx.token.email_verified !== true) {
     throw new HttpsError('failed-precondition', 'Verify your email first — type the code we sent you.');
   }
-  const parsed = signUpSchema.safeParse(req.data ?? {});
-  if (!parsed.success) throw new HttpsError('invalid-argument', 'Fill in your business name, what you sell, who buys it and where.');
+  const parsed = createSchema.safeParse(req.data ?? {});
+  if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
   const s = parsed.data;
 
   // One workspace per person, also when the claim has not reached their token yet.
@@ -132,35 +160,32 @@ export const studioCreateWorkspace = onCall(async (req) => {
     throw new HttpsError('failed-precondition', 'Pay for a plan, or for the one-day trial, before your team starts.');
   }
   const ref = db.collection('workspaces').doc();
+  const email = (ctx.token.email as string | undefined) ?? null;
   const workspace: Workspace = {
-    name: s.businessName,
+    // Until they say what the business is called, their address is the only
+    // honest name for it — the admin's list has to show something.
+    name: (email ?? 'New workspace').slice(0, 80),
     ownerUid: ctx.uid,
-    ownerEmail: (ctx.token.email as string | undefined) ?? null,
+    ownerEmail: email,
     // The plan is the one that was paid for — for a trial day too — never the one the page last had on screen.
     plan: prepaid.plan,
     ...startTerms(prepaid, now),
     createdAtMs: now,
-    brand: {
-      name: s.businessName,
-      what: s.what,
-      audience: s.audience,
-      market: s.market,
-      language: s.language,
-      differences: s.differences,
-      website: s.website,
-    },
+    brand: { name: '', what: '', audience: '', market: '', language: '', differences: '', website: '' },
     platforms: s.platforms,
+    // Paid for, not yet described: `studioSaveBusiness` is what finishes it.
+    setupAtMs: null,
   };
   await ref.set(workspace);
   await userRef.update({ prepaid: FieldValue.delete() });
-  // Now the payment has a workspace: the customer's Billing page and the admin's list show it under the business.
-  await db.doc(`studioPayments/${prepaid.paymentId}`).update({ wid: ref.id, business: s.businessName });
+  // Now the payment has a workspace: the customer's Billing page and the admin's list show it.
+  await db.doc(`studioPayments/${prepaid.paymentId}`).update({ wid: ref.id, business: workspace.name });
 
   await inWorkspace(ref.id, async () => {
     await sdb.doc('system/socialAutomation').set({
       angles: STUDIO_ANGLES,
       competitors: [],
-      brief: { ...EMPTY_BRIEF, about: aboutFrom(s) },
+      brief: { ...EMPTY_BRIEF },
       // Studio sells comment replies as fully automatic; safety comments still wait for a person.
       engagementEnabled: true,
       autoReply: true,
@@ -179,6 +204,83 @@ export const studioCreateWorkspace = onCall(async (req) => {
   await touchStudioUser(ctx.uid, ctx.token, { workspaceId: ref.id, method: signInMethod(ctx.token) });
 
   return { ok: true, workspaceId: ref.id, trialEndsAtMs: workspace.trialEndsAtMs };
+});
+
+/**
+ * The second half of sign-up: what the business actually is.
+ *
+ * The workspace was made the moment the money cleared, so that the customer
+ * could connect their Facebook Page to something. Then Vexa read that page and
+ * showed them what she found; this is them correcting it, adding anything she
+ * could not know, and naming whoever else is in their market. It writes the
+ * brand on the workspace and the brief the whole team reads, and stamps
+ * `setupAtMs` — which is what lets the console stop sending them back here.
+ *
+ * Plain `onCall`, not `deskCall`: finishing a sign-up must not be refused
+ * because the plan's AI allowance or a model is not ready. It is the customer's
+ * own workspace and nothing here calls a model.
+ */
+export const studioSaveBusiness = onCall(async (req) => {
+  const ctx = requireAuth(req);
+  const parsed = businessSchema.safeParse(req.data ?? {});
+  if (!parsed.success) {
+    throw new HttpsError('invalid-argument', 'Fill in your business name, what you sell, who buys it and where.');
+  }
+  const s = parsed.data;
+
+  // The claim usually arrives with the refreshed token; the query is for when it has not.
+  let wid = typeof ctx.token.ws === 'string' && isDocId(ctx.token.ws) ? ctx.token.ws : null;
+  if (!wid) {
+    const owned = await db.collection('workspaces').where('ownerUid', '==', ctx.uid).limit(1).get();
+    wid = owned.empty ? null : owned.docs[0].id;
+  }
+  if (!wid) throw new HttpsError('failed-precondition', 'Pay for a plan before your team starts.');
+
+  const ws = (await workspaceRef(wid).get()).data() as Workspace | undefined;
+  if (!ws || ws.ownerUid !== ctx.uid) throw new HttpsError('permission-denied', 'This workspace is not yours.');
+  // Once only. Afterwards the business is edited on the console's Settings page,
+  // where the brief has been written on and must not be thrown away by a sign-up tab left open.
+  if (ws.setupAtMs) {
+    throw new HttpsError('failed-precondition', 'Your business is already set up — change it on the Settings page.');
+  }
+
+  const competitors = s.competitors
+    .filter((c) => c.name.trim())
+    .map((c) => ({ name: c.name, url: c.url, ...(c.instagram ? { instagram: c.instagram.replace(/^@/, '') } : {}) }));
+
+  await workspaceRef(wid).update({
+    name: s.businessName,
+    brand: {
+      name: s.businessName,
+      what: s.what,
+      audience: s.audience,
+      market: s.market,
+      language: s.language,
+      differences: s.differences,
+      website: s.website,
+    },
+    platforms: s.platforms,
+    setupAtMs: Date.now(),
+  });
+  // The payment was filed under their email before there was a business name; the admin's list reads better with it.
+  const theirs = await db.collection('studioPayments').where('wid', '==', wid).get();
+  await Promise.all(theirs.docs.map((d) => d.ref.update({ business: s.businessName })));
+
+  await inWorkspace(wid, async () => {
+    await sdb.doc('system/socialAutomation').set(
+      {
+        // A nested merge, so the other four boxes of the brief are untouched.
+        brief: { about: aboutFrom(s) },
+        competitors,
+        platforms: s.platforms,
+        updatedAt: FieldValue.serverTimestamp(),
+        updatedBy: ctx.uid,
+      },
+      { merge: true },
+    );
+  });
+
+  return { ok: true, workspaceId: wid };
 });
 
 /** Upper case letters and digits only: "TXN 12-ab" and "txn12AB" are the same transfer. */

@@ -106,6 +106,7 @@ export function standingInstructions(settings: SocialSettings): string {
  */
 export function briefBlock(settings: SocialSettings, role: Role | null): string {
   const { about, posts, viral, comments, avoid } = settings.brief;
+  const goal = (settings.goal ?? '').trim();
 
   const shapesThePiece: Role[] = ['content-writer', 'designer', 'video-editor', 'social-manager'];
   const decidesWhatTravels: Role[] = ['content-writer', 'research-assistant', 'seo-expert'];
@@ -113,6 +114,9 @@ export function briefBlock(settings: SocialSettings, role: Role | null): string 
 
   const parts = [
     about.trim() ? `WHO WE ARE, IN THE TEAM LEAD'S OWN WORDS:\n${about.trim()}` : '',
+    // Everyone, whatever seat: a team told to sell and a team told to be known
+    // write different posts, and this is the owner's own answer on day one.
+    goal ? `WHAT THE OWNER WANTS OUT OF ALL THIS. Every piece of work should move it:\n${goal}` : '',
     posts.trim() && wants(shapesThePiece)
       ? `WHAT THE TEAM LEAD WANTS FROM A POST:\n${posts.trim()}`
       : '',

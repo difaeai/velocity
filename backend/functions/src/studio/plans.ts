@@ -124,6 +124,15 @@ export interface Workspace {
   creditDayOn?: string;
   /** The networks the owner said they post on at sign-up: what the console asks them to connect first. */
   platforms?: Platform[];
+  /**
+   * When sign-up was finished — the business described, not just the plan paid
+   * for. The workspace exists from the moment the money clears (owner,
+   * 2026-11-14), because connecting a Facebook Page needs one to connect *to*;
+   * until this is set it is a paid-for shell with an empty brief, and the
+   * console sends its owner back to `/studio/start` to finish. Absent on every
+   * workspace made before that change, which were described as they were made.
+   */
+  setupAtMs?: number | null;
 }
 
 /** A plan paid for before the business was described (`studioUsers/{uid}.prepaid`): the next workspace starts on it. */

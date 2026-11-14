@@ -1325,6 +1325,8 @@ export interface SocialSettings {
   crewInstructions: string;
   /** The long brief: said once, read on every job. See SocialBrief. */
   brief: SocialBrief;
+  /** What the owner wants out of all this, asked once on the console's first day. Empty until answered. */
+  goal: string;
   /** Render the reel here rather than stopping at the cut brief. */
   autoRenderVideo: boolean;
   /** Publish the moment the team is finished, with no gate in front of it. */
@@ -2266,7 +2268,17 @@ export const agentsApi = {
 
 /** Velocity Studio: sign-up, paying, and the admin's decision on a payment. */
 export const studioApi = {
+  /**
+   * Opens the workspace on the payment already on file. It takes nothing about
+   * the business: the customer connects their Facebook Page next, and a Page
+   * can only be connected to a workspace that exists. `saveBusiness` finishes it.
+   */
   createWorkspace: callable<
+    { platforms?: SocialPlatform[] },
+    { ok: boolean; workspaceId: string; trialEndsAtMs: number }
+  >('studioCreateWorkspace'),
+  /** The second half of sign-up: the brief, the competitors, and the stamp that says setup is done. */
+  saveBusiness: callable<
     {
       businessName: string;
       website?: string;
@@ -2275,11 +2287,13 @@ export const studioApi = {
       market: string;
       language: string;
       differences?: string;
-      plan: StudioPlanId;
+      /** Anything else the owner wanted Vexa to know, in their own words. */
+      notes?: string;
+      competitors?: { name: string; url?: string; instagram?: string }[];
       platforms?: SocialPlatform[];
     },
-    { ok: boolean; workspaceId: string; trialEndsAtMs: number }
-  >('studioCreateWorkspace'),
+    { ok: boolean; workspaceId: string }
+  >('studioSaveBusiness'),
   submitPayment: callable<
     // A plan, a month of AI agents (`agents`) or credit days (`credits`) — exactly one.
     {

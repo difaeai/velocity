@@ -235,6 +235,13 @@ export interface StudioWorkspace {
   creditDayOn?: string;
   /** The networks chosen at sign-up: the console asks to connect these first. */
   platforms?: SocialPlatform[];
+  /**
+   * When sign-up was finished. The workspace is opened the moment the payment
+   * clears, so a Facebook Page has something to connect to; until this is set
+   * the business has not been described and the console sends its owner back to
+   * `/studio/start`. Absent on workspaces made before 2026-11-14.
+   */
+  setupAtMs?: number | null;
 }
 
 /** `workspaces/{id}/creditLog/{id}`: what the customer sees of their credits — never what a day really cost. */

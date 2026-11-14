@@ -89,6 +89,8 @@ const settingsSchema = z.object({
   formats: z.array(z.enum(FORMATS)).min(1).max(20).optional(),
 
   crewInstructions: z.string().max(4000).optional(),
+  /** The owner's own goal for the business, answered once on the console's first day. */
+  goal: z.string().max(600).optional(),
   // The long brief is read on every job forever, so the limits are generous:
   // a paragraph that stops one bad post a day is worth more than the tokens.
   brief: z

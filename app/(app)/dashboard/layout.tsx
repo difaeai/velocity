@@ -376,11 +376,19 @@ function StudioShell({ email, name, signOut, children }: ShellProps) {
   const need = NEED_OF[pathname];
   const misplaced =
     !need || (locked && !ACCOUNT_PAGES.includes(pathname)) || (pathname === '/dashboard/social' && home !== pathname);
+  // Paid for, never described: the workspace is opened the moment the money
+  // clears so a Facebook Page can be connected to it, and sign-up carries on
+  // afterwards. The desk has no brief to work from until that is finished.
+  // Explicitly `null`, never merely missing — every workspace made before
+  // 2026-11-14 was described as it was made and has no such field.
+  const unfinished = ws?.setupAtMs === null;
   useEffect(() => {
-    if (ws && misplaced) router.replace(home);
-  }, [ws, misplaced, home, router]);
+    if (unfinished) router.replace('/studio/start');
+    else if (ws && misplaced) router.replace(home);
+  }, [ws, unfinished, misplaced, home, router]);
 
   if (!ws) return <Center>Loading your workspace…</Center>;
+  if (unfinished) return <Center>Finishing your sign-up…</Center>;
 
   const nav = locked
     ? [ACCOUNT_NAV]
