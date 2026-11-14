@@ -117,9 +117,11 @@ how many, from where, when, and what the car pays
 (`whatsapp/scheduledDemand.ts`, every quarter hour from 7:00 to 21:45, Monday
 to Saturday). The riders are the WhatsApp
 QR leads, home to office at their start time and back at their end time, in
-cars of up to four starting within 1.5 km. A shared ride booked for a set time
-uses it too, at its second seat. It is a separate template because the ride
-alert says a ride is waiting now.
+cars of up to four starting within 1.5 km. A shared ride uses it too, at its
+**first** seat (owner, 2026-11-14: as soon as one person is ready to share, the
+drivers hear about it — it waited for the second until then, which at our volume
+usually never came). It is a separate template because the ride alert says a
+ride is waiting now.
 
 - **Name:** `driver_ride_schedule`
 - **Category:** **Utility**

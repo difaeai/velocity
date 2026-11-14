@@ -46,6 +46,7 @@ import { notifyUser, sendToUsers } from '../lib/fcm';
 import { resolveSeatOccupant } from '../lib/seatGender';
 import { computeGenderAccess } from '../lib/genderAccess';
 import { queryNearbyDriverDocs } from '../lib/nearbyDrivers';
+import { neighborGeohashes } from '../lib/geohash';
 import { MAX_POOL_RIDERS, poolPerSeatFare } from '../domain/fares';
 import type { DriverPublicInfo, TripStatus } from '../domain/types';
 import { assertOutstandingClear, getCancellationSettings, type CancellationSettings } from '../domain/cancellation';
@@ -985,9 +986,84 @@ export async function dispatchPool(poolId: string, quiet?: string): Promise<Disp
   return out;
 }
 
+/** How far from the pickup "the people in that area" reaches. */
+const AREA_ALERT_RADIUS_M = 3000;
+/** Presence docs read for one alert — the 3×3 cell block around the pickup. */
+const AREA_SCAN_LIMIT = 400;
+/** People told about one forming ride. */
+const AREA_ALERT_MAX = 40;
+
 /**
- * Tell nearby online drivers a shared ride is forming — once per departure,
- * the moment its second seat is booked: demand they can plan around.
+ * Tell the people around the pickup that a ride on this route has started
+ * forming (owner, 2026-11-14: as soon as the first person takes a seat, "us
+ * area k logon ko app mai notification jaye").
+ *
+ * The audience is `userPresence` — one doc per rider, written by their own
+ * handset while the passenger home is open and expired by Firestore TTL when
+ * they stop opening the app (apps/mobile/src/hooks/presence.ts). So it is the
+ * people who actually use Velocity around there, not everyone who ever
+ * installed it, and no new collection or location field is needed to find them.
+ *
+ * In-app as well as a push, because it is `notifyUser`: the rider who had their
+ * phone in their pocket still finds it on the notifications screen.
+ *
+ * shortcut: one alert per pool per departure and 40 people, with no per-person
+ * daily budget. At today's volume (a handful of pools forming a day in a city)
+ * that is one or two notifications; when a single area forms dozens a day, give
+ * this the same per-person day counter the business ads use (businessAds/config).
+ */
+async function alertRidersNearby(poolRef: FirebaseFirestore.DocumentReference): Promise<void> {
+  const pool = (await poolRef.get()).data() ?? {};
+  const aboard = ((pool.bookingUids as string[] | undefined) ?? []).concat(
+    (pool.createdBy as string | undefined) ?? [],
+  );
+  const pickup = pool.pickup as Place;
+  const dropoff = pool.dropoff as Place;
+  const cells = neighborGeohashes(pickup.lat, pickup.lng, 5);
+  const snap = await db
+    .collection('userPresence')
+    .where('geohash', 'in', cells)
+    .limit(AREA_SCAN_LIMIT)
+    .get();
+
+  const skip = new Set(aboard);
+  const near = snap.docs
+    .map((d) => ({ uid: d.id, loc: d.data() as { lat?: number; lng?: number } }))
+    .filter(
+      (p) =>
+        !skip.has(p.uid) &&
+        typeof p.loc.lat === 'number' &&
+        typeof p.loc.lng === 'number' &&
+        haversineKm(pickup.lat, pickup.lng, p.loc.lat, p.loc.lng) * 1000 <= AREA_ALERT_RADIUS_M,
+    )
+    .slice(0, AREA_ALERT_MAX)
+    .map((p) => p.uid);
+  if (near.length === 0) return;
+
+  const to = (pool.label as string | null) || areaLabel(dropoff.address);
+  const from = areaLabel(pickup.address);
+  const dep = departureOf(pool, Date.now());
+  const when = dep === null ? 'leaving as soon as a driver takes it' : `leaving at ${pktClock(dep)}`;
+  await Promise.all(
+    near.map((uid) =>
+      notifyUser(
+        uid,
+        `🚗 Someone near you is going to ${to}`,
+        `A shared ride from ${from} to ${to} is forming — ${when}. Take a seat and split the fare.`,
+        'ride',
+        { poolId: poolRef.id, screen: 'daily-travel' },
+      ),
+    ),
+  );
+  logger.info('sharedPools: area riders alerted', { poolId: poolRef.id, riders: near.length });
+}
+
+/**
+ * Tell nearby online drivers a shared ride is forming — once per departure, the
+ * moment its FIRST seat is booked (owner, 2026-11-14: "there is one person here
+ * who is ready for a shared ride"). It used to wait for the second, which at our
+ * volume usually never came: nobody told the drivers, so no car turned up, so
+ * the one rider gave up.
  */
 async function alertDriversOfDemand(poolRef: FirebaseFirestore.DocumentReference): Promise<void> {
   const pool = (await poolRef.get()).data() ?? {};
@@ -1021,7 +1097,7 @@ async function alertDriversOfDemand(poolRef: FirebaseFirestore.DocumentReference
   const when = dep ? `at ${new Date(dep + PKT_OFFSET_MS).toISOString().slice(11, 16)}` : 'now';
   await sendToUsers(
     near,
-    `🔀 ${riders.length} riders sharing ${when}`,
+    `🔀 ${riders.length} rider${riders.length === 1 ? '' : 's'} sharing ${when}`,
     `${pickup.address} to ${(pool.dropoff as Place).address}: PKR ${gross} so far. Open Shared rides to take it.`,
     { poolId: poolRef.id, screen: 'shared-pools' },
   ).catch(() => {});
@@ -1136,9 +1212,10 @@ async function seatOnPool(
       dropoff: ownStops.dropoff,
       soloFare: ownStops.soloFare,
     }];
-    // Demand drivers can plan around: the second seat of a departure, once.
+    // Demand drivers can plan around: the FIRST seat of a departure, once
+    // (owner, 2026-11-14) — and the second if that one never went out.
     const depKey = departTime ? dueMs + DISPATCH_LEAD_MS : 0;
-    const demand = next.length === 2 && !aheadDriver(d, nowMs) && d.demandAlertedFor !== depKey;
+    const demand = next.length <= 2 && !aheadDriver(d, nowMs) && d.demandAlertedFor !== depKey;
     tx.update(poolRef, {
       bookings: next,
       bookingUids: next.map((b) => b.uid),
@@ -1159,7 +1236,12 @@ async function seatOnPool(
     };
   });
 
-  if (booked.demand) await alertDriversOfDemand(poolRef).catch((err) => logger.warn('sharedPools: demand alert failed', { poolId, err: String(err) }));
+  if (booked.demand) {
+    await alertDriversOfDemand(poolRef).catch((err) => logger.warn('sharedPools: demand alert failed', { poolId, err: String(err) }));
+    // The other half of the owner's ask: the drivers hear on WhatsApp, the
+    // people around the pickup hear in the app.
+    await alertRidersNearby(poolRef).catch((err) => logger.warn('sharedPools: area alert failed', { poolId, err: String(err) }));
+  }
 
   let backup = false;
   if (booked.count >= MAX_POOL_RIDERS || booked.dueMs <= Date.now()) {

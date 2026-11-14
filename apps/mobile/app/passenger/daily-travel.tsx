@@ -13,8 +13,10 @@
  *      two to a row until then): with a drop-off, the related ones — the
  *      rider's exact route first, then further, then further still — and All
  *      shows every ride in the city without a GO, ranked around the phone's
- *      pickup. Each has a wide picture on top (the driver's car, nearby cars,
- *      or its route drawn as a map), then its four named lines — Pick up:,
+ *      pickup. Each card opens with the place it goes to in bold — "Bahria
+ *      University E-8 Campus" — and under it that area, where it leaves from
+ *      and how far (owner, 2026-11-14), then a wide picture (the driver's car,
+ *      nearby cars, or its route drawn as a map), then its four named lines — Pick up:,
  *      Drop off:, Fare:, Passengers: — a pulsing "Available" and a ♀/♂ badge.
  *      Tap a box: a dialog with only fare, seats, from and to, Join in green
  *      and Cancel see-through (Leave there for a rider in it). A car that fills
@@ -25,7 +27,8 @@
  *      creates it), then every other ride, the closest to their route first.
  *      Over the boxes (2026-11-05): My Routes (the rider's own daily trip:
  *      pickup, drop-off, the time they go and the time they come back home,
- *      Save — which also turns on the reminder before each one — and its own
+ *      Save — which also turns on the reminder before each one, and a switch
+ *      that stops those reminders again (owner, 2026-11-14) — and its own
  *      GO; the trip there or home, by the clock or by the rider's pick),
  *      Leaving from your pickup, All (favourites on top) and Favourites — a
  *      heart, or a double tap, keeps a route there. My Routes is drawn as the
@@ -54,6 +57,8 @@ import {
   ScrollView,
   StyleSheet,
   View,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -146,11 +151,13 @@ type Box = SharedPool & { ready?: true };
 const PAGE = 6;
 
 /**
- * A card's picture, width ÷ height. Wide and shallow so a whole card — picture,
- * the four named lines and its time — is about half the screen, which is what
- * "two cards in front of me" (owner, 2026-11-11) comes to.
+ * A card's picture, width ÷ height. Wide and shallow so a whole card — the name
+ * across its top, the picture, the four named lines and its time — is about half
+ * the screen, which is what "two cards in front of me" (owner, 2026-11-11) comes
+ * to. Shallower than 2.6 since the name and its area moved in above the picture
+ * (2026-11-14), so the card stays the height it was.
  */
-const BOX_PIC_ASPECT = 2.6;
+const BOX_PIC_ASPECT = 3;
 
 /** Each ready route's fare ladder, kept a while: the box only shows what Join would cost. */
 const routeFares = new Map<string, { atMs: number; perSeat: number[] }>();
@@ -189,6 +196,40 @@ function placeName(pl: Place): string {
 
 /** A box's fare — "PKR …" while a ready route's is still on its way. */
 const fareText = (p: SharedPool) => (p.farePerSeat > 0 ? `PKR ${p.farePerSeat}` : 'PKR …');
+
+/**
+ * The card's bold top line (owner, 2026-11-14): the office, campus or market it
+ * goes to, named the way people name it — "Bahria University E-8 Campus". Our
+ * own routes carry that name (src/domain/sharingRoutes); a ride somebody opened
+ * carries whatever they typed in the + box; with neither, the drop-off's area.
+ */
+const boxTitle = (p: Box): string => p.label?.trim() || placeName(p.dropoff);
+
+/**
+ * The area under the name — "E-8, Islamabad". Only for OUR routes, whose
+ * addresses are "<Place>, <Sector>, <City>": a rider's typed drop-off goes
+ * through `placeName`, which is what keeps a house number off other people's
+ * screens (see lib/areaLabel).
+ */
+function dropoffArea(p: Box): string {
+  if (!p.ready) return placeName(p.dropoff);
+  const parts = p.dropoff.address.split(',').map((s) => s.trim()).filter((s) => s && !/^pakistan$/i.test(s));
+  return parts.length > 1 ? parts.slice(1).join(', ') : (parts[0] ?? placeName(p.dropoff));
+}
+
+/** Under the name: where it goes, where it leaves from, and how far — the card at a glance. */
+function whereLine(p: Box): string {
+  const km = distanceMeters(p.pickup.lat, p.pickup.lng, p.dropoff.lat, p.dropoff.lng) / 1000;
+  const area = dropoffArea(p);
+  // "Blue Area · from I-8" reads as a stutter when the name above already says
+  // Blue Area, so the area is only added when it tells you something new.
+  const said = boxTitle(p).toLowerCase().includes(area.toLowerCase());
+  return [
+    ...(said ? [] : [area]),
+    `from ${placeName(p.pickup)}`,
+    `${km < 10 ? km.toFixed(1) : Math.round(km)} km`,
+  ].join(' · ');
+}
 
 /** The row over the boxes, in the owner's order (2026-11-05). */
 type Mode = 'mine' | 'pickup' | 'all' | 'favs';
@@ -303,6 +344,31 @@ export default function DailyTravelScreen() {
       .catch(() => n === searchSeq.current && setPools((prev) => prev ?? []));
   }, [city, qFrom, qTo, all, listing]);
 
+  /**
+   * Stop (or start again) the reminders for the saved route — both legs at once
+   * (owner, 2026-11-14: "once the times are set the rider cannot stop it and
+   * the notifications keep coming"). `notify: false` is the same flag the
+   * backend already honours in dailyRoutes/reminders and routeMatchesPool, so
+   * off here is off everywhere: no reminder before the time, and no alert when
+   * somebody else opens a ride on the route.
+   */
+  function setMyRouteNotify(on: boolean) {
+    if (!user) return;
+    const legs = [myRoute, myRouteBack].filter((r): r is DailyRoute => !!r);
+    if (legs.length === 0) return;
+    const batch = writeBatch(db);
+    for (const r of legs) {
+      batch.set(
+        doc(db, 'users', user.uid, 'dailyRoutes', r.id),
+        { notify: on, updatedAt: serverTimestamp() },
+        { merge: true },
+      );
+    }
+    batch
+      .commit()
+      .catch((e) => Alert.alert('Could not change your reminders', errorText(e)));
+  }
+
   /** My Routes, saved as two daily routes: there at the go time, home at the back time. */
   function saveMyRoute(pickup: Place, dropoff: Place, start: string, end: string) {
     if (!user) return;
@@ -319,13 +385,18 @@ export default function DailyTravelScreen() {
       );
     leg(MY_ROUTE_GO, !!myRoute, 'My route', pickup, dropoff, start);
     leg(MY_ROUTE_BACK, !!myRouteBack, 'My route home', dropoff, pickup, end);
+    // Saving never turns the reminders back on: somebody who switched them off
+    // and then edited their times is not asking to be notified again.
+    const muted = (myRoute?.notify ?? myRouteBack?.notify ?? true) === false;
     batch
       .commit()
       .then(() =>
         Alert.alert(
           'Route saved',
           `Both times are set — ${clockLabel(start)} there and ${clockLabel(end)} back. ` +
-            'We will remind you before each one, and tell you when people are going your way.',
+            (muted
+              ? 'Reminders are off for this route — switch them on below whenever you want them.'
+              : 'We will remind you before each one, and tell you when people are going your way.'),
         ),
       )
       .catch((e) => Alert.alert('Could not save your route', errorText(e)));
@@ -751,6 +822,7 @@ export default function DailyTravelScreen() {
               back={myRouteBack}
               homeward={homeward}
               onSave={saveMyRoute}
+              onNotify={setMyRouteNotify}
               onGo={(route) => {
                 Keyboard.dismiss();
                 setPools(null);
@@ -917,11 +989,11 @@ const ridersText = (p: SharedPool) =>
 const isAvailable = (p: SharedPool) => p.state !== 'full' && p.seatsLeft > 0;
 
 /** Who is sitting in it, top right (owner, 2026-10-30) — a shared ride is one gender. */
-function GenderBadge({ gender }: { gender: 'male' | 'female' }) {
+function GenderBadge({ gender, style }: { gender: 'male' | 'female'; style?: StyleProp<ViewStyle> }) {
   const female = gender === 'female';
   return (
     <View
-      style={[styles.genderBadge, { backgroundColor: female ? WOMEN : MEN }]}
+      style={[styles.genderBadge, style, { backgroundColor: female ? WOMEN : MEN }]}
       accessible
       accessibilityLabel={female ? 'Women in this car' : 'Men in this car'}
     >
@@ -1377,7 +1449,9 @@ function SeatIcons({ taken, total }: { taken: number; total: number }) {
  * A heart on the picture — or a double tap anywhere on it — makes it a
  * favourite (owner, 2026-11-05), so a single tap waits a moment before it opens.
  */
-function PoolBox({
+// Exported so a throwaway preview route can render it on web without a device
+// (see the web-preview notes); expo-router only ever uses the default export.
+export function PoolBox({
   pool: p,
   index,
   beat,
@@ -1438,7 +1512,7 @@ function PoolBox({
         onPressIn={() => pressTo(0.95)}
         onPressOut={() => pressTo(1)}
         accessibilityRole="button"
-        accessibilityLabel={`${open ? 'Available. ' : ''}${fav ? 'Favourite. ' : ''}From ${from} to ${to}. ${fareText(p)}. ${seatsText(p)}`}
+        accessibilityLabel={`${boxTitle(p)}. ${open ? 'Available. ' : ''}${fav ? 'Favourite. ' : ''}From ${from} to ${to}. ${fareText(p)}. ${seatsText(p)}`}
       >
         {open && !yours ? (
           <Animated.View
@@ -1446,10 +1520,18 @@ function PoolBox({
             style={[styles.glow, { opacity: phase.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.12, 0.75, 0.12] }) }]}
           />
         ) : null}
-        <StatusTag open={open} />
-        {p.riderGender ? <GenderBadge gender={p.riderGender} /> : null}
-        <View style={styles.boxCar}>
+        {/* The card's top, the owner's way (2026-11-14): the place it goes to in
+            bold, and under it that area, where it leaves from and how far — so
+            the card answers "what is this" before anyone taps it. */}
+        <View style={styles.boxHead}>
+          <Text style={styles.boxName} numberOfLines={1}>{boxTitle(p)}</Text>
+          <Text style={styles.boxWhere} numberOfLines={1}>{whereLine(p)}</Text>
+        </View>
+        <View>
           <RideCars wide photos={p.carPhotos ?? []} beat={beat} arrive={arrive} seed={p.id} route={p} phase={open ? phase : undefined}>
+            {/* Over the picture, not over the card: the name owns the top now. */}
+            <StatusTag open={open} />
+            {p.riderGender ? <GenderBadge gender={p.riderGender} style={styles.genderOnPic} /> : null}
             {open ? (
               <Animated.View
                 pointerEvents="none"
@@ -1868,6 +1950,7 @@ function MyRoutePanel({
   back,
   homeward,
   onSave,
+  onNotify,
   onGo,
   onLeg,
 }: {
@@ -1877,6 +1960,8 @@ function MyRoutePanel({
   /** The boxes are for the trip home. */
   homeward: boolean;
   onSave: (pickup: Place, dropoff: Place, start: string, end: string) => void;
+  /** Reminders for both legs, on or off. */
+  onNotify: (on: boolean) => void;
   onGo: (route: { from: Place; to: Place }) => void;
   onLeg: (homeward: boolean) => void;
 }) {
@@ -1888,6 +1973,8 @@ function MyRoutePanel({
   });
   const set = (next: Partial<typeof v>) => setV((prev) => ({ ...prev, ...next }));
   const ready = !!(v.from && v.to);
+  // A leg with no `notify` field is on: that is how Save writes a new one.
+  const remindOn = (go?.notify ?? back?.notify ?? true) !== false;
   return (
     <View style={styles.mineBox}>
       <RouteFields
@@ -1914,6 +2001,31 @@ function MyRoutePanel({
           {ready ? 'Save route & remind me' : 'Add your pickup and drop-off to save'}
         </Text>
       </Pressable>
+      {/* The off switch (owner, 2026-11-14). A saved route used to be a one-way
+          door: the reminders started and there was nothing in the app that
+          stopped them. Off keeps the route — the times, GO and the boxes all
+          still work — and silences both legs. */}
+      {go || back ? (
+        <Pressable
+          style={({ pressed }) => [styles.remindRow, pressed && { opacity: 0.85 }]}
+          onPress={() => onNotify(!remindOn)}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: remindOn }}
+          accessibilityLabel="Remind me before my times"
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={styles.remindTitle}>Remind me before my times</Text>
+            <Text style={styles.remindNote}>
+              {remindOn
+                ? 'On — one reminder before each time, and when people are going your way.'
+                : 'Off — your route is saved, but we will not notify you about it.'}
+            </Text>
+          </View>
+          <View style={[styles.switchTrack, remindOn && styles.switchTrackOn]}>
+            <View style={[styles.switchKnob, remindOn && styles.switchKnobOn]} />
+          </View>
+        </Pressable>
+      ) : null}
       <GoButton
         ready={ready}
         onPress={() => {
@@ -2058,7 +2170,7 @@ function RideDialog({
           ]}
         >
           <StatusTag open={isAvailable(p)} />
-          {p.riderGender ? <GenderBadge gender={p.riderGender} /> : null}
+          {p.riderGender ? <GenderBadge gender={p.riderGender} style={styles.genderTopRight} /> : null}
           <View style={styles.boxCar}>
             <RideCars photos={p.carPhotos ?? []} beat={beat} arrive={pop} seed={p.id} route={p} phase={flow} />
             {p.carPhotos?.length ? (
@@ -2479,6 +2591,21 @@ const styles = themed(() => StyleSheet.create({
   },
   saveBtnOff: { borderColor: colors.border },
   saveTxt: { fontSize: 14, fontWeight: '900', color: colors.text },
+  /** The reminder switch under the two times: the way a saved route is stopped. */
+  remindRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    borderRadius: 14, padding: 12,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+  },
+  remindTitle: { fontSize: 13.5, fontWeight: '900', color: colors.text },
+  remindNote: { fontSize: 11, fontWeight: '700', color: colors.muted, marginTop: 2, lineHeight: 15 },
+  switchTrack: {
+    width: 46, height: 28, borderRadius: 14, padding: 3, justifyContent: 'center',
+    backgroundColor: colors.glassChip, borderWidth: 1, borderColor: colors.border,
+  },
+  switchTrackOn: { backgroundColor: colors.glassLime, borderColor: colors.primary },
+  switchKnob: { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.muted },
+  switchKnobOn: { alignSelf: 'flex-end', backgroundColor: colors.primary },
   /** One ride to a row (owner, 2026-11-11): two big cards fill the screen, the rest are a scroll away. */
   grid: { gap: 12 },
   boxWrap: { width: '100%' },
@@ -2500,10 +2627,21 @@ const styles = themed(() => StyleSheet.create({
   statusOpen: { color: GO },
   statusFull: { color: colors.danger },
   /** Room above the car for the status. */
+  /** The card's top: the destination in bold, then its area and distance. */
+  boxHead: { paddingHorizontal: 2, paddingTop: 2, paddingBottom: 4, gap: 1 },
+  boxName: { fontSize: 17, fontWeight: '900', color: colors.text, letterSpacing: -0.2 },
+  boxWhere: { fontSize: 11.5, fontWeight: '700', color: colors.muted },
+  /** The dialog's picture: its "Available" pill floats over the card above it. */
   boxCar: { paddingTop: 16 },
-  /** ♀ / ♂ over the top-right corner of a box or the dialog. */
+  /** Where the ♀/♂ badge sits: the dialog's top-right corner… */
+  genderTopRight: { position: 'absolute', top: 7, right: 7, zIndex: 2 },
+  /** …and, on a card, the picture's bottom-left — clear of the heart, the
+      "Available" pill and the fare. The two are separate styles because a
+      `top: undefined` override does NOT unset a base style's top in RN: the
+      badge stayed in the corner and sat on top of the pill. */
+  genderOnPic: { position: 'absolute', bottom: 6, left: 6, zIndex: 2 },
+  /** ♀ / ♂ — the badge itself; where it sits comes from the style beside it. */
   genderBadge: {
-    position: 'absolute', top: 7, right: 7, zIndex: 2,
     width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
   },
   genderBadgeTxt: { color: '#ffffff', fontSize: 15, fontWeight: '900', lineHeight: 18 },

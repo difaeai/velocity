@@ -19,10 +19,25 @@ import { distanceMeters } from '../lib/geo';
 
 type Place = { lat: number; lng: number; address: string };
 
-/** `go`: a place people travel TO every day; the rest are where they live. */
-type Spot = Place & { name: string; go?: true };
+/**
+ * `go`: a place people travel TO every day; the rest are where they live.
+ *
+ * `full` is how people say the place when they name it to each other — "Bahria
+ * University E-8 Campus", not "Bahria University" — and it is what the card
+ * carries in bold across its top (owner, 2026-11-14). `name` stays short
+ * because it is also every box's "Pick up:" / "Drop off:" line and the nearest
+ * known area for an address that names none.
+ */
+type Spot = Place & { name: string; full?: string; go?: true };
 
-const spot = (name: string, address: string, lat: number, lng: number, go?: true): Spot => ({ name, address, lat, lng, go });
+const spot = (
+  name: string,
+  address: string,
+  lat: number,
+  lng: number,
+  go?: true,
+  full?: string,
+): Spot => ({ name, address, lat, lng, go, full });
 
 const SPOTS: Spot[] = [
   // ── Islamabad sectors ──
@@ -41,8 +56,10 @@ const SPOTS: Spot[] = [
   spot('F-11', 'F-11 Markaz, Islamabad', 33.6845, 72.9887),
   spot('E-11', 'E-11, Islamabad', 33.6951, 72.9724),
   spot('I-8', 'I-8 Markaz, Islamabad', 33.6679, 73.0745),
-  spot('I-9', 'I-9, Islamabad', 33.6562, 73.0631),
-  spot('I-10', 'I-10 Markaz, Islamabad', 33.6477, 73.039),
+  // Sectors people both live in and work in: the factories and warehouses are
+  // a daily destination, so routes are built towards them as well.
+  spot('I-9', 'I-9, Islamabad', 33.6562, 73.0631, true, 'I-9 Industrial Area'),
+  spot('I-10', 'I-10 Markaz, Islamabad', 33.6477, 73.039, true, 'I-10 Industrial Area'),
   spot('B-17', 'B-17, Islamabad', 33.6904, 72.8286),
   spot('D-12', 'D-12, Islamabad', 33.7018, 72.9486),
   spot('E-7', 'E-7, Islamabad', 33.7253, 73.0454),
@@ -79,32 +96,36 @@ const SPOTS: Spot[] = [
   spot('Askari 14', 'Askari 14, Rawalpindi', 33.5422, 73.0661),
 
   // ── Where they go: universities ──
-  spot('NUST', 'NUST, H-12, Islamabad', 33.6448, 72.9918, true),
-  spot('COMSATS', 'COMSATS University, Park Road, Islamabad', 33.6498, 73.1549, true),
-  spot('Quaid-i-Azam University', 'Quaid-i-Azam University, Islamabad', 33.7437, 73.1586, true),
-  spot('IIUI', 'International Islamic University, H-10, Islamabad', 33.6636, 73.0266, true),
-  spot('FAST', 'FAST University, H-11, Islamabad', 33.6565, 73.0164, true),
-  spot('NUML', 'NUML, H-9, Islamabad', 33.6671, 73.0507, true),
-  spot('Bahria University', 'Bahria University, E-8, Islamabad', 33.7158, 73.0283, true),
-  spot('Air University', 'Air University, E-9, Islamabad', 33.7139, 73.0259, true),
-  spot('SZABIST', 'SZABIST, H-8, Islamabad', 33.6773, 73.0681, true),
-  spot('Riphah University', 'Riphah International University, I-14, Islamabad', 33.6169, 72.9723, true),
-  spot('Capital University', 'Capital University (CUST), Islamabad Expressway', 33.5451, 73.1858, true),
-  spot('Arid University', 'Arid Agriculture University, Murree Road, Rawalpindi', 33.6473, 73.0825, true),
-  spot('Fatima Jinnah University', 'Fatima Jinnah Women University, The Mall, Rawalpindi', 33.5875, 73.0638, true),
+  spot('NUST', 'NUST, H-12, Islamabad', 33.6448, 72.9918, true, 'NUST H-12 Campus'),
+  spot('COMSATS', 'COMSATS University, Park Road, Islamabad', 33.6498, 73.1549, true, 'COMSATS University Park Road Campus'),
+  spot('Quaid-i-Azam University', 'Quaid-i-Azam University, Islamabad', 33.7437, 73.1586, true, 'Quaid-i-Azam University'),
+  spot('IIUI', 'International Islamic University, H-10, Islamabad', 33.6636, 73.0266, true, 'International Islamic University H-10'),
+  spot('FAST', 'FAST University, H-11, Islamabad', 33.6565, 73.0164, true, 'FAST University H-11 Campus'),
+  spot('NUML', 'NUML, H-9, Islamabad', 33.6671, 73.0507, true, 'NUML H-9 Campus'),
+  spot('Bahria University', 'Bahria University, E-8, Islamabad', 33.7158, 73.0283, true, 'Bahria University E-8 Campus'),
+  spot('Air University', 'Air University, E-9, Islamabad', 33.7139, 73.0259, true, 'Air University E-9 Campus'),
+  spot('NDU', 'National Defence University, E-9, Islamabad', 33.7175, 73.0195, true, 'National Defence University E-9'),
+  spot('SZABIST', 'SZABIST, H-8, Islamabad', 33.6773, 73.0681, true, 'SZABIST H-8 Campus'),
+  spot('Riphah University', 'Riphah International University, I-14, Islamabad', 33.6169, 72.9723, true, 'Riphah International University I-14'),
+  spot('Capital University', 'Capital University (CUST), Islamabad Expressway', 33.5451, 73.1858, true, 'Capital University CUST Expressway Campus'),
+  spot('Foundation University', 'Foundation University, DHA Phase 1, Islamabad', 33.5345, 73.1035, true, 'Foundation University DHA Phase 1'),
+  spot('Arid University', 'Arid Agriculture University, Murree Road, Rawalpindi', 33.6473, 73.0825, true, 'Arid Agriculture University Murree Road'),
+  spot('Fatima Jinnah University', 'Fatima Jinnah Women University, The Mall, Rawalpindi', 33.5875, 73.0638, true, 'Fatima Jinnah Women University The Mall'),
   // ── offices and markets ──
-  spot('Blue Area', 'Blue Area, Jinnah Avenue, Islamabad', 33.7121, 73.0624, true),
-  spot('Pak Secretariat', 'Pak Secretariat, Islamabad', 33.7295, 73.0935, true),
-  spot('Centaurus', 'Centaurus Mall, F-8, Islamabad', 33.7079, 73.0499, true),
-  spot('Giga Mall', 'Giga Mall, DHA Phase 2, Islamabad', 33.5212, 73.158, true),
-  spot('Saddar', 'Bank Road, Saddar, Rawalpindi', 33.5969, 73.0512, true),
-  spot('Raja Bazaar', 'Raja Bazaar, Rawalpindi', 33.6123, 73.0563, true),
-  spot('Committee Chowk', 'Committee Chowk, Rawalpindi', 33.6139, 73.065, true),
-  spot('Faizabad', 'Faizabad, Islamabad Expressway', 33.6646, 73.0871, true),
+  spot('Blue Area', 'Blue Area, Jinnah Avenue, Islamabad', 33.7121, 73.0624, true, 'Blue Area Offices, Jinnah Avenue'),
+  spot('Pak Secretariat', 'Pak Secretariat, Islamabad', 33.7295, 73.0935, true, 'Pakistan Secretariat, Red Zone'),
+  spot('Centaurus', 'Centaurus Mall, F-8, Islamabad', 33.7079, 73.0499, true, 'Centaurus Mall F-8'),
+  spot('Giga Mall', 'Giga Mall, DHA Phase 2, Islamabad', 33.5212, 73.158, true, 'Giga Mall DHA Phase 2'),
+  spot('Saddar', 'Bank Road, Saddar, Rawalpindi', 33.5969, 73.0512, true, 'Saddar Bank Road, Rawalpindi'),
+  spot('Raja Bazaar', 'Raja Bazaar, Rawalpindi', 33.6123, 73.0563, true, 'Raja Bazaar, Rawalpindi'),
+  spot('Committee Chowk', 'Committee Chowk, Rawalpindi', 33.6139, 73.065, true, 'Committee Chowk, Rawalpindi'),
+  spot('Faizabad', 'Faizabad, Islamabad Expressway', 33.6646, 73.0871, true, 'Faizabad Interchange'),
   // ── hospitals and the airport ──
-  spot('PIMS', 'PIMS Hospital, G-8, Islamabad', 33.7023, 73.0525, true),
-  spot('Holy Family Hospital', 'Holy Family Hospital, Satellite Town, Rawalpindi', 33.6407, 73.057, true),
-  spot('Islamabad Airport', 'Islamabad International Airport', 33.5515, 72.8256, true),
+  spot('PIMS', 'PIMS Hospital, G-8, Islamabad', 33.7023, 73.0525, true, 'PIMS Hospital G-8'),
+  spot('Shifa Hospital', 'Shifa International Hospital, H-8, Islamabad', 33.6792, 73.0631, true, 'Shifa International Hospital H-8'),
+  spot('Holy Family Hospital', 'Holy Family Hospital, Satellite Town, Rawalpindi', 33.6407, 73.057, true, 'Holy Family Hospital, Satellite Town'),
+  spot('Benazir Bhutto Hospital', 'Benazir Bhutto Hospital, Murree Road, Rawalpindi', 33.6078, 73.0675, true, 'Benazir Bhutto Hospital Murree Road'),
+  spot('Islamabad Airport', 'Islamabad International Airport', 33.5515, 72.8256, true, 'Islamabad International Airport'),
 ];
 
 /** The cities these routes are in — the two are one place to the people who live there. */
@@ -117,6 +138,7 @@ const MAX_KM = 35;
 export type SharingRoute = {
   id: string;
   /** The place it goes to — the + box's "institution or location" name. */
+  /** The destination as people name it — the card's bold top line. */
   label: string;
   pickup: Place;
   dropoff: Place;
@@ -131,7 +153,7 @@ export const SHARING_ROUTES: SharingRoute[] = SPOTS.flatMap((a) =>
       const km = distanceMeters(a.lat, a.lng, b.lat, b.lng) / 1000;
       return km >= MIN_KM && km <= MAX_KM;
     })
-    .map((b) => ({ id: `route:${a.name}>${b.name}`, label: b.name, pickup: placeOf(a), dropoff: placeOf(b) })),
+    .map((b) => ({ id: `route:${a.name}>${b.name}`, label: b.full ?? b.name, pickup: placeOf(a), dropoff: placeOf(b) })),
 );
 
 const metres = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) =>
