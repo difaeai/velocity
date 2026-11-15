@@ -519,7 +519,7 @@ export default function SocialOverview() {
           href="/dashboard/social/whatsapp"
           cta="Open the conversations"
         >
-          <SalesFunnel chats={chats} comments={comments} nowMs={nowMs} i={7} />
+          <SalesFunnel chats={chats} comments={comments} nowMs={nowMs} autoReply={Boolean(settings?.autoReply)} i={7} />
           <SalesSection sales={sales} leads={leads} nowMs={nowMs} i={8} />
         </Area>
       ) : null}

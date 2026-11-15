@@ -73,7 +73,13 @@ interface FunnelRead {
  * Everything the section shows, decided once. Pure, so it can be tested without
  * a browser and so the drawing below only draws.
  */
-export function readFunnel(chats: SalesChatDoc[], comments: SocialCommentDoc[], nowMs: number): FunnelRead {
+export function readFunnel(
+  chats: SalesChatDoc[],
+  comments: SocialCommentDoc[],
+  nowMs: number,
+  /** Whether Vexa is allowed to post its comment replies itself. Off by default. */
+  autoReply = false,
+): FunnelRead {
   const live = chats.filter((c) => !c.blocked);
   const at = (stage: keyof typeof REACHED) => live.filter((c) => REACHED[stage].includes(c.stage)).length;
   const today = nowMs ? pktDay(nowMs) : '';
@@ -116,7 +122,13 @@ export function readFunnel(chats: SalesChatDoc[], comments: SocialCommentDoc[], 
       {
         key: 'asked',
         label: 'Asked in public',
-        does: 'Someone asks the price under a post or an ad. Vexa answers there and gives them your WhatsApp.',
+        // The handover only happens if the reply actually goes out, and
+        // `autoReply` is off until the owner turns it on. Saying "Vexa answers
+        // there" while the answers sit unsent in Comments would be the funnel
+        // taking credit for a step that never ran.
+        does: autoReply
+          ? 'Someone asks the price under a post or an ad. Vexa answers there and gives them your WhatsApp.'
+          : 'Someone asks the price under a post or an ad. Vexa has written the answers, but they are waiting for you on Comments — until you send them, nobody is given your WhatsApp.',
         icon: '💬',
         n: leads.length,
         empty: 'Nobody has asked a buying question under a post yet.',
@@ -192,14 +204,16 @@ export function SalesFunnel({
   chats,
   comments,
   nowMs,
+  autoReply = false,
   i = 0,
 }: {
   chats: SalesChatDoc[];
   comments: SocialCommentDoc[];
   nowMs: number;
+  autoReply?: boolean;
   i?: number;
 }) {
-  const f = useMemo(() => readFunnel(chats, comments, nowMs), [chats, comments, nowMs]);
+  const f = useMemo(() => readFunnel(chats, comments, nowMs, autoReply), [chats, comments, nowMs, autoReply]);
   const [open, setOpen] = useState<string | null>(null);
 
   // The widest step sets the scale, so the bars narrow the way a funnel does.
@@ -300,6 +314,11 @@ export function SalesFunnel({
                   />
                 </span>
                 <p>{s.n ? s.does : s.empty}</p>
+                {s.key === 'asked' && s.n && !autoReply ? (
+                  <Link href="/dashboard/social/inbox" className="fn-open">
+                    Send the answers →
+                  </Link>
+                ) : null}
               </div>
             </li>
           );
