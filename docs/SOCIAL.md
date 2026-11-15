@@ -409,6 +409,65 @@ pattern from three data points.
 
 ---
 
+## 3d. The five-day review, and what it changes by itself
+
+`insights.ts` says which posts travelled. [`review.ts`](../backend/functions/src/social/review.ts)
+answers the only question a customer pays for an answer to: **is this working,
+and if not, why not?**
+
+Every five days per workspace — a daily schedule with a per-workspace clock, so
+each one counts from its own last review — and whenever somebody presses
+**Review now** on *What is working*. It reads only documents the desk already
+wrote, so the dig itself costs nothing, and answers in order:
+
+1. **Was the job done?** What the settings promised against what actually went
+   out. A piece that sat in the queue for five days did not happen.
+2. **Did it reach anybody, and if not, why?** A ladder of causes, each reported
+   only when this account's own numbers show it: nothing published, no reels,
+   weak openings (the hook panel's own median), nothing being sent or saved, a
+   profile strangers do not follow, a feed that went quiet.
+3. **Is the money the right size?** The window's spend against what Meta's
+   learning phase actually needs (`learningBudget` per running campaign), held
+   to the owner's own daily limit — under-spending is the commonest waste there
+   is, because a budget too thin never leaves learning. A low tap rate says the
+   creative, not the budget.
+4. **Who is ahead of us?** The competitor accounts the morning read already
+   pulled through Business Discovery, compared **per thousand followers**, which
+   is the only way a big account and a small one compare at all.
+5. **Are the leads being closed?** The WhatsApp funnel from §6c: conversations
+   live, waiting on the owner, won and lost. An unanswered lead outranks every
+   other finding there is.
+
+Each finding carries the numbers it was concluded from, the fix, and whether it
+is Vexa's to act on or the owner's. A score out of 100 is the weighted mean of
+only the dimensions that can be judged — a new account is not marked down for
+having no reach trend yet — and the last twelve scores ride in the same
+document, so "are we improving" has an answer.
+
+**The half that is not a report.** The directives the review leaves behind are
+written to `settings.learned` and rendered by `crew.learnedBlock` into every
+employee's system prompt on every job, under the owner's own standing
+instructions, which outrank them. Nobody is asked to do anything with the
+report: the next five days are simply different. One model call turns the
+findings into the paragraph a person reads; with no key the same paragraph is
+assembled from the findings in code.
+
+**And it gets better at trades it has never seen.** Each review's lessons are
+merged into `vexaLessons/{industry}` — shared across every workspace, which is
+the point: the twentieth estate agent to sign up should not start where the
+first one did. What crosses that line is enforced by `scrubLesson`, not
+promised: shapes only, no client name, no handle, no URL, and nothing carrying a
+run of four or more digits. `industryOf` files a business from its own sign-up
+words with a keyword list rather than a model call, because the same business
+must land in the same pile twice. A new workspace is seeded from its trade's
+pile on day one (`launch.ts`, step *content*), so Vexa turns up to a new estate
+agent already knowing what works for estate agents.
+
+The review lands in `socialInsights/review` and is shown at the top of **What is
+working**.
+
+---
+
 ## 4. The queue — four decisions
 
 | Action | What happens |
@@ -795,6 +854,66 @@ Gmail node on its ring. Two jobs:
   within the sales agent's daily cap, with its footer and suppression list.
 
 An inbox agent that is on keeps `salesSweep` awake (`salesHasWork`).
+
+---
+
+## 6c. The closer — leads answered on WhatsApp, from the client's own number
+
+[`closer.ts`](../backend/functions/src/social/closer.ts). Everything above
+brings strangers to the door. This is the half that was missing: the ad runs,
+the reel travels, somebody writes "price?" — and nothing happens until a human
+notices. Most small businesses lose the lead there, not at the ad.
+
+**The number is the client's own.** They register their WhatsApp Cloud API
+phone-number id and a token on `/dashboard/social/whatsapp`; the pair is proved
+against Meta before anything is stored, the token is sealed with
+`SOCIAL_TOKEN_KEY` like every other one, and `vexaNumbers/{phoneNumberId}` maps
+it to the workspace. Every inbound message still arrives at the one webhook in
+`whatsapp/index.ts` — one Meta app can carry many WhatsApp Business accounts —
+and `phone_number_id` is the only thing on the payload that says whose number it
+is, so it is what routes the message. A number that belongs to no workspace
+falls through to Velocity's own driver handling exactly as before. Worth saying
+out loud on the page, and it is: a Cloud API number is a business platform
+number, and whether the client can keep using it in the WhatsApp app at the same
+time depends on Meta's coexistence being available to them.
+
+**Four rules that are not style preferences.**
+
+- **Short, or it is not read.** `trimReply` cuts every outbound to two sentences
+  and 300 characters *in code*, because a model asked for "brief" writes six
+  lines about a quarter of the time.
+- **Their language, not ours.** `languageOf` reads what they typed — English,
+  Roman Urdu, Urdu script — using the desk's own detector, and a message that is
+  not decisive ("ok", "2", "thanks") leaves the conversation in whatever
+  language it was already in.
+- **A person who writes in is always answered; a conversation the business
+  starts is rationed.** Meta allows free-form replies for 24 hours after their
+  last message, and only an approved template outside it. So replies are never
+  capped and outreach always is (`sendBudget`, the client's own per-day number,
+  never above 1,000, nothing between 21:00 and 09:00 PKT).
+- **Stop means stop, and a sheet is not consent.** One "stop", "band karo" or
+  "بند" blocks the number for good, without waiting for a model. Uploading a
+  list requires the client to state that those people asked to be contacted, and
+  the claim is stored with the batch, because the number that gets reported is
+  theirs.
+
+**What it does.** One model call per inbound writes the reply in their language,
+moves the stage (`new → talking → qualified → pitched → won | lost`), and keeps a
+one-line summary and next step for the console. It hands over — and says nothing
+itself — the moment somebody asks for a person, or the message reads as a
+complaint, a refund or anything legal (`wantsHuman`). A lead who goes quiet gets
+at most two nudges, twenty hours apart. A sheet row is opened with the approved
+template and then talked to like anybody else. A plan that has run out keeps the
+lead and stops the talking.
+
+Every message both ways is appended with `arrayUnion`, never a
+read-modify-write: two messages seconds apart are ordinary, and a customer's own
+words are the last thing this desk may lose.
+
+A comment that is a lead now gets the door too: `engagement.ts` classifies
+`lead` as its own intent and answers it in public with the WhatsApp number, and
+`holdReason` no longer holds a reply for carrying *our own* number — only
+somebody else's.
 
 ---
 
@@ -1229,6 +1348,12 @@ question — asked once on the overview, then a button on the desk card. **Pause
 | `socialResearch/{YYYY-MM-DD}` | the day's market read and the pages it came from |
 | `socialInsights/latest` | how our own posts did, ranked against our own median |
 | `socialInsights/profile` | the profile, scored out of 100, with the rewrites |
+| `socialInsights/review` | the five-day review: the score and the last twelve, delivery, reach, spend, the competitor gap, the funnel, the findings and the directives |
+| `salesChats/{waId}` | one lead's WhatsApp conversation: every message both ways, the stage, the language, the summary and whose turn it is |
+| `system/whatsapp` | the client's own WhatsApp number, its template, the daily ration and today's count |
+| `system/whatsapp/secret/credentials` | the sealed WhatsApp token; **no client access** |
+| `vexaNumbers/{phoneNumberId}` | which workspace a connected number belongs to, so the one webhook can route an inbound. Root level, **no client access** |
+| `vexaLessons/{industry}` | what the desk has learned about one kind of business, pooled across every workspace: shapes only, no name, handle or figure |
 | `socialAds/{campaignId}` | every Meta campaign in the ad account: status, budget, this week and lifetime numbers, the verdict, and — for the desk's own — the plan, the preview and every action taken |
 | `system/socialAds` | the ad account, the owner's limit and mode, the account's week and daily series, and the expert's note |
 | `system/socialAds/secret/credentials` | the sealed ads user token; **no client access** |
@@ -1274,6 +1399,15 @@ like a new one buys nothing.
 | `adminDisconnectSocialAccount` | delete the credential; keep the profile row |
 | `adminGetSocialSettings` | settings, which keys are configured, and what the roster cannot do |
 | `adminUpdateSocialSettings` | validated write |
+| `adminSelfReview` | run the five-day review now, and apply what it decides |
+| `vexaCloserState` | the connected WhatsApp number, the ration left today, and the funnel by stage |
+| `vexaConnectWhatsApp` | prove a phone-number id and token against Meta, seal the token, claim the number for this workspace |
+| `vexaDisconnectWhatsApp` | release the number and delete the token |
+| `vexaSetCloserSettings` | the daily ration, the template, and whether Vexa sends by itself or waits |
+| `vexaUploadSheet` | queue a pasted list of numbers, with the client's statement that they asked to be contacted |
+| `vexaSendMessage` | the owner's own words into a live conversation, inside the 24-hour window |
+| `vexaChatAction` | take a conversation over, give it back, mark it won or lost, or never message that number again |
+| `vexaRunOutreach` | open what is queued and nudge who went quiet, now |
 | `adminGenerateSocialPost` | put the team on a piece, for a date and format |
 | `adminRequestSocialChanges` | send a piece back with feedback; re-runs only the scoped stages |
 | `adminReviewSocialPost` | approve / reject, optionally publish |

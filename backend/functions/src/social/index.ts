@@ -86,6 +86,22 @@ export {
   adminAuditProfile,
 } from './insights';
 
+/** Every five days: the desk marks its own work, and changes how it works. */
+export { socialSelfReview, adminSelfReview } from './review';
+
+/** The closer: leads answered on the client's own WhatsApp, and taken to a sale. */
+export {
+  vexaConnectWhatsApp,
+  vexaDisconnectWhatsApp,
+  vexaSetCloserSettings,
+  vexaUploadSheet,
+  vexaSendMessage,
+  vexaChatAction,
+  vexaCloserState,
+  vexaRunOutreach,
+  vexaCloserSweep,
+} from './closer';
+
 export {
   socialEngagement,
   adminSyncSocialComments,

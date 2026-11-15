@@ -32,6 +32,7 @@ import { generateJson, modelReady } from './engine';
 import { localReplies } from './local';
 import { canListComments, listComments, PlatformError, replyToComment } from './platforms';
 import { activeTeam, assign, creditWork } from './employees';
+import { closerConfig } from './closer';
 import { getSocialSettings } from './settings';
 import {
   PLATFORMS,
@@ -131,11 +132,16 @@ export async function syncComments(): Promise<{ found: number; added: number; er
   return { found, added, errors };
 }
 
-const DRAFT_SYSTEM = (): string => `You are answering comments on ${brandName()}'s own social accounts.
+const DRAFT_SYSTEM = (whatsapp: string | null): string => `You are answering comments on ${brandName()}'s own social accounts.
 
 Read each comment, decide what it is, and write the reply ${brandName()} should post.
 
 How to classify:
+- "lead" — somebody who wants to buy, or is close to it: asking the price, availability, delivery, booking, "how much", "kitna", "DM me", "interested". This is the one worth money. Answer the question in public in one line${
+  whatsapp
+    ? `, then give them the door in the same message: "WhatsApp us on ${whatsapp}". Write the number exactly as given, once.`
+    : '. There is no WhatsApp number connected, so ask them to send a DM.'
+}
 - "praise" — they like it. Reply warmly, one line, no sales pitch.
 - "question" — they want to know something. Answer it plainly if the answer is in the brief; otherwise say a human will follow up.
 - "complaint" — something went wrong for them. Acknowledge it, do not argue, do not explain the policy, point them at support. One or two lines.
@@ -153,9 +159,9 @@ How to write:
 - Never quote a number that is not in the FACTS block.
 
 Reply with one JSON object and nothing else:
-{ "replies": [{ "id": "the comment id you were given", "intent": "praise|question|complaint|safety|spam|other", "reply": "what to post, or an empty string for spam" }] }`;
+{ "replies": [{ "id": "the comment id you were given", "intent": "lead|praise|question|complaint|safety|spam|other", "reply": "what to post, or an empty string for spam" }] }`;
 
-const INTENTS: CommentIntent[] = ['praise', 'question', 'complaint', 'safety', 'spam', 'other'];
+const INTENTS: CommentIntent[] = ['lead', 'praise', 'question', 'complaint', 'safety', 'spam', 'other'];
 
 /**
  * Why a drafted reply must wait for a person rather than go out on its own, or
@@ -163,9 +169,18 @@ const INTENTS: CommentIntent[] = ['praise', 'question', 'complaint', 'safety', '
  * a number to call or a paragraph it was talked into — none of which an honest
  * reply under 30 words needs. Pure.
  */
-export function holdReason(reply: string): string | null {
+export function holdReason(reply: string, ownNumber: string | null = null): string | null {
   if (/https?:\/\/|www\.|\b[a-z0-9-]+\.(com|pk|net|org|io|app|ly|me|co)\b/i.test(reply)) return 'it carries a link';
-  if (/(\+?\d[\d\s-]{8,}\d)/.test(reply)) return 'it carries a phone number';
+  if (/(\+?\d[\d\s-]{8,}\d)/.test(reply)) {
+    // Our own WhatsApp number is the whole point of answering a lead in public,
+    // so it is not the thing this check exists to catch. Compared on digits
+    // alone: the model may write it spaced, bracketed or with a +.
+    const digits = (s: string) => s.replace(/\D/g, '');
+    const own = ownNumber ? digits(ownNumber) : '';
+    const inReply = (reply.match(/(\+?\d[\d\s-]{8,}\d)/g) ?? []).map(digits);
+    const foreign = inReply.filter((n) => !own || !(n.endsWith(own.slice(-9)) || own.endsWith(n.slice(-9))));
+    if (foreign.length) return 'it carries a phone number';
+  }
   if (reply.length > 300) return 'it is too long for a comment reply';
   return null;
 }
@@ -179,6 +194,9 @@ export async function draftReplies(
   // a system with no name against it.
   const manager = assign(await activeTeam(), 'distribute')?.employee ?? null;
   if (!manager) return { drafted: 0, sent: 0, failed: 0, by: null };
+
+  // The door a lead is sent to, when this desk has one connected.
+  const whatsapp = (await closerConfig().catch(() => null))?.displayNumber ?? null;
 
   const snap = await sdb
     .collection('socialComments')
@@ -207,7 +225,7 @@ export async function draftReplies(
       try {
         const { data } = await generateJson<{ replies?: unknown }>({
           model: settings.textModel,
-          system: `${systemFor(manager, settings)}\n\n${DRAFT_SYSTEM()}`,
+          system: `${systemFor(manager, settings)}\n\n${DRAFT_SYSTEM(whatsapp)}`,
           what: 'The comment replies',
           prompt: [
             'COMMENTS:',
@@ -231,7 +249,7 @@ export async function draftReplies(
       let status: CommentStatus = 'drafted';
       if (intent === 'spam' || !reply) status = 'ignored';
       else if (intent === 'safety') status = 'escalated';
-      const held = status === 'drafted' ? holdReason(reply) : null;
+      const held = status === 'drafted' ? holdReason(reply, whatsapp) : null;
 
       await commentRef(row.platform, row.commentId).set(
         {

@@ -25,6 +25,7 @@ import {
 import { classifySendError, toWhatsAppNumber, whatsAppConfig } from './client';
 import { handleLeadMessage, type InboundMessage } from './leads';
 import { readInboundIntent } from './policy';
+import { handleFailure as handleVexaFailure, handleInbound as handleVexaInbound } from '../social/closer';
 
 const prefSchema = z.object({
   enabled: z.boolean(),
@@ -219,6 +220,18 @@ export function verifySignature(
 }
 
 interface WebhookValue {
+  /**
+   * Which of our numbers this is about.
+   *
+   * One Meta app can carry many WhatsApp Business accounts, and every Vexa
+   * customer who connects their own number adds one — all of them posting to
+   * this single webhook. `phone_number_id` is the only thing on the payload
+   * that says whose number was messaged, so it is what routes an inbound to the
+   * right workspace (`social/closer.ts`). Absent on older payloads and on
+   * anything but a message event, which falls through to Velocity's own
+   * handling exactly as before.
+   */
+  metadata?: { phone_number_id?: string; display_phone_number?: string };
   messages?: InboundMessage[];
   /** The sender's WhatsApp profile name, one entry per `wa_id`. */
   contacts?: { wa_id?: string; profile?: { name?: string } }[];
@@ -238,18 +251,31 @@ export async function handleWebhookBody(body: unknown): Promise<void> {
     for (const change of entry.changes ?? []) {
       const value = change.value;
       if (!value) continue;
+      const phoneNumberId = value.metadata?.phone_number_id ?? null;
       for (const msg of value.messages ?? []) {
         const name = value.contacts?.find((c) => c.wa_id === msg.from)?.profile?.name ?? null;
-        await handleInbound(msg, name);
+        await handleInbound(msg, name, phoneNumberId);
       }
-      for (const st of value.statuses ?? []) await handleStatus(st);
+      for (const st of value.statuses ?? []) await handleStatus(st, phoneNumberId);
     }
   }
 }
 
-async function handleInbound(msg: InboundMessage, profileName: string | null): Promise<void> {
+async function handleInbound(msg: InboundMessage, profileName: string | null, phoneNumberId: string | null): Promise<void> {
   const from = msg.from;
   if (!from) return;
+  // A Vexa customer's own number: their lead, their desk, nothing to do with
+  // Velocity's drivers. Tried first, and only a number registered to a
+  // workspace is claimed — everything else falls through untouched.
+  if (phoneNumberId) {
+    const text = msg.text?.body ?? msg.button?.text ?? '';
+    try {
+      if (await handleVexaInbound({ phoneNumberId, from, name: profileName, text })) return;
+    } catch (err) {
+      logger.error('Vexa closer: inbound failed', { error: String(err) });
+      return;
+    }
+  }
   // A quick-reply button carries its label rather than a text body — the
   // template's own "Stop alerts" button arrives this way, and it is the path
   // most drivers will actually use, so it has to be read the same as typing it.
@@ -275,12 +301,23 @@ async function handleInbound(msg: InboundMessage, profileName: string | null): P
   }
 }
 
-async function handleStatus(st: NonNullable<WebhookValue['statuses']>[number]): Promise<void> {
+async function handleStatus(st: NonNullable<WebhookValue['statuses']>[number], phoneNumberId: string | null): Promise<void> {
   if (st.status !== 'failed') return;
   const code = st.errors?.[0]?.code ?? null;
   const action = classifySendError(code);
   const to = st.recipient_id;
   const detail = st.errors?.[0]?.title ?? `status error ${code}`;
+
+  // A customer's own number again: their lead's delivery failure must not trip
+  // Velocity's driver-alert breaker.
+  if (phoneNumberId && to) {
+    try {
+      if (await handleVexaFailure(phoneNumberId, to, code, detail)) return;
+    } catch (err) {
+      logger.error('Vexa closer: a delivery failure could not be recorded', { error: String(err) });
+      return;
+    }
+  }
 
   // Sign-in codes go out on this same number, so their failures arrive here
   // too — and they must NOT be handled as an alerts problem. Tripping the

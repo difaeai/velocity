@@ -740,6 +740,38 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ----- vexaNumbers/{phoneNumberId} --------------------------------------
+    // Which Vexa workspace a connected WhatsApp number belongs to. Written only
+    // when a client connects their number, and read only by the webhook, which
+    // runs as the backend: an inbound message arrives with a phone number id
+    // and nothing else, and this is how it finds its workspace. No client needs
+    // it, and the token it points at is sealed two levels down under that
+    // workspace's own system/ document.
+    match /vexaNumbers/{phoneNumberId} {
+      allow read, write: if false;
+    }
+
+    // ----- salesChats/{waId} -------------------------------------------------
+    // One lead's WhatsApp conversation with the desk: what they said, what Vexa
+    // said back, and where it is in the funnel. Velocity's own house desk keeps
+    // them here; a customer's sit under their workspace, which the workspace
+    // rule below already opens to its owner alone. Written only by callables.
+    match /salesChats/{waId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // ----- vexaLessons/{industry} -------------------------------------------
+    // What the desk has learned about one KIND of business, pooled across every
+    // workspace: the shape-level lessons the five-day review leaves behind, so
+    // a new customer in a trade Vexa has seen before starts trained. No client
+    // name, handle or figure ever reaches it (`review.ts` scrubLesson), and no
+    // customer reads it directly — their own copy arrives in their settings.
+    match /vexaLessons/{industry} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // ----- socialAds/{campaignId} ------------------------------------------
     // Every Meta campaign in the connected ad account, as the ads desk last
     // read and judged it. Written only by the backend: a campaign is money, and
