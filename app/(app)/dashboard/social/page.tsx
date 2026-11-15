@@ -34,6 +34,8 @@ import {
   type SocialFormat,
   type SocialPageRead,
   type SocialPlatform,
+  type SalesChatDoc,
+  type SocialCommentDoc,
   type SocialPostDoc,
   type SocialReadiness,
   type SocialSettings,
@@ -43,7 +45,8 @@ import { InstagramConnect } from '@/components/social/instagramConnect';
 import { VideoConnect } from '@/components/social/videoConnect';
 import { Blockers, readBlockers } from '@/components/social/blockers';
 import { LaunchSequence, localHourLabel } from '@/components/social/launch';
-import { AdsSection, ApprovalBox, Hero, KpiTile, SalesSection, readDesk } from '@/components/social/dashboard';
+import { AREA_CSS, AdsSection, ApprovalBox, Area, Hero, KpiTile, SalesSection, readDesk } from '@/components/social/dashboard';
+import { SalesFunnel } from '@/components/social/funnel';
 import { BRAIN_CSS, Brain } from '@/components/social/brain';
 import { AreaSpark, FX_CSS } from '@/components/social/fx';
 import { compact } from '@/components/charts';
@@ -81,6 +84,8 @@ export default function SocialOverview() {
   const [campaigns, setCampaigns] = useState<AdCampaignDoc[]>([]);
   const [sales, setSales] = useState<SalesSettingsDoc | null>(null);
   const [leads, setLeads] = useState<SalesLeadDoc[]>([]);
+  const [chats, setChats] = useState<SalesChatDoc[]>([]);
+  const [comments, setComments] = useState<SocialCommentDoc[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
@@ -186,6 +191,27 @@ export default function SocialOverview() {
       stopSettings();
       stopLeads();
     };
+  }, [path, showSales]);
+
+  // The funnel's two halves: what people asked in public under a post, and the
+  // conversations themselves. Both are watched on the overview because the
+  // funnel is the one place they are read as a single story.
+  useEffect(() => {
+    if (!showSales) return;
+    return onSnapshot(
+      query(collection(db, path('salesChats')), orderBy('updatedAtMs', 'desc'), limit(200)),
+      (snap) => setChats(snap.docs.map((d) => ({ ...(d.data() as SalesChatDoc), waId: d.id }))),
+      () => setChats([]),
+    );
+  }, [path, showSales]);
+
+  useEffect(() => {
+    if (!showSales) return;
+    return onSnapshot(
+      query(collection(db, path('socialComments')), orderBy('createdAtMs', 'desc'), limit(300)),
+      (snap) => setComments(snap.docs.map((d) => ({ ...(d.data() as SocialCommentDoc), id: d.id }))),
+      () => setComments([]),
+    );
   }, [path, showSales]);
 
   // Settings come through the callable (it also reports which keys exist), but
@@ -335,7 +361,7 @@ export default function SocialOverview() {
 
   return (
     <div className="fx">
-      <style>{FX_CSS + BRAIN_CSS}</style>
+      <style>{FX_CSS + BRAIN_CSS + AREA_CSS}</style>
 
       <Hero
         greeting={greeting}
@@ -367,7 +393,7 @@ export default function SocialOverview() {
       {settings && !settings.goal?.trim() ? <GoalBox busy={switching} onSave={answerGoal} /> : null}
 
       {settings ? (
-        <div id="make" style={{ scrollMarginTop: 16 }}>
+        <div id="make" data-tour="brain" style={{ scrollMarginTop: 16 }}>
           <Brain
             settings={settings}
             accounts={accounts}
@@ -407,59 +433,95 @@ export default function SocialOverview() {
         <div className="fx-skel" style={{ height: 460, borderRadius: 28, marginBottom: 18 }} />
       )}
 
-      <div className="fx-grid-kpi">
-        <KpiTile
-          i={3}
-          icon="📤"
-          tint="#e3f4ea"
-          label="Posted this week"
-          value={desk.postedThisWeek}
-          delta={nowMs ? desk.postedThisWeek - desk.postedLastWeek : null}
-          hint="vs last week"
-          href="/dashboard/social/queue"
-        >
-          <AreaSpark values={desk.perDay} height={34} />
-        </KpiTile>
-        <KpiTile
-          i={4}
-          icon="👥"
-          tint="#e6eefc"
-          label="Followers"
-          value={followers || null}
-          format={(n) => compact(Math.round(n))}
-          hint={
-            connected.length
-              ? connected.map((a) => PLATFORM_META[a.platform].label.split(' ')[0]).join(' + ')
-              : 'No account connected'
-          }
-          href="/dashboard/social/accounts"
-        />
-        <KpiTile
-          i={5}
-          icon="👁"
-          tint="#fde8ea"
-          label="Usual reach per post"
-          value={pageRead?.medianReach || null}
-          format={(n) => compact(Math.round(n))}
-          hint={pageRead?.medianReach ? 'From your own page' : 'Shows after the first posts'}
-          href="/dashboard/social/performance"
-        />
-        <KpiTile
-          i={6}
-          icon="🔔"
-          tint={desk.waiting.length ? '#fff1c7' : '#eef2ef'}
-          label="Waiting for you"
-          value={desk.waiting.length}
-          hint={desk.waiting.length ? 'Open them and press Approve' : 'All clear'}
-          href="/dashboard/social/queue"
-        />
-      </div>
-
-      {showAds || showSales ? (
-        <div className={`fx-grid-split${showAds && showSales ? '' : ' one'}`}>
-          {showAds ? <AdsSection ads={ads} campaigns={campaigns} nowMs={nowMs} house={house} i={7} /> : null}
-          {showSales ? <SalesSection sales={sales} leads={leads} nowMs={nowMs} i={8} /> : null}
+      {/* Three named areas, in the order the money moves: you make something,
+          you pay to put it in front of people, somebody answers and buys.
+          Until this the overview was one unbroken run of cards and nothing
+          said which part of the business any of them belonged to. */}
+      <Area
+        n={1}
+        tour="area-content"
+        tint="#0058bb"
+        title="Your content"
+        says="Everything that goes out in your name — what has been posted, what is waiting for you, how far it travelled."
+        href="/dashboard/social/queue"
+        cta="Open content & calendar"
+      >
+        <div className="fx-grid-kpi">
+          <KpiTile
+            i={3}
+            icon="📤"
+            tint="#e3f4ea"
+            label="Posted this week"
+            value={desk.postedThisWeek}
+            delta={nowMs ? desk.postedThisWeek - desk.postedLastWeek : null}
+            hint="vs last week"
+            href="/dashboard/social/queue"
+          >
+            <AreaSpark values={desk.perDay} height={34} />
+          </KpiTile>
+          <KpiTile
+            i={4}
+            icon="👥"
+            tint="#e6eefc"
+            label="Followers"
+            value={followers || null}
+            format={(n) => compact(Math.round(n))}
+            hint={
+              connected.length
+                ? connected.map((a) => PLATFORM_META[a.platform].label.split(' ')[0]).join(' + ')
+                : 'No account connected'
+            }
+            href="/dashboard/social/accounts"
+          />
+          <KpiTile
+            i={5}
+            icon="👁"
+            tint="#fde8ea"
+            label="Usual reach per post"
+            value={pageRead?.medianReach || null}
+            format={(n) => compact(Math.round(n))}
+            hint={pageRead?.medianReach ? 'From your own page' : 'Shows after the first posts'}
+            href="/dashboard/social/performance"
+          />
+          <KpiTile
+            i={6}
+            icon="🔔"
+            tint={desk.waiting.length ? '#fff1c7' : '#eef2ef'}
+            label="Waiting for you"
+            value={desk.waiting.length}
+            hint={desk.waiting.length ? 'Open them and press Approve' : 'All clear'}
+            href="/dashboard/social/queue"
+          />
         </div>
+      </Area>
+
+      {showAds ? (
+        <Area
+          n={2}
+          tour="area-ads"
+          tint="#b45309"
+          title="Your ads"
+          says="Your money buying reach on Facebook, Instagram and Google. The Ad Expert plans it with you, and never spends past the limit you set."
+          href="/dashboard/social/ads"
+          cta="Open the Ad Expert"
+        >
+          <AdsSection ads={ads} campaigns={campaigns} nowMs={nowMs} house={house} i={7} />
+        </Area>
+      ) : null}
+
+      {showSales ? (
+        <Area
+          n={showAds ? 3 : 2}
+          tour="area-sales"
+          tint="#11794c"
+          title="Your sales"
+          says="Vexa talking to people and closing them — from someone asking the price under a post, to the money."
+          href="/dashboard/social/whatsapp"
+          cta="Open the conversations"
+        >
+          <SalesFunnel chats={chats} comments={comments} nowMs={nowMs} i={7} />
+          <SalesSection sales={sales} leads={leads} nowMs={nowMs} i={8} />
+        </Area>
       ) : null}
 
       <p className="fx-muted" style={{ fontSize: 12.5, textAlign: 'center', margin: '4px 0 0' }}>

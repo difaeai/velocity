@@ -126,6 +126,14 @@ export interface SalesChat {
   lastOutboundAtMs: number | null;
   /** What the conversation is about, one line, so the console reads at a glance. */
   summary: string;
+  /**
+   * What they are actually buying, in a few words — "2-day Hunza tour", "bridal
+   * package". Separate from `summary` on purpose: the summary is a sentence
+   * about this person, and the console needs a label it can count. Two sales of
+   * the same thing have to land on the same string or "what sold today" is a
+   * list of one-offs. Empty until Vexa knows.
+   */
+  wants: string;
   /** What Vexa intends to do next. */
   nextStep: string;
   followUps: number;
@@ -356,6 +364,7 @@ export function newChat(params: { waId: string; name?: string | null; source: Sa
     lastInboundAtMs: null,
     lastOutboundAtMs: null,
     summary: '',
+    wants: '',
     nextStep: '',
     followUps: 0,
     handover: false,
@@ -474,6 +483,7 @@ Reply with one JSON object and nothing else:
   "reply": "the message, two sentences at most, in their language",
   "stage": "new | talking | qualified | pitched | won | lost | needs_you",
   "summary": "what this lead wants, one short line, in English, for the owner's console",
+  "wants": "the thing they are buying, 2-5 words, in English, as the business itself would name it on a price list — the SAME words every time for the same thing, so the owner can count them. Empty string until you know.",
   "nextStep": "what you will do next, one short line, in English",
   "handover": true only if a human must take this over (a complaint, a refund, anything legal, or they asked for a person)
 }`;
@@ -496,6 +506,7 @@ export interface Drafted {
   reply: string;
   stage: Stage;
   summary: string;
+  wants: string;
   nextStep: string;
   handover: boolean;
 }
@@ -535,6 +546,9 @@ export async function draft(chat: SalesChat, needNumber: boolean): Promise<Draft
       reply,
       stage: cleanStage(data.stage, chat.stage === 'new' ? 'talking' : chat.stage),
       summary: typeof data.summary === 'string' ? data.summary.trim().slice(0, 200) : chat.summary,
+      // Never cleared once known: a later turn that drops the field would
+      // otherwise wipe what this sale was for, and "sold today" would lose it.
+      wants: (typeof data.wants === 'string' ? data.wants.trim().slice(0, 60) : '') || chat.wants || '',
       nextStep: typeof data.nextStep === 'string' ? data.nextStep.trim().slice(0, 200) : '',
       handover: data.handover === true,
     };
@@ -658,6 +672,7 @@ async function receive(from: string, name: string | null, text: string, live = t
   const moved: Partial<SalesChat> = {
     stage: written.handover ? 'needs_you' : written.stage,
     summary: written.summary,
+    wants: written.wants,
     nextStep: written.nextStep,
     handover: written.handover,
   };
@@ -779,7 +794,7 @@ export async function runOutreach(nowMs = Date.now()): Promise<string> {
           followUps: chat.followUps + 1,
           lastOutboundAtMs: nowMs,
           updatedAtMs: nowMs,
-          ...(written ? { summary: written.summary, nextStep: written.nextStep } : {}),
+          ...(written ? { summary: written.summary, wants: written.wants, nextStep: written.nextStep } : {}),
           messages: FieldValue.arrayUnion({ from: 'us', text: written ? written.reply : `(${cfg.templateName})`, atMs: nowMs }),
         },
         { merge: true },

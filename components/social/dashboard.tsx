@@ -188,7 +188,7 @@ export function ApprovalBox({
   const direct = chosen && settings.autoPublish;
   const running = Boolean(settings.enabled);
   return (
-    <section className="fx-card fx-rise" style={vars(2)} aria-labelledby="approval-h">
+    <section className="fx-card fx-rise" style={vars(2)} aria-labelledby="approval-h" data-tour="approval">
       <div className="fx-head">
         <span className="fx-ico" style={{ background: '#eef8d2' }} aria-hidden>
           ✅
@@ -286,6 +286,72 @@ export function ApprovalBox({
     </section>
   );
 }
+
+// ── the three areas ─────────────────────────────────────────────────────────
+
+/**
+ * A band across the page with a name on it: *this* part is your content, *this*
+ * part is your ad money, *this* part is Vexa selling for you.
+ *
+ * Before this the overview was one unbroken run of cards, and the complaint was
+ * exactly that (owner, 2026-11-15): it was confusing, because nothing said
+ * which part of the business any card belonged to. A heading and a line of
+ * explanation per area costs almost nothing and is the difference between a
+ * dashboard somebody reads and one they scroll past.
+ */
+export function Area({
+  n,
+  title,
+  says,
+  tint,
+  tour,
+  href,
+  cta,
+  children,
+}: {
+  /** The number in the ring. The areas are numbered because they are a sequence. */
+  n: number;
+  title: string;
+  says: string;
+  tint: string;
+  tour: string;
+  href?: string;
+  cta?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="ar fx-rise" style={{ ['--i' as string]: n, ['--tint' as string]: tint } as React.CSSProperties} data-tour={tour}>
+      <div className="ar-head">
+        <span className="ar-n" aria-hidden>
+          {n}
+        </span>
+        <div style={{ minWidth: 0 }}>
+          <h2>{title}</h2>
+          <p>{says}</p>
+        </div>
+        {href && cta ? (
+          <Link href={href} className="ar-cta">
+            {cta} →
+          </Link>
+        ) : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+export const AREA_CSS = `
+.ar { margin-bottom: 26px; }
+.ar-head { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; padding-bottom: 11px; position: relative; }
+.ar-head::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--tint) 40%, transparent), transparent 70%); }
+.ar-n { flex: none; width: 26px; height: 26px; border-radius: 9px; display: grid; place-items: center; font-size: 12.5px; font-weight: 900;
+  color: #fff; background: var(--tint); box-shadow: 0 6px 16px -8px var(--tint); }
+.ar-head h2 { margin: 0; font-size: 17px; font-weight: 900; letter-spacing: -.015em; color: var(--tint); }
+.ar-head p { margin: 2px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+.ar-cta { margin-left: auto; flex: none; font-size: 12.5px; font-weight: 800; color: var(--tint); white-space: nowrap; }
+.ar-cta:hover { text-decoration: underline; text-underline-offset: 3px; }
+`;
 
 // ── the numbers ─────────────────────────────────────────────────────────────
 
