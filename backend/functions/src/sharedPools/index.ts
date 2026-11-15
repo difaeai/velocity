@@ -48,7 +48,7 @@ import { computeGenderAccess } from '../lib/genderAccess';
 import { queryNearbyDriverDocs } from '../lib/nearbyDrivers';
 import { neighborGeohashes } from '../lib/geohash';
 import { MAX_POOL_RIDERS, poolPerSeatFare } from '../domain/fares';
-import { getPoolingSettings, type PoolingSettings } from '../domain/poolingSettings';
+import { getPoolingSettings, routeKeyOf, type PoolingSettings } from '../domain/poolingSettings';
 import { recordAdmission, recordOffRoute } from './admit';
 import type { DriverPublicInfo, TripStatus } from '../domain/types';
 import { assertOutstandingClear, getCancellationSettings, type CancellationSettings } from '../domain/cancellation';
@@ -1197,6 +1197,8 @@ async function seatOnPool(
   }
   const pooling = await getPoolingSettings();
   const route = { pickup: snap.get('pickup') as Place, dropoff: snap.get('dropoff') as Place };
+  // The corridor this pool runs. Decides whether the engine enforces here.
+  const routeKey = routeKeyOf(route.pickup, route.dropoff);
   if (stops) {
     /**
      * Measured at the WIDEST radius first, so a refusal knows how near a miss
@@ -1217,7 +1219,7 @@ async function seatOnPool(
     );
     const offsetM = wide ? Math.max(wide.pickupOffsetM, wide.dropoffOffsetM) : null;
     if (!wide || offsetM! > pooling.matchRadiusM) {
-      if (wide) await recordOffRoute(poolId, uid, offsetM!, pooling);
+      if (wide) await recordOffRoute(poolId, uid, offsetM!, pooling, routeKey);
       throw new HttpsError(
         'failed-precondition',
         `Your pickup or drop-off is more than ${
@@ -1249,6 +1251,7 @@ async function seatOnPool(
           joiner: { uid, ...ownStops },
           currentGross: car.gross,
           start: (tripData?.driverLocation as Place | undefined) ?? null,
+          routeKey,
         }, pooling);
         if (admission.refuse) throw new HttpsError('failed-precondition', poolRefusal(admission.reason));
       }
@@ -1281,6 +1284,7 @@ async function seatOnPool(
     aboard: bookedGeometry(pending, { ...snap.data(), fare: fresh?.fare ?? snap.get('fare') }, route),
     joiner: { uid, ...ownStops },
     start: null,
+    routeKey,
   }, pooling);
   if (admission?.refuse) throw new HttpsError('failed-precondition', poolRefusal(admission.reason));
 

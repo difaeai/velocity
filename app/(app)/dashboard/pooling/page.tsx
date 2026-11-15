@@ -56,6 +56,8 @@ interface Settings {
   bookingCutoffMin: number;
   maxRiders: number;
   autoTune: boolean;
+  autoMode: boolean;
+  liveRoutes: string[];
 }
 
 /** Mirrors DEFAULT_POOLING in backend/functions/src/domain/poolingSettings.ts. */
@@ -71,6 +73,8 @@ const DEFAULTS: Settings = {
   bookingCutoffMin: 0,
   maxRiders: 4,
   autoTune: true,
+  autoMode: false,
+  liveRoutes: [],
 };
 
 /** label → [min, max], the backend's clamp. */
@@ -113,6 +117,7 @@ export default function PoolingPage() {
   const [fit, setFit] = useState<{ at: string | null; reasons: string[]; samples: { offRoute: number; goodJoins: number } | null }>(
     { at: null, reasons: [], samples: null },
   );
+  const [modeFit, setModeFit] = useState<{ at: string | null; reasons: string[] }>({ at: null, reasons: [] });
   const [totals, setTotals] = useState<Totals>(ZERO);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -138,11 +143,17 @@ export default function PoolingPage() {
           bookingCutoffMin: num(d.bookingCutoffMin, DEFAULTS.bookingCutoffMin),
           maxRiders: num(d.maxRiders, DEFAULTS.maxRiders),
           autoTune: d.autoTune !== false,
+          autoMode: d.autoMode === true,
+          liveRoutes: Array.isArray(d.liveRoutes) ? (d.liveRoutes as string[]) : [],
         });
         setFit({
           at: d.autoTunedAt?.toDate?.()?.toLocaleString() ?? null,
           reasons: Array.isArray(d.autoTunedReasons) ? (d.autoTunedReasons as string[]) : [],
           samples: (d.autoTunedSamples as { offRoute: number; goodJoins: number } | undefined) ?? null,
+        });
+        setModeFit({
+          at: d.autoModeAt?.toDate?.()?.toLocaleString() ?? null,
+          reasons: Array.isArray(d.autoModeReasons) ? (d.autoModeReasons as string[]) : [],
         });
         const a = an.data() ?? {};
         setTotals({ ...ZERO, ...Object.fromEntries(Object.keys(ZERO).map((k) => [k, num(a[k], 0)])) } as Totals);
@@ -244,6 +255,74 @@ export default function PoolingPage() {
           <p style={{ ...warnStyle, marginTop: 12 }}>
             Live mode refuses real riders a real car. Check “would have refused” below before saving
             this, and keep the limits where the ledger says they belong.
+          </p>
+        )}
+      </Card>
+
+      {/* ── Deciding where to enforce ─────────────────────────────────────── */}
+      <Card style={glass}>
+        <h3 style={{ margin: '0 0 10px', fontSize: 15 }}>Deciding where to enforce</h3>
+        <button
+          type="button"
+          onClick={() => set('autoMode', !s.autoMode)}
+          style={{
+            width: '100%',
+            textAlign: 'left',
+            padding: '12px 14px',
+            borderRadius: 12,
+            cursor: 'pointer',
+            border: `2px solid ${s.autoMode ? colors.primary : colors.border}`,
+            background: s.autoMode ? `${colors.primary}12` : '#fff',
+            color: colors.text,
+          }}
+        >
+          <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 2 }}>
+            {s.autoMode
+              ? 'On — a route goes live once it has earned it'
+              : 'Off — every route stays in shadow until you say otherwise'}
+          </div>
+          <div style={{ color: colors.muted, fontSize: 12, lineHeight: 1.5 }}>
+            Route by route, from each route&apos;s own record — not the city average. A route goes
+            live only when enforcing would <strong>barely change it</strong>: 30+ judged joins, 90%
+            of them already meeting the limits, and 80% measured on real roads. If a live route
+            starts refusing more than a fifth of its riders, it comes back to shadow by itself.
+          </div>
+        </button>
+        {!s.autoMode && (
+          <p style={hintBoxStyle}>
+            Turning this on is what authorises the engine to start refusing joins — on the routes
+            that have proved its judgement matches what already happens there, and nowhere else.
+            The global mode above stays shadow; it is the floor, not the ceiling.
+          </p>
+        )}
+        {s.liveRoutes.length > 0 ? (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 11, color: colors.muted, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700 }}>
+              Enforcing on {s.liveRoutes.length} route{s.liveRoutes.length === 1 ? '' : 's'}
+              {modeFit.at ? ` · last decided ${modeFit.at}` : ''}
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+              {s.liveRoutes.map((r) => (
+                <span
+                  key={r}
+                  style={{
+                    fontSize: 12, fontWeight: 700, padding: '3px 8px', borderRadius: 999,
+                    background: `${colors.success}18`, color: colors.success,
+                  }}
+                >
+                  {r}
+                </span>
+              ))}
+            </div>
+            {modeFit.reasons.length > 0 && (
+              <ul style={{ margin: '10px 0 0', paddingLeft: 18, color: colors.text, fontSize: 13, lineHeight: 1.6 }}>
+                {modeFit.reasons.map((r) => <li key={r}>{r}</li>)}
+              </ul>
+            )}
+          </div>
+        ) : (
+          <p style={{ color: colors.muted, fontSize: 13, margin: '12px 0 0' }}>
+            No route is enforcing yet — every one of them is being watched.
           </p>
         )}
       </Card>

@@ -67,16 +67,101 @@ export const DETOUR_TARGET = 0.9;
 /** Most a detour limit may move in one run, as a fraction of itself. */
 export const DETOUR_STEP = 0.25;
 
+/** Judged joins a route needs before the engine will enforce on it. */
+export const MIN_MODE_SAMPLES = 30;
+/**
+ * A route goes live only when enforcing would barely change it: at least this
+ * share of its joins already pass the limits. The point is not to find routes
+ * where enforcement bites — it is to find routes where the engine's judgement
+ * has been proved to agree with what is already happening, so switching it on
+ * refuses the few bad joins and nothing else.
+ */
+export const PROMOTE_PASS = 0.9;
+/**
+ * And comes back off below this. The gap between the two is deliberate: a route
+ * sitting exactly on one threshold would otherwise flip every night.
+ */
+export const DEMOTE_PASS = 0.8;
+/**
+ * A route is only promoted when its detours were really measured on the road.
+ * Enforcing a road limit against straight-line figures would be enforcing a
+ * number that means nothing.
+ */
+export const PROMOTE_ROAD = 0.8;
+/** Most routes that may be live at once, so the settings doc stays a document. */
+export const MAX_LIVE_ROUTES = 500;
+
 /** One ledger row, as calibration needs it. */
 export interface LedgerRow {
   kind?: string;
   ok?: boolean;
+  routeKey?: string | null;
   /** Off-route rows: how far off the route the rider stood. */
   offsetM?: number;
   /** Join rows: the road this join cost, when it was road-measured. */
   detourKm?: number;
   detourMin?: number;
   detourSource?: string;
+}
+
+export interface ModeDecision {
+  /** The routes that should be live after this run. */
+  liveRoutes: string[];
+  promoted: string[];
+  demoted: string[];
+  reasons: string[];
+}
+
+/**
+ * Which routes the engine should ENFORCE on, from each route's own record.
+ * Pure, so a promotion can be explained after the fact.
+ *
+ * A route with too little evidence is left exactly as it is: an unproven route
+ * stays in shadow, and a route that earned live keeps it even if it goes quiet,
+ * because it earned it on evidence that has not been contradicted.
+ */
+export function decideModes(rows: LedgerRow[], settings: PoolingSettings): ModeDecision {
+  const live = new Set(settings.liveRoutes);
+  const promoted: string[] = [];
+  const demoted: string[] = [];
+  const reasons: string[] = [];
+
+  const byRoute = new Map<string, LedgerRow[]>();
+  for (const r of rows) {
+    if (r.kind !== 'join' || !r.routeKey) continue;
+    const list = byRoute.get(r.routeKey) ?? [];
+    list.push(r);
+    byRoute.set(r.routeKey, list);
+  }
+
+  for (const [route, joins] of byRoute) {
+    if (joins.length < MIN_MODE_SAMPLES) continue;
+    const passed = joins.filter((r) => r.ok === true).length;
+    const road = joins.filter((r) => r.detourSource === 'road').length;
+    const passRate = passed / joins.length;
+    const roadRate = road / joins.length;
+    const isLive = live.has(route);
+
+    if (!isLive && passRate >= PROMOTE_PASS && roadRate >= PROMOTE_ROAD) {
+      if (live.size >= MAX_LIVE_ROUTES) continue;
+      live.add(route);
+      promoted.push(route);
+      reasons.push(
+        `${route} → live: ${joins.length} joins judged, ${Math.round(passRate * 100)}% already met `
+        + `the limits and ${Math.round(roadRate * 100)}% were road-measured, so enforcing turns away `
+        + `the ${joins.length - passed} that did not and nobody else.`,
+      );
+    } else if (isLive && passRate < DEMOTE_PASS) {
+      live.delete(route);
+      demoted.push(route);
+      reasons.push(
+        `${route} → shadow: only ${Math.round(passRate * 100)}% of ${joins.length} joins met the `
+        + 'limits, which is too many riders to turn away. Watching it again.',
+      );
+    }
+  }
+
+  return { liveRoutes: [...live], promoted, demoted, reasons };
 }
 
 export interface Proposal {
@@ -187,25 +272,42 @@ export function recommend(rows: LedgerRow[], current: PoolingSettings): Proposal
  * nightly; does nothing at all when `autoTune` is off, when there is not enough
  * evidence, or when nothing moved.
  */
-export async function calibrateOnce(nowMs = Date.now()): Promise<Proposal | null> {
+export async function calibrateOnce(
+  nowMs = Date.now(),
+): Promise<{ proposal: Proposal | null; modes: ModeDecision | null }> {
   const settings = await getPoolingSettings();
-  if (!settings.autoTune) return null;
+  if (!settings.autoTune && !settings.autoMode) return { proposal: null, modes: null };
 
   const since = Timestamp.fromMillis(nowMs - WINDOW_DAYS * 24 * 60 * 60 * 1000);
   const snap = await db.collection(DECISIONS).where('at', '>=', since).limit(5000).get();
-  const proposal = recommend(snap.docs.map((d) => d.data() as LedgerRow), settings);
-  if (proposal.reasons.length === 0) return proposal;
+  const rows = snap.docs.map((d) => d.data() as LedgerRow);
 
-  await db.doc('config/poolingSettings').set({
-    matchRadiusM: proposal.matchRadiusM,
-    maxDetourKm: proposal.maxDetourKm,
-    maxDetourMin: proposal.maxDetourMin,
-    autoTunedAt: FieldValue.serverTimestamp(),
-    autoTunedReasons: proposal.reasons,
-    autoTunedSamples: proposal.samples,
-  }, { merge: true });
-  logger.info('pooling distances re-fitted', { reasons: proposal.reasons, samples: proposal.samples });
-  return proposal;
+  const proposal = settings.autoTune ? recommend(rows, settings) : null;
+  const modes = settings.autoMode ? decideModes(rows, settings) : null;
+
+  const update: Record<string, unknown> = {};
+  if (proposal && proposal.reasons.length > 0) {
+    update.matchRadiusM = proposal.matchRadiusM;
+    update.maxDetourKm = proposal.maxDetourKm;
+    update.maxDetourMin = proposal.maxDetourMin;
+    update.autoTunedAt = FieldValue.serverTimestamp();
+    update.autoTunedReasons = proposal.reasons;
+    update.autoTunedSamples = proposal.samples;
+  }
+  if (modes && modes.reasons.length > 0) {
+    update.liveRoutes = modes.liveRoutes.slice(0, MAX_LIVE_ROUTES);
+    update.autoModeAt = FieldValue.serverTimestamp();
+    update.autoModeReasons = modes.reasons;
+  }
+  if (Object.keys(update).length > 0) {
+    await db.doc('config/poolingSettings').set(update, { merge: true });
+    logger.info('pooling re-fitted', {
+      distances: proposal?.reasons ?? [],
+      promoted: modes?.promoted ?? [],
+      demoted: modes?.demoted ?? [],
+    });
+  }
+  return { proposal, modes };
 }
 
 /**

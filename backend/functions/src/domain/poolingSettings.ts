@@ -22,6 +22,7 @@
  * algorithm proves itself on real bookings before it decides any.
  */
 import { db } from '../lib/firebase';
+import { areaLabel } from '../dailyRoutes/travelAreas';
 
 /**
  * `shadow` measures and records but never refuses; `live` refuses a join that
@@ -59,6 +60,21 @@ export interface PoolingSettings {
    * off to freeze them at whatever they are now.
    */
   autoTune: boolean;
+  /**
+   * Let the engine decide for itself WHERE to enforce — route by route, from
+   * each route's own record (sharedPools/calibrate.ts `decideModes`).
+   *
+   * Off by default, and deliberately so: the owner said four times that they
+   * would authorise live activation. Turning this on IS that authorisation, and
+   * it is one switch rather than a standing instruction to a nightly job.
+   */
+  autoMode: boolean;
+  /**
+   * The routes the engine has promoted to live on their own evidence. Everything
+   * else runs at `mode`. Only the exceptions are stored, because shadow is the
+   * default and a list of 3,430 routes is not a setting.
+   */
+  liveRoutes: string[];
 }
 
 /**
@@ -88,6 +104,8 @@ export const DEFAULT_POOLING: PoolingSettings = {
   bookingCutoffMin: 0,
   maxRiders: 4,
   autoTune: true,
+  autoMode: false,
+  liveRoutes: [],
 };
 
 /**
@@ -130,5 +148,36 @@ export async function getPoolingSettings(): Promise<PoolingSettings> {
     maxRiders: Math.round(setting(snap.get('maxRiders'), d.maxRiders, 2, 4)),
     // Only an explicit false turns the fitting off.
     autoTune: snap.get('autoTune') !== false,
+    // ...and only an explicit true lets it enforce anywhere by itself.
+    autoMode: snap.get('autoMode') === true,
+    liveRoutes: Array.isArray(snap.get('liveRoutes'))
+      ? (snap.get('liveRoutes') as unknown[]).filter((r): r is string => typeof r === 'string').slice(0, 500)
+      : [],
   };
+}
+
+/**
+ * A route's name, as the Corporate cards name one: the area a car leaves from
+ * and the area it goes to. Two pools along the same corridor share a key, so a
+ * corridor accumulates evidence even though each pool is short-lived.
+ */
+export function routeKeyOf(
+  pickup: { address: string },
+  dropoff: { address: string },
+): string {
+  return `${areaLabel(pickup.address)}>${areaLabel(dropoff.address)}`;
+}
+
+/**
+ * Does the engine ENFORCE on this route, or only watch it?
+ *
+ * The global `mode` is the floor: setting it to live enforces everywhere at
+ * once. Above that, a route the engine has promoted on its own record is live
+ * even while everything else is still shadow — which is how enforcement is
+ * allowed to start on the routes that have earned it and nowhere else.
+ */
+export function modeForRoute(settings: PoolingSettings, routeKey: string | null): PoolingMode {
+  if (settings.mode === 'live') return 'live';
+  if (routeKey && settings.liveRoutes.includes(routeKey)) return 'live';
+  return 'shadow';
 }

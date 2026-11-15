@@ -25,7 +25,7 @@
 import { logger } from 'firebase-functions';
 
 import { db, FieldValue } from '../lib/firebase';
-import type { PoolingSettings } from '../domain/poolingSettings';
+import { modeForRoute, type PoolingSettings } from '../domain/poolingSettings';
 import { fetchRouteServerSide, serverRoutingConfigured } from '../lib/routes';
 import type { LatLng } from '../lib/corridor';
 import {
@@ -52,6 +52,12 @@ export interface AdmissionContext {
   currentGross?: number | null;
   /** Where the car starts from, when it is already out. */
   start?: { lat: number; lng: number } | null;
+  /**
+   * The corridor this pool runs, as `routeKeyOf` names it. It decides whether
+   * the engine ENFORCES here or only watches, and it is what each route's
+   * record is accumulated under.
+   */
+  routeKey?: string | null;
 }
 
 export interface Admission extends AdmitDecision {
@@ -168,7 +174,7 @@ export async function recordAdmission(
       worstSavingPct: 0,
       detourKm: 0,
       detourMin: 0,
-      mode: settings.mode,
+      mode: modeForRoute(settings, ctx.routeKey ?? null),
       refuse: false,
       detourSource: 'straight',
       recorded: Promise.resolve(),
@@ -191,10 +197,13 @@ export async function recordAdmission(
     detour,
     ctx.currentGross,
   );
+  // The route's mode, not the global one: enforcement starts on the routes that
+  // have earned it (domain/poolingSettings `modeForRoute`).
+  const mode = modeForRoute(settings, ctx.routeKey ?? null);
   const verdict = {
     ...decision,
-    mode: settings.mode,
-    refuse: !decision.ok && settings.mode === 'live',
+    mode,
+    refuse: !decision.ok && mode === 'live',
     detourSource: detour.source,
   };
   const recorded = write(ctx, verdict, settings).catch((error) => {
@@ -230,11 +239,13 @@ export async function recordOffRoute(
   uid: string,
   offsetM: number,
   settings: PoolingSettings,
+  routeKey: string | null = null,
 ): Promise<void> {
   try {
     await db.collection(DECISIONS).add({
       kind: 'offRoute',
       poolId,
+      routeKey,
       uid,
       at: FieldValue.serverTimestamp(),
       mode: settings.mode,
@@ -261,6 +272,7 @@ async function write(
       // got to, turned away by the radius alone. Calibration reads both.
       kind: 'join',
       poolId: ctx.poolId,
+      routeKey: ctx.routeKey ?? null,
       uid: ctx.uid,
       at: FieldValue.serverTimestamp(),
       mode: a.mode,
