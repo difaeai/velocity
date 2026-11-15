@@ -187,6 +187,18 @@ export default function PerformancePage() {
                 }
                 tone={review.competitors?.ahead ? '#ff6b6b' : undefined}
               />
+              {review.sales ? (
+                <Tile
+                  label="Leads closed"
+                  value={`${review.sales.won}`}
+                  note={
+                    review.sales.waiting
+                      ? `${review.sales.waiting} waiting for you on WhatsApp`
+                      : `${review.sales.live} conversations live, ${review.sales.lost} lost`
+                  }
+                  tone={review.sales.waiting ? '#ff6b6b' : review.sales.won ? '#28c76f' : undefined}
+                />
+              ) : null}
             </div>
 
             {review.summary ? (

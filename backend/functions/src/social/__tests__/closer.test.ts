@@ -18,6 +18,7 @@ import {
   languageOf,
   LANGUAGE_RULE,
   MAX_REPLY_CHARS,
+  needsNumber,
   newChat,
   parseSheet,
   sendBudget,
@@ -218,6 +219,15 @@ describe('the chat record', () => {
       ],
     };
     expect(transcript(chat)).toBe('THEM: rate kya hai\nUS: 2500 se shuru');
+  });
+
+  it('knows when it still has to get their number', () => {
+    // A WhatsApp lead arrived with theirs; one from a comment or a DM did not,
+    // and asking for it is the first job of that conversation.
+    expect(needsNumber({ source: 'whatsapp' })).toBe(false);
+    expect(needsNumber({ source: 'sheet' })).toBe(false);
+    expect(needsNumber({ source: 'comment' })).toBe(true);
+    expect(needsNumber({ source: 'instagram' })).toBe(true);
   });
 
   it('holds the stage to the ones that exist', () => {

@@ -478,6 +478,14 @@ Reply with one JSON object and nothing else:
   "handover": true only if a human must take this over (a complaint, a refund, anything legal, or they asked for a person)
 }`;
 
+/**
+ * Whether Vexa still has to get their phone number before it can carry on.
+ *
+ * A WhatsApp lead arrived with theirs. A lead that came from a comment or a DM
+ * did not, and getting it is the first job of that conversation. Pure.
+ */
+export const needsNumber = (chat: Pick<SalesChat, 'source'>): boolean => chat.source !== 'whatsapp' && chat.source !== 'sheet';
+
 /** Who answers the inbox on this desk. */
 async function closerPerson(): Promise<Employee | null> {
   const team = await activeTeam();
@@ -641,7 +649,7 @@ async function receive(from: string, name: string | null, text: string, live = t
     return;
   }
 
-  const written = await draft(chat, false);
+  const written = await draft(chat, needsNumber(chat));
   if (!written) {
     await keep({ stage: 'needs_you', nextStep: 'Vexa could not write a reply, so this one is yours.' });
     return;
@@ -753,7 +761,7 @@ export async function runOutreach(nowMs = Date.now()): Promise<string> {
     const free = canFreeForm(chat.lastInboundAtMs, nowMs);
     if (!free && (budget <= 0 || !cfg.templateName)) continue;
 
-    const written = free ? await draft(chat, false) : null;
+    const written = free ? await draft(chat, needsNumber(chat)) : null;
     const result = free
       ? written
         ? await send(chat.waId, written.reply, cfg, token)
