@@ -211,6 +211,44 @@ export async function recordAdmission(
   return admission;
 }
 
+/**
+ * A rider whose journey IS on the pool's route — same direction, half of it
+ * shared — and who was turned away only because their stops sit further off it
+ * than `matchRadiusM` allows. `offsetM` is how far: the worse of their pickup
+ * and drop-off.
+ *
+ * This is the one signal that says whether the radius is set too tight, and it
+ * was being thrown away. The calibration job reads these rows against the joins
+ * that were accepted, so the radius can follow where riders actually stand
+ * rather than the round number somebody once typed.
+ *
+ * Fire-and-forget, like every other ledger write: the rider is already being
+ * refused, and a bookkeeping failure must not change what they are told.
+ */
+export async function recordOffRoute(
+  poolId: string,
+  uid: string,
+  offsetM: number,
+  settings: PoolingSettings,
+): Promise<void> {
+  try {
+    await db.collection(DECISIONS).add({
+      kind: 'offRoute',
+      poolId,
+      uid,
+      at: FieldValue.serverTimestamp(),
+      mode: settings.mode,
+      ok: false,
+      refused: true,
+      reason: `${Math.round(offsetM)} m off the route, over the ${settings.matchRadiusM} m limit`,
+      offsetM: Math.round(offsetM),
+      limits: { matchRadiusM: settings.matchRadiusM, candidateRadiusM: settings.candidateRadiusM },
+    });
+  } catch (error) {
+    logger.warn('pooling off-route not recorded', { poolId, error });
+  }
+}
+
 async function write(
   ctx: AdmissionContext,
   a: Omit<Admission, 'recorded'>,
@@ -219,6 +257,9 @@ async function write(
   const riders = ctx.aboard.length + 1;
   await Promise.all([
     db.collection(DECISIONS).add({
+      // 'join' = a rider the engine priced and judged; 'offRoute' = one it never
+      // got to, turned away by the radius alone. Calibration reads both.
+      kind: 'join',
       poolId: ctx.poolId,
       uid: ctx.uid,
       at: FieldValue.serverTimestamp(),

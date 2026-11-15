@@ -49,6 +49,16 @@ export interface PoolingSettings {
   bookingCutoffMin: number;
   /** Seats a pool will book. Capped by the car itself (MAX_POOL_RIDERS). */
   maxRiders: number;
+  /**
+   * Let the engine fit its own distances to what actually happened —
+   * `matchRadiusM`, `maxDetourKm` and `maxDetourMin`, nightly, from the ledger
+   * (sharedPools/calibrate.ts). Money and mode are never auto-tuned.
+   *
+   * On by default: these three are the numbers nobody can pick correctly in
+   * advance, and 1 km refused the owner's own example by 276 metres. Turn it
+   * off to freeze them at whatever they are now.
+   */
+  autoTune: boolean;
 }
 
 /**
@@ -77,6 +87,7 @@ export const DEFAULT_POOLING: PoolingSettings = {
   matchWindowMin: 10,
   bookingCutoffMin: 0,
   maxRiders: 4,
+  autoTune: true,
 };
 
 /**
@@ -117,5 +128,7 @@ export async function getPoolingSettings(): Promise<PoolingSettings> {
     matchWindowMin: Math.round(setting(snap.get('matchWindowMin'), d.matchWindowMin, 0, 240)),
     bookingCutoffMin: Math.round(setting(snap.get('bookingCutoffMin'), d.bookingCutoffMin, 0, 240)),
     maxRiders: Math.round(setting(snap.get('maxRiders'), d.maxRiders, 2, 4)),
+    // Only an explicit false turns the fitting off.
+    autoTune: snap.get('autoTune') !== false,
   };
 }

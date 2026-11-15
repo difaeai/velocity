@@ -55,6 +55,7 @@ interface Settings {
   matchWindowMin: number;
   bookingCutoffMin: number;
   maxRiders: number;
+  autoTune: boolean;
 }
 
 /** Mirrors DEFAULT_POOLING in backend/functions/src/domain/poolingSettings.ts. */
@@ -69,6 +70,7 @@ const DEFAULTS: Settings = {
   matchWindowMin: 10,
   bookingCutoffMin: 0,
   maxRiders: 4,
+  autoTune: true,
 };
 
 /** label → [min, max], the backend's clamp. */
@@ -108,6 +110,9 @@ const num = (v: unknown, fallback: number) => (typeof v === 'number' && Number.i
 
 export default function PoolingPage() {
   const [s, setS] = useState<Settings>(DEFAULTS);
+  const [fit, setFit] = useState<{ at: string | null; reasons: string[]; samples: { offRoute: number; goodJoins: number } | null }>(
+    { at: null, reasons: [], samples: null },
+  );
   const [totals, setTotals] = useState<Totals>(ZERO);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -132,6 +137,12 @@ export default function PoolingPage() {
           matchWindowMin: num(d.matchWindowMin, DEFAULTS.matchWindowMin),
           bookingCutoffMin: num(d.bookingCutoffMin, DEFAULTS.bookingCutoffMin),
           maxRiders: num(d.maxRiders, DEFAULTS.maxRiders),
+          autoTune: d.autoTune !== false,
+        });
+        setFit({
+          at: d.autoTunedAt?.toDate?.()?.toLocaleString() ?? null,
+          reasons: Array.isArray(d.autoTunedReasons) ? (d.autoTunedReasons as string[]) : [],
+          samples: (d.autoTunedSamples as { offRoute: number; goodJoins: number } | undefined) ?? null,
         });
         const a = an.data() ?? {};
         setTotals({ ...ZERO, ...Object.fromEntries(Object.keys(ZERO).map((k) => [k, num(a[k], 0)])) } as Totals);
@@ -233,6 +244,58 @@ export default function PoolingPage() {
           <p style={{ ...warnStyle, marginTop: 12 }}>
             Live mode refuses real riders a real car. Check “would have refused” below before saving
             this, and keep the limits where the ledger says they belong.
+          </p>
+        )}
+      </Card>
+
+      {/* ── Fitting itself ────────────────────────────────────────────────── */}
+      <Card style={glass}>
+        <h3 style={{ margin: '0 0 10px', fontSize: 15 }}>Setting its own distances</h3>
+        <button
+          type="button"
+          onClick={() => set('autoTune', !s.autoTune)}
+          style={{
+            width: '100%',
+            textAlign: 'left',
+            padding: '12px 14px',
+            borderRadius: 12,
+            cursor: 'pointer',
+            border: `2px solid ${s.autoTune ? colors.primary : colors.border}`,
+            background: s.autoTune ? `${colors.primary}12` : '#fff',
+            color: colors.text,
+          }}
+        >
+          <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 2 }}>
+            {s.autoTune ? 'On — the engine fits the three distances nightly' : 'Off — the distances are frozen where you set them'}
+          </div>
+          <div style={{ color: colors.muted, fontSize: 12, lineHeight: 1.5 }}>
+            Match radius, max detour km and max detour minutes are fitted at 03:30 each night from
+            what actually happened: how far off a route riders really stood when they were turned
+            away, and what a worthwhile join really cost in road. Money and mode are never touched.
+          </div>
+        </button>
+        {s.autoTune && (
+          <p style={hintBoxStyle}>
+            It needs <strong>40 turned-away riders</strong> before it moves the radius and{' '}
+            <strong>40 road-measured good joins</strong> before it moves a detour limit, moves each
+            by one small step a night, and will not fit the radius past 2.5 km whatever the data
+            says. Anything you type below is a starting point it works from, not a value it keeps.
+          </p>
+        )}
+        {fit.at ? (
+          <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 10, border: `1px solid ${colors.border}`, background: '#fff' }}>
+            <div style={{ fontSize: 11, color: colors.muted, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700 }}>
+              Last fitted {fit.at}
+              {fit.samples ? ` · from ${fit.samples.offRoute} turned away, ${fit.samples.goodJoins} good joins` : ''}
+            </div>
+            <ul style={{ margin: '8px 0 0', paddingLeft: 18, color: colors.text, fontSize: 13, lineHeight: 1.6 }}>
+              {fit.reasons.map((r) => <li key={r}>{r}</li>)}
+            </ul>
+          </div>
+        ) : (
+          <p style={{ color: colors.muted, fontSize: 13, margin: '12px 0 0' }}>
+            Not fitted yet — it is still collecting. Until then the distances below are the ones in
+            force.
           </p>
         )}
       </Card>
