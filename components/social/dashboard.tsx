@@ -17,13 +17,11 @@ import type {
   AdsConfigDoc,
   SalesLeadDoc,
   SalesSettingsDoc,
-  SocialEmployee,
   SocialPostDoc,
   SocialResearch,
   SocialSettings,
   SocialStage,
 } from '@/lib/api';
-import { Mascot, ROLE_META, longDate } from './shared';
 import { GRADE_META, adMoney, tone } from './ads';
 import { localHourLabel } from './launch';
 import { AreaSpark, CountUp, Ring } from './fx';
@@ -76,84 +74,6 @@ export function readDesk(posts: SocialPostDoc[], nowMs: number) {
 export type DeskRead = ReturnType<typeof readDesk>;
 
 const vars = (i: number) => ({ ['--i' as string]: i }) as React.CSSProperties;
-
-// ── the hero ────────────────────────────────────────────────────────────────
-
-export function Hero({
-  greeting,
-  name,
-  today,
-  summary,
-  running,
-  waiting,
-  staff,
-  desk,
-}: {
-  greeting: string;
-  name: string | null;
-  today: string | null;
-  summary: string;
-  running: boolean;
-  waiting: number;
-  staff: SocialEmployee[];
-  desk: DeskRead;
-}) {
-  const team = staff.filter((e) => e.status === 'active');
-  const working = team.filter((e) => desk.doing.get(e.id)?.now).length;
-  return (
-    <section className="fx-hero fx-rise" style={vars(0)}>
-      <span className="fx-orb a" />
-      <span className="fx-orb b" />
-      <span className="fx-orb c" />
-      <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-        <div style={{ flex: 1, minWidth: 260 }}>
-          <div className="fx-eyebrow">Manage social · Vexa</div>
-          <h1>
-            {greeting}
-            {name ? `, ${name}` : ''} <span className="fx-wave">👋</span>
-          </h1>
-          <p>{summary}</p>
-          {team.length ? (
-            <div className="fx-team" aria-label="Vexa's team">
-              {team.map((e, i) => {
-                const busy = desk.doing.get(e.id)?.now;
-                return (
-                  <Link
-                    key={e.id}
-                    href="/dashboard/social/employees"
-                    className="fx-mate fx-bob"
-                    style={vars(i)}
-                    title={`${e.name} — ${ROLE_META[e.role].label}${busy ? ', working now' : ''}`}
-                    aria-label={`${e.name}, ${ROLE_META[e.role].label}${busy ? ', working now' : ''}`}
-                  >
-                    <Mascot role={e.role} size={32} />
-                    {busy ? <span className="busy" /> : null}
-                  </Link>
-                );
-              })}
-              <Link href="/dashboard/social/employees" className="fx-hero-chip" style={{ marginLeft: 4 }}>
-                {working ? `${working} working now` : `${team.length} on duty`} →
-              </Link>
-            </div>
-          ) : null}
-        </div>
-        <div style={{ display: 'grid', gap: 8, justifyItems: 'end' }}>
-          {today ? <span className="fx-hero-chip">📅 {longDate(today)}</span> : null}
-          <span className="fx-hero-chip">
-            <span className={running ? 'fx-live lime' : 'fx-live off'} /> {running ? 'Posting every day' : 'Daily run paused'}
-          </span>
-          {waiting ? (
-            <Link href="/dashboard/social/queue" className="fx-hero-chip warn">
-              <span className="fx-wiggle">🔔</span> {waiting} waiting for you →
-            </Link>
-          ) : null}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// ── the approval choice ─────────────────────────────────────────────────────
 
 const pieces = (n: number) => `${n} piece${n === 1 ? '' : 's'}`;
 

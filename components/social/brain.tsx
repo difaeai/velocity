@@ -287,6 +287,7 @@ export function Brain({
   onDone,
   onError,
   children,
+  below,
 }: {
   settings: SocialSettings;
   accounts: SocialAccountDoc[];
@@ -303,7 +304,10 @@ export function Brain({
   disabled: boolean;
   onDone: (message: string) => void;
   onError: (message: string) => void;
+  /** The approval choice, wired into the brain's own diagram. */
   children: React.ReactNode;
+  /** What the content box shows under the diagram — the week's numbers. */
+  below?: React.ReactNode;
 }) {
   const { path, includes } = useWorkspace();
   // Each plan sees only its own agents: no ad agents without the Ad Expert, no email agent without sales.
@@ -466,44 +470,278 @@ export function Brain({
       style={vars({ '--i': 1 })}
       aria-labelledby="brain-h"
     >
-      <div className="bn-head">
-        <div style={{ minWidth: 0 }}>
-          <div className="fx-eyebrow">Velocity Brain</div>
-          <h2 id="brain-h">Tell it what you want. It sends the work to the right agent.</h2>
+      <div className="bn-box bn-ask" data-tour="brain">
+        <div className="bn-head">
+          <div style={{ minWidth: 0 }}>
+            <div className="fx-eyebrow">Ask Vexa</div>
+            <h2 id="brain-h">Tell it what you want. It sends the work to the right agent.</h2>
+          </div>
+          <span className="bn-status" aria-live="polite">
+            <span className={busy || said ? 'fx-live lime' : 'fx-live'} /> {status}
+          </span>
         </div>
-        <span className="bn-status" aria-live="polite">
-          <span className={busy || said ? 'fx-live lime' : 'fx-live'} /> {status}
-        </span>
+        <div className="bn-prompt">
+          <span className="bn-spark-ico" aria-hidden>
+            ✦
+          </span>
+          <textarea
+            value={brief}
+            onChange={(e) => hear(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !blocked && !busy) void go();
+            }}
+            id="make-brief"
+            rows={2}
+            aria-label="Tell the brain what you want"
+            placeholder={agent === 'team' && ownFiles.length ? 'Say what your video or pictures show, and who they are for' : `e.g. ${examples[example % examples.length]}`}
+          />
+          <button type="button" className="bn-go" onClick={go} disabled={busy || blocked}>
+            {busy ? (
+              <span className="fx-typing" aria-hidden>
+                <span />
+                <span />
+                <span />
+              </span>
+            ) : (
+              <span aria-hidden>⚡</span>
+            )}
+            {busy
+              ? agent === 'email'
+                ? 'Writing to each customer…'
+                : agent === 'campaign'
+                ? 'The expert is building it…'
+                : refFile || refLink.trim()
+                  ? 'The team is watching the video…'
+                  : ownFiles.length
+                    ? 'The team is working with your files…'
+                    : 'The team is working…'
+              : agent === 'expert'
+                ? 'Plan it with the expert'
+                : agent === 'campaign'
+                  ? 'Make the campaign'
+                  : agent === 'email'
+                    ? toInbox
+                      ? 'Open the inbox'
+                      : 'Write to every customer'
+                    : 'Make it'}
+          </button>
+        </div>
+
+        <div className="bn-route">
+          <span className="bn-to">
+            → <strong>{AGENTS[agent].name}</strong>
+            {agent === 'team' ? ` · ${FORMAT_META[want].label}` : <span className="bn-gate">{gate}</span>}
+          </span>
+
+          {agent === 'team' ? (
+            <>
+              <div className="bn-chips" role="radiogroup" aria-label="What to make">
+                {FORMATS.map((f) => (
+                  <button key={f} type="button" role="radio" aria-checked={f === want} onClick={() => onWant(f)}>
+                    <span aria-hidden>{FORMAT_META[f].glyph}</span>
+                    {FORMAT_META[f].label}
+                  </button>
+                ))}
+              </div>
+              <div className="bn-chips" role="radiogroup" aria-label="This one">
+                <button type="button" role="radio" aria-checked={!postDirect} onClick={() => setDirect(false)}>
+                  🛡️ Wait for my Approve
+                </button>
+                <button type="button" role="radio" aria-checked={postDirect} onClick={() => setDirect(true)}>
+                  ⚡ Post at once
+                </button>
+              </div>
+              {!showRef ? (
+                <button type="button" className="bn-textbtn" onClick={() => setRefAsked(true)}>
+                  🎞️ + Make it like a video I like
+                </button>
+              ) : null}
+              {!showOwn ? (
+                <button type="button" className="bn-textbtn" onClick={() => setOwnAsked(true)}>
+                  📎 + Use my own video or pictures
+                </button>
+              ) : null}
+            </>
+          ) : null}
+          {busy ? <span className="bn-hint">Takes a few minutes. You can leave this page — it carries on.</span> : null}
+        </div>
+
+        {agent === 'team' && showOwn ? (
+          <div className="bn-panel">
+            <p className="bn-hint" style={{ margin: '0 0 8px' }}>
+              {!ownFiles.length
+                ? 'One video (MP4 or MOV), or up to 10 pictures. Then say in the box what they show.'
+                : hasVideo(ownFiles)
+                  ? 'Your video goes out as it is. The team writes the caption and hashtags for it.'
+                  : want === 'reel'
+                    ? 'The team turns your pictures into a reel, with words, a voice and music.'
+                    : 'Your pictures go out as they are. The team writes the words.'}
+            </p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <label className="bn-pick">
+                {ownFiles.length ? `📎 ${ownFiles.length === 1 ? ownFiles[0].name : `${ownFiles.length} pictures`}` : 'Choose files'}
+                <input
+                  type="file"
+                  accept={OWN_ACCEPT}
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    pickOwn(Array.from(e.target.files ?? []));
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setOwnFiles([]);
+                  setOwnAsked(false);
+                }}
+                className="bn-pick"
+                aria-label="Remove your files"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {agent === 'team' && showRef ? (
+          <div className="bn-panel">
+            <p className="bn-hint" style={{ margin: '0 0 8px' }}>
+              The team watches it and copies the hook, pacing and structure — never the footage, faces or words. From
+              Instagram or TikTok? Download it and upload the file.
+            </p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <label className="bn-pick" style={{ opacity: refLink.trim() ? 0.5 : 1 }}>
+                {refFile ? `📎 ${refFile.name}` : 'Upload a video'}
+                <input
+                  type="file"
+                  accept="video/*"
+                  disabled={Boolean(refLink.trim())}
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    setRefFile(e.target.files?.[0] ?? null);
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+              {refFile ? (
+                <button type="button" onClick={() => setRefFile(null)} className="bn-pick" aria-label="Remove the video">
+                  ✕
+                </button>
+              ) : (
+                <>
+                  <span className="bn-hint">or</span>
+                  <input
+                    value={refLink}
+                    onChange={(e) => onRefLink(e.target.value)}
+                    placeholder="paste a YouTube or Shorts link"
+                    aria-label="YouTube link"
+                    className="bn-small"
+                    style={{ flex: 1, minWidth: 200 }}
+                  />
+                </>
+              )}
+            </div>
+          </div>
+        ) : null}
+
+        {agent === 'campaign' ? (
+          <div className="bn-chips" role="radiogroup" aria-label="Where it runs" style={{ marginTop: 12 }}>
+            {(Object.keys(NETWORKS) as AdNetwork[]).map((n) => (
+              <button key={n} type="button" role="radio" aria-checked={n === network} onClick={() => setNetwork(n)}>
+                {NETWORKS[n]}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        {agent === 'campaign' ? (
+          adsReady ? (
+            <div className="bn-panel" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'end' }}>
+              <label className="bn-label">
+                Per day ({ads!.currency})
+                <input
+                  inputMode="numeric"
+                  value={budget}
+                  onChange={(e) => setBudget(e.target.value.replace(/[^\d.]/g, ''))}
+                  placeholder="the expert decides"
+                  className="bn-small"
+                />
+              </label>
+              <label className="bn-label">
+                Days
+                <input
+                  inputMode="numeric"
+                  value={days}
+                  onChange={(e) => setDays(e.target.value.replace(/\D/g, ''))}
+                  placeholder={`up to ${ads!.maxDays}`}
+                  className="bn-small"
+                />
+              </label>
+              <span className="bn-hint">Limit {adMoney(ads!.dailyCap, ads!.currency)} a day</span>
+            </div>
+          ) : (
+            <p className="bn-panel bn-warn">
+              {network === 'youtube'
+                ? 'YouTube ads need your YouTube channel and your Google Ads account connected, and a daily limit.'
+                : network === 'tiktok'
+                  ? 'TikTok ads need your TikTok ad account connected, and a daily limit.'
+                  : 'The ads desk needs the ad account connected and a daily limit first.'}{' '}
+              <Link href={networkReady ? '/dashboard/social/ads' : '/dashboard/social/accounts'}>Set it up</Link>
+              {network === 'meta' ? (
+                <>
+                  {' '}
+                  — or tap <strong>Meta Ad Expert</strong> and plan the campaign first.
+                </>
+              ) : (
+                '.'
+              )}
+            </p>
+          )
+        ) : null}
       </div>
 
-      <div className="bn-grid">
-        <div className="bn-stage">
-          <svg className="bn-wires" viewBox="0 0 760 380" aria-hidden>
-            {order.map((a, i) => {
-              const y = ys[i];
-              const from = 190 + (y - 190) * 0.3;
-              const into = `M330 ${from} C400 ${from}, 400 ${y}, 466 ${y}`;
-              const out = `M698 ${y} C732 ${y}, 728 190, 760 190`;
-              const on = a === agent;
-              return (
-                <g key={a} className={on ? 'on' : undefined}>
-                  <path d={into} className="bn-wire" />
-                  <path d={out} className="bn-wire bn-out" />
-                  {on ? (
-                    <>
-                      <path d={into} pathLength={100} className="bn-comet" />
-                      <path d={out} pathLength={100} className="bn-comet late bn-out" />
-                    </>
-                  ) : null}
-                </g>
-              );
-            })}
-          </svg>
-          <div className="bn-brainbox ringed">
-            <ConnectionRing
-              nodes={ringNodes({ accounts, ads, sales, adsPaid, salesPaid, contentPaid: includes('content'), nowMs })}
-            />
-            <BrainArt />
+      <div className="bn-box bn-think">
+        <div className="bn-head">
+          <div style={{ minWidth: 0 }}>
+            <div className="fx-eyebrow">Velocity Brain</div>
+            <h2>Where your content goes</h2>
+          </div>
+          <span className="bn-status">
+            <span className={busy ? 'fx-live lime' : 'fx-live'} /> {AGENTS[agent].name}
+          </span>
+        </div>
+
+        <div className="bn-grid">
+          <div className="bn-stage">
+            <svg className="bn-wires" viewBox="0 0 760 380" aria-hidden>
+              {order.map((a, i) => {
+                const y = ys[i];
+                const from = 190 + (y - 190) * 0.3;
+                const into = `M330 ${from} C400 ${from}, 400 ${y}, 466 ${y}`;
+                const out = `M698 ${y} C732 ${y}, 728 190, 760 190`;
+                const on = a === agent;
+                return (
+                  <g key={a} className={on ? 'on' : undefined}>
+                    <path d={into} className="bn-wire" />
+                    <path d={out} className="bn-wire bn-out" />
+                    {on ? (
+                      <>
+                        <path d={into} pathLength={100} className="bn-comet" />
+                        <path d={out} pathLength={100} className="bn-comet late bn-out" />
+                      </>
+                    ) : null}
+                  </g>
+                );
+              })}
+            </svg>
+            <div className="bn-brainbox ringed">
+              <ConnectionRing
+                nodes={ringNodes({ accounts, ads, sales, adsPaid, salesPaid, contentPaid: includes('content'), nowMs })}
+              />
+              <BrainArt />
           </div>
           <div className="bn-agents" role="radiogroup" aria-label="Who does it">
             {order.map((a, i) => (
@@ -527,242 +765,33 @@ export function Brain({
             ))}
           </div>
         </div>
-        <div className="bn-approval">{children}</div>
-      </div>
-
-      <div className="bn-prompt">
-        <span className="bn-spark-ico" aria-hidden>
-          ✦
-        </span>
-        <textarea
-          value={brief}
-          onChange={(e) => hear(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !blocked && !busy) void go();
-          }}
-          id="make-brief"
-          rows={2}
-          aria-label="Tell the brain what you want"
-          placeholder={agent === 'team' && ownFiles.length ? 'Say what your video or pictures show, and who they are for' : `e.g. ${examples[example % examples.length]}`}
-        />
-        <button type="button" className="bn-go" onClick={go} disabled={busy || blocked}>
-          {busy ? (
-            <span className="fx-typing" aria-hidden>
-              <span />
-              <span />
-              <span />
-            </span>
-          ) : (
-            <span aria-hidden>⚡</span>
-          )}
-          {busy
-            ? agent === 'email'
-              ? 'Writing to each customer…'
-              : agent === 'campaign'
-              ? 'The expert is building it…'
-              : refFile || refLink.trim()
-                ? 'The team is watching the video…'
-                : ownFiles.length
-                  ? 'The team is working with your files…'
-                  : 'The team is working…'
-            : agent === 'expert'
-              ? 'Plan it with the expert'
-              : agent === 'campaign'
-                ? 'Make the campaign'
-                : agent === 'email'
-                  ? toInbox
-                    ? 'Open the inbox'
-                    : 'Write to every customer'
-                  : 'Make it'}
-        </button>
-      </div>
-
-      <div className="bn-route">
-        <span className="bn-to">
-          → <strong>{AGENTS[agent].name}</strong>
-          {agent === 'team' ? ` · ${FORMAT_META[want].label}` : <span className="bn-gate">{gate}</span>}
-        </span>
-
-        {agent === 'team' ? (
-          <>
-            <div className="bn-chips" role="radiogroup" aria-label="What to make">
-              {FORMATS.map((f) => (
-                <button key={f} type="button" role="radio" aria-checked={f === want} onClick={() => onWant(f)}>
-                  <span aria-hidden>{FORMAT_META[f].glyph}</span>
-                  {FORMAT_META[f].label}
-                </button>
-              ))}
-            </div>
-            <div className="bn-chips" role="radiogroup" aria-label="This one">
-              <button type="button" role="radio" aria-checked={!postDirect} onClick={() => setDirect(false)}>
-                🛡️ Wait for my Approve
-              </button>
-              <button type="button" role="radio" aria-checked={postDirect} onClick={() => setDirect(true)}>
-                ⚡ Post at once
-              </button>
-            </div>
-            {!showRef ? (
-              <button type="button" className="bn-textbtn" onClick={() => setRefAsked(true)}>
-                🎞️ + Make it like a video I like
-              </button>
-            ) : null}
-            {!showOwn ? (
-              <button type="button" className="bn-textbtn" onClick={() => setOwnAsked(true)}>
-                📎 + Use my own video or pictures
-              </button>
-            ) : null}
-          </>
-        ) : null}
-        {busy ? <span className="bn-hint">Takes a few minutes. You can leave this page — it carries on.</span> : null}
-      </div>
-
-      {agent === 'team' && showOwn ? (
-        <div className="bn-panel">
-          <p className="bn-hint" style={{ margin: '0 0 8px' }}>
-            {!ownFiles.length
-              ? 'One video (MP4 or MOV), or up to 10 pictures. Then say in the box what they show.'
-              : hasVideo(ownFiles)
-                ? 'Your video goes out as it is. The team writes the caption and hashtags for it.'
-                : want === 'reel'
-                  ? 'The team turns your pictures into a reel, with words, a voice and music.'
-                  : 'Your pictures go out as they are. The team writes the words.'}
-          </p>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            <label className="bn-pick">
-              {ownFiles.length ? `📎 ${ownFiles.length === 1 ? ownFiles[0].name : `${ownFiles.length} pictures`}` : 'Choose files'}
-              <input
-                type="file"
-                accept={OWN_ACCEPT}
-                multiple
-                style={{ display: 'none' }}
-                onChange={(e) => {
-                  pickOwn(Array.from(e.target.files ?? []));
-                  e.target.value = '';
-                }}
-              />
-            </label>
-            <button
-              type="button"
-              onClick={() => {
-                setOwnFiles([]);
-                setOwnAsked(false);
-              }}
-              className="bn-pick"
-              aria-label="Remove your files"
-            >
-              ✕
-            </button>
-          </div>
+          <div className="bn-approval">{children}</div>
         </div>
-      ) : null}
 
-      {agent === 'team' && showRef ? (
-        <div className="bn-panel">
-          <p className="bn-hint" style={{ margin: '0 0 8px' }}>
-            The team watches it and copies the hook, pacing and structure — never the footage, faces or words. From
-            Instagram or TikTok? Download it and upload the file.
-          </p>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            <label className="bn-pick" style={{ opacity: refLink.trim() ? 0.5 : 1 }}>
-              {refFile ? `📎 ${refFile.name}` : 'Upload a video'}
-              <input
-                type="file"
-                accept="video/*"
-                disabled={Boolean(refLink.trim())}
-                style={{ display: 'none' }}
-                onChange={(e) => {
-                  setRefFile(e.target.files?.[0] ?? null);
-                  e.target.value = '';
-                }}
-              />
-            </label>
-            {refFile ? (
-              <button type="button" onClick={() => setRefFile(null)} className="bn-pick" aria-label="Remove the video">
-                ✕
-              </button>
-            ) : (
-              <>
-                <span className="bn-hint">or</span>
-                <input
-                  value={refLink}
-                  onChange={(e) => onRefLink(e.target.value)}
-                  placeholder="paste a YouTube or Shorts link"
-                  aria-label="YouTube link"
-                  className="bn-small"
-                  style={{ flex: 1, minWidth: 200 }}
-                />
-              </>
-            )}
-          </div>
-        </div>
-      ) : null}
-
-      {agent === 'campaign' ? (
-        <div className="bn-chips" role="radiogroup" aria-label="Where it runs" style={{ marginTop: 12 }}>
-          {(Object.keys(NETWORKS) as AdNetwork[]).map((n) => (
-            <button key={n} type="button" role="radio" aria-checked={n === network} onClick={() => setNetwork(n)}>
-              {NETWORKS[n]}
-            </button>
-          ))}
-        </div>
-      ) : null}
-
-      {agent === 'campaign' ? (
-        adsReady ? (
-          <div className="bn-panel" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'end' }}>
-            <label className="bn-label">
-              Per day ({ads!.currency})
-              <input
-                inputMode="numeric"
-                value={budget}
-                onChange={(e) => setBudget(e.target.value.replace(/[^\d.]/g, ''))}
-                placeholder="the expert decides"
-                className="bn-small"
-              />
-            </label>
-            <label className="bn-label">
-              Days
-              <input
-                inputMode="numeric"
-                value={days}
-                onChange={(e) => setDays(e.target.value.replace(/\D/g, ''))}
-                placeholder={`up to ${ads!.maxDays}`}
-                className="bn-small"
-              />
-            </label>
-            <span className="bn-hint">Limit {adMoney(ads!.dailyCap, ads!.currency)} a day</span>
-          </div>
-        ) : (
-          <p className="bn-panel bn-warn">
-            {network === 'youtube'
-              ? 'YouTube ads need your YouTube channel and your Google Ads account connected, and a daily limit.'
-              : network === 'tiktok'
-                ? 'TikTok ads need your TikTok ad account connected, and a daily limit.'
-                : 'The ads desk needs the ad account connected and a daily limit first.'}{' '}
-            <Link href={networkReady ? '/dashboard/social/ads' : '/dashboard/social/accounts'}>Set it up</Link>
-            {network === 'meta' ? (
-              <>
-                {' '}
-                — or tap <strong>Meta Ad Expert</strong> and plan the campaign first.
-              </>
-            ) : (
-              '.'
-            )}
-          </p>
-        )
-      ) : null}
+        {below ? <div className="bn-below" data-tour="area-content">{below}</div> : null}
+      </div>
     </section>
   );
 }
 
 export const BRAIN_CSS = `${BRAIN_ART_CSS}
-.bn { --speed: 1; position: relative; overflow: hidden; isolation: isolate; border-radius: 28px; padding: 22px 22px 18px; margin-bottom: 18px;
+/* Two boxes, not one (owner, 2026-11-15): the thing you type into comes first
+   and on its own, then the brain showing where the work went. They keep one
+   .bn wrapper because every state class — thinking, listening, sent — is read
+   by both of them. */
+.bn { --speed: 1; display: grid; gap: 16px; margin-bottom: 18px; }
+.bn-box { position: relative; overflow: hidden; isolation: isolate; border-radius: 28px; padding: 22px 22px 18px;
   color: #eaf5ee; border: 1px solid #16301f;
   background: radial-gradient(70% 90% at 24% 36%, #0f3322 0%, #06120c 55%, #020504 100%); }
-.bn::before { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+.bn-box::before { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
   background-image: linear-gradient(rgba(204,255,0,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(204,255,0,.045) 1px, transparent 1px);
   background-size: 32px 32px; -webkit-mask-image: radial-gradient(70% 80% at 30% 40%, #000 20%, transparent 75%);
   mask-image: radial-gradient(70% 80% at 30% 40%, #000 20%, transparent 75%); }
+/* the box you are typing into leans forward while it is being used */
+.bn-ask { transition: border-color .3s ease, box-shadow .3s ease; }
+.bn.listening .bn-ask { border-color: #2c5d3f; box-shadow: 0 0 0 1px rgba(204,255,0,.14), 0 18px 44px -24px rgba(204,255,0,.4); }
+.bn.thinking .bn-think { border-color: #2c5d3f; }
+.bn.sent .bn-think { border-color: rgba(204,255,0,.45); }
 .bn.listening { --speed: .6; }
 .bn.thinking { --speed: .3; }
 
@@ -772,6 +801,10 @@ export const BRAIN_CSS = `${BRAIN_ART_CSS}
   background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); white-space: nowrap; }
 .bn.sent .bn-status { background: var(--lime); color: var(--ink); border-color: var(--lime); }
 
+.bn-think .bn-grid { margin-bottom: 0; }
+.bn-eyebrow-row { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+.bn-eyebrow-row .fx-link { margin-left: auto; color: var(--lime); }
+.bn-below { margin-top: 18px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,.08); }
 .bn-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(290px, 1fr); gap: 22px; align-items: center; margin: 4px 0 14px; }
 .bn-stage { position: relative; aspect-ratio: 760 / 380; min-width: 0; }
 .bn-wires { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
