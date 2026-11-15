@@ -287,7 +287,6 @@ export function Brain({
   onDone,
   onError,
   children,
-  below,
 }: {
   settings: SocialSettings;
   accounts: SocialAccountDoc[];
@@ -306,8 +305,6 @@ export function Brain({
   onError: (message: string) => void;
   /** The approval choice, wired into the brain's own diagram. */
   children: React.ReactNode;
-  /** What the content box shows under the diagram — the week's numbers. */
-  below?: React.ReactNode;
 }) {
   const { path, includes } = useWorkspace();
   // Each plan sees only its own agents: no ad agents without the Ad Expert, no email agent without sales.
@@ -767,8 +764,6 @@ export function Brain({
         </div>
           <div className="bn-approval">{children}</div>
         </div>
-
-        {below ? <div className="bn-below" data-tour="area-content">{below}</div> : null}
       </div>
     </section>
   );
@@ -802,9 +797,6 @@ export const BRAIN_CSS = `${BRAIN_ART_CSS}
 .bn.sent .bn-status { background: var(--lime); color: var(--ink); border-color: var(--lime); }
 
 .bn-think .bn-grid { margin-bottom: 0; }
-.bn-eyebrow-row { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
-.bn-eyebrow-row .fx-link { margin-left: auto; color: var(--lime); }
-.bn-below { margin-top: 18px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,.08); }
 .bn-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(290px, 1fr); gap: 22px; align-items: center; margin: 4px 0 14px; }
 .bn-stage { position: relative; aspect-ratio: 760 / 380; min-width: 0; }
 .bn-wires { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }

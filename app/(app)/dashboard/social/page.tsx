@@ -47,6 +47,7 @@ import { Blockers, readBlockers } from '@/components/social/blockers';
 import { LaunchSequence, localHourLabel } from '@/components/social/launch';
 import { AREA_CSS, AdsSection, ApprovalBox, Area, KpiTile, SalesSection, readDesk } from '@/components/social/dashboard';
 import { PULSE_CSS, VexaPulse } from '@/components/social/pulse';
+import { SEARCH_CSS, VexaSearch } from '@/components/social/search';
 import { SalesFunnel } from '@/components/social/funnel';
 import { BRAIN_CSS, Brain } from '@/components/social/brain';
 import { AreaSpark, FX_CSS } from '@/components/social/fx';
@@ -350,21 +351,25 @@ export default function SocialOverview() {
 
   return (
     <div className="fx">
-      <style>{FX_CSS + BRAIN_CSS + AREA_CSS + PULSE_CSS}</style>
+      <style>{FX_CSS + BRAIN_CSS + AREA_CSS + PULSE_CSS + SEARCH_CSS}</style>
 
-      {/* Above every box: the whole of Vexa, and what it is doing this minute. */}
-      <VexaPulse
-        desk={desk}
-        settings={settings}
-        ads={ads}
-        campaigns={campaigns}
-        sales={sales}
-        chats={chats}
-        leads={leads}
-        pageRead={pageRead}
-        nowMs={nowMs}
-        has={includes}
-      />
+      {/* The top row: where you want to go on the left, what Vexa is doing this
+          minute on the right. Everything under it is four named boxes. */}
+      <div className="vx-top">
+        <VexaSearch />
+        <VexaPulse
+          desk={desk}
+          settings={settings}
+          ads={ads}
+          campaigns={campaigns}
+          sales={sales}
+          chats={chats}
+          leads={leads}
+          pageRead={pageRead}
+          nowMs={nowMs}
+          has={includes}
+        />
+      </div>
 
       {error ? <p style={{ color: colors.danger, marginBottom: 14 }}>{error}</p> : null}
       {notice ? (
@@ -384,8 +389,20 @@ export default function SocialOverview() {
       {/* Asked once, on the first day, and read by every employee on every job afterwards. */}
       {settings && !settings.goal?.trim() ? <GoalBox busy={switching} onSave={answerGoal} /> : null}
 
+      {/* Four boxes, in the order the work happens: you ask for something, it
+          goes out in your name, you pay to put it in front of more people,
+          somebody answers and buys. Each one is a name you press to open — the
+          whole page at once was the thing that was confusing (owner,
+          2026-11-15), so only the first is open to begin with. */}
       {settings ? (
-        <div id="make" style={{ scrollMarginTop: 16 }}>
+        <Area
+          n={1}
+          tour="area-brain"
+          tint="#004c31"
+          title="Brain"
+          says="Tell Vexa what you want, in your own words. It works out which agent should do it — and this is where you choose who presses send."
+        >
+          <div id="make" style={{ scrollMarginTop: 16 }}>
           <Brain
             settings={settings}
             accounts={accounts}
@@ -399,14 +416,43 @@ export default function SocialOverview() {
             refLink={refLink}
             onRefLink={setRefLink}
             disabled={onShift.length === 0}
-            below={
-              <>
-                <div className="bn-eyebrow-row">
-                  <span className="fx-eyebrow">Your content this week</span>
-                  <Link href="/dashboard/social/queue" className="fx-link">
-                    Open content &amp; calendar →
-                  </Link>
-                </div>
+            onDone={(message) => {
+              setError(null);
+              setNotice(message);
+            }}
+            onError={(message) => {
+              setNotice(null);
+              setError(message);
+            }}
+          >
+            <ApprovalBox
+              settings={settings}
+              waiting={desk.waiting.length}
+              busy={switching}
+              noTeam={onShift.length === 0}
+              networks={networks}
+              nextRun={nextRun}
+              coverage={coverage[0] ?? null}
+              onChoose={chooseMode}
+              onRunning={setRunning}
+            />
+          </Brain>
+          </div>
+        </Area>
+      ) : (
+        <div className="fx-skel" style={{ height: 120, borderRadius: 28, marginBottom: 18 }} />
+      )}
+
+      <Area
+        n={2}
+        tour="area-content"
+        tint="#0058bb"
+        title="Content"
+        says="Everything that goes out in your name: what was posted, how far it travelled, and what is waiting for your Approve."
+        href="/dashboard/social/queue"
+        cta="Open content & calendar"
+        open={false}
+      >
         <div className="fx-grid-kpi">
           <KpiTile
             i={3}
@@ -454,74 +500,38 @@ export default function SocialOverview() {
             href="/dashboard/social/queue"
           />
         </div>
-              </>
-            }
-            onDone={(message) => {
-              setError(null);
-              setNotice(message);
-            }}
-            onError={(message) => {
-              setNotice(null);
-              setError(message);
-            }}
-          >
-            <ApprovalBox
-              settings={settings}
-              waiting={desk.waiting.length}
-              busy={switching}
-              noTeam={onShift.length === 0}
-              networks={networks}
-              nextRun={nextRun}
-              coverage={coverage[0] ?? null}
-              onChoose={chooseMode}
-              onRunning={setRunning}
-            />
-          </Brain>
-        </div>
-      ) : (
-        <div className="fx-skel" style={{ height: 460, borderRadius: 28, marginBottom: 18 }} />
-      )}
-
-      {/* Three named areas, in the order the money moves: you make something,
-          you pay to put it in front of people, somebody answers and buys.
-          Until this the overview was one unbroken run of cards and nothing
-          said which part of the business any of them belonged to. */}
-      {showSales ? (
-        <Area
-          n={3}
-          tour="area-sales"
-          tint="#11794c"
-          title="Your sales"
-          says="Vexa talking to people and closing them — from someone asking the price under a post, to the money."
-          href="/dashboard/social/whatsapp"
-          cta="Open the conversations"
-        >
-          <SalesFunnel chats={chats} comments={comments} nowMs={nowMs} autoReply={Boolean(settings?.autoReply)} i={7} />
-          <SalesSection sales={sales} leads={leads} nowMs={nowMs} i={8} />
-        </Area>
-      ) : null}
+      </Area>
 
       {showAds ? (
         <Area
-          n={4}
+          n={3}
           tour="area-ads"
           tint="#b45309"
-          title="Your ads"
+          title="Ads"
           says="Your money buying reach on Facebook, Instagram and Google. The Ad Expert plans it with you, and never spends past the limit you set."
           href="/dashboard/social/ads"
           cta="Open the Ad Expert"
+          open={false}
         >
           <AdsSection ads={ads} campaigns={campaigns} nowMs={nowMs} house={house} i={7} />
         </Area>
       ) : null}
 
-      <p className="fx-muted" style={{ fontSize: 12.5, textAlign: 'center', margin: '4px 0 0' }}>
-        Everything the team made, and the month ahead, is on{' '}
-        <Link href="/dashboard/social/queue" style={{ color: colors.secondary, fontWeight: 800 }}>
-          Content &amp; calendar
-        </Link>
-        .
-      </p>
+      {showSales ? (
+        <Area
+          n={showAds ? 4 : 3}
+          tour="area-sales"
+          tint="#11794c"
+          title="Sales"
+          says="Vexa talking to people and closing them — from someone asking the price under a post, to the money."
+          href="/dashboard/social/whatsapp"
+          cta="Open the conversations"
+          open={false}
+        >
+          <SalesFunnel chats={chats} comments={comments} nowMs={nowMs} autoReply={Boolean(settings?.autoReply)} i={7} />
+          <SalesSection sales={sales} leads={leads} nowMs={nowMs} i={8} />
+        </Area>
+      ) : null}
     </div>
   );
 }

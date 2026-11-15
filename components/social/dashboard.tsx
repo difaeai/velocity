@@ -9,6 +9,7 @@
  * pure and does all the deciding, so the drawing below only draws.
  */
 
+import { useState } from 'react';
 import Link from 'next/link';
 
 import { colors } from '@/lib/config';
@@ -210,14 +211,20 @@ export function ApprovalBox({
 // ── the three areas ─────────────────────────────────────────────────────────
 
 /**
- * A band across the page with a name on it: *this* part is your content, *this*
- * part is your ad money, *this* part is Vexa selling for you.
+ * One box with its name on top: *this* part is your content, *this* part is
+ * your ad money, *this* part is Vexa selling for you. Press the name and the
+ * box opens.
  *
  * Before this the overview was one unbroken run of cards, and the complaint was
  * exactly that (owner, 2026-11-15): it was confusing, because nothing said
- * which part of the business any card belonged to. A heading and a line of
- * explanation per area costs almost nothing and is the difference between a
- * dashboard somebody reads and one they scroll past.
+ * which part of the business any card belonged to. Naming each part fixed half
+ * of it; the other half was that all of it was open at once, which is four
+ * screens of dashboard before you have decided what you came for. So the name
+ * is a lid: four lines down the page, and you open the one you want.
+ *
+ * `details` rather than a state machine, because it brings the keyboard, the
+ * screen-reader wiring and find-in-page with it for nothing — and because the
+ * tour can open a closed box with one attribute.
  */
 export function Area({
   n,
@@ -227,6 +234,7 @@ export function Area({
   tour,
   href,
   cta,
+  open = true,
   children,
 }: {
   /** The number in the ring. The areas are numbered because they are a sequence. */
@@ -237,40 +245,69 @@ export function Area({
   tour: string;
   href?: string;
   cta?: string;
+  /** Open to begin with. The first box is; the rest wait to be asked for. */
+  open?: boolean;
   children: React.ReactNode;
 }) {
+  const [on, setOn] = useState(open);
   return (
-    <section className="ar fx-rise" style={{ ['--i' as string]: n, ['--tint' as string]: tint } as React.CSSProperties} data-tour={tour}>
-      <div className="ar-head">
+    <details
+      className="ar fx-rise"
+      style={{ ['--i' as string]: n, ['--tint' as string]: tint } as React.CSSProperties}
+      data-tour={tour}
+      open={on}
+      onToggle={(e) => setOn(e.currentTarget.open)}
+    >
+      {/* Heading content only inside a summary — hence the `em`, not a `p`. */}
+      <summary className="ar-head">
         <span className="ar-n" aria-hidden>
           {n}
         </span>
-        <div style={{ minWidth: 0 }}>
-          <h2>{title}</h2>
-          <p>{says}</p>
-        </div>
-        {href && cta ? (
-          <Link href={href} className="ar-cta">
-            {cta} →
-          </Link>
-        ) : null}
-      </div>
+        <h2>
+          {title}
+          <em>{says}</em>
+        </h2>
+        <span className="ar-chev" aria-hidden />
+      </summary>
       {children}
-    </section>
+      {href && cta ? (
+        <Link href={href} className="ar-cta">
+          {cta} →
+        </Link>
+      ) : null}
+    </details>
   );
 }
 
 export const AREA_CSS = `
-.ar { margin-bottom: 26px; }
-.ar-head { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; padding-bottom: 11px; position: relative; }
+.ar { margin-bottom: 14px; }
+.ar-head { display: flex; align-items: center; gap: 12px; margin: 0; padding: 12px 2px 11px; position: relative; cursor: pointer;
+  list-style: none; transition: padding-left .25s ease; }
+.ar-head::-webkit-details-marker { display: none; }
 .ar-head::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
   background: linear-gradient(90deg, color-mix(in srgb, var(--tint) 40%, transparent), transparent 70%); }
+.ar-head:hover { padding-left: 6px; }
 .ar-n { flex: none; width: 26px; height: 26px; border-radius: 9px; display: grid; place-items: center; font-size: 12.5px; font-weight: 900;
-  color: #fff; background: var(--tint); box-shadow: 0 6px 16px -8px var(--tint); }
-.ar-head h2 { margin: 0; font-size: 17px; font-weight: 900; letter-spacing: -.015em; color: var(--tint); }
-.ar-head p { margin: 2px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
-.ar-cta { margin-left: auto; flex: none; font-size: 12.5px; font-weight: 800; color: var(--tint); white-space: nowrap; }
+  color: #fff; background: var(--tint); box-shadow: 0 6px 16px -8px var(--tint); transition: transform .3s cubic-bezier(.3,1.5,.5,1); }
+.ar-head:hover .ar-n { transform: scale(1.1) rotate(-6deg); }
+.ar-head h2 { margin: 0; min-width: 0; font-size: 17px; font-weight: 900; letter-spacing: -.015em; color: var(--tint); }
+.ar-head h2 em { display: block; font-style: normal; font-size: 12.5px; font-weight: 500; line-height: 1.5; color: var(--muted); margin-top: 2px; }
+/* the lid: a chevron that turns over as the box opens */
+.ar-chev { flex: none; margin-left: auto; width: 26px; height: 26px; border-radius: 50%; position: relative;
+  background: color-mix(in srgb, var(--tint) 10%, transparent); transition: transform .3s cubic-bezier(.3,1.5,.5,1), background .2s ease; }
+.ar-chev::before { content: ''; position: absolute; left: 9px; top: 10px; width: 7px; height: 7px; border-right: 2px solid var(--tint);
+  border-bottom: 2px solid var(--tint); transform: rotate(45deg); }
+.ar[open] > .ar-head .ar-chev { transform: rotate(180deg); }
+.ar-head:hover .ar-chev { background: color-mix(in srgb, var(--tint) 20%, transparent); }
+.ar[open] { margin-bottom: 26px; }
+/* What is inside slides out from under the lid. The end state is written out
+   because this replaces whatever animation the child had — and a child with
+   .fx-rise sits at opacity 0 until its own animation runs it up. */
+.ar[open] > :not(summary) { animation: ar-open .42s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes ar-open { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+.ar-cta { display: block; text-align: right; font-size: 12.5px; font-weight: 800; color: var(--tint); margin: 10px 0 0; }
 .ar-cta:hover { text-decoration: underline; text-underline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) { .ar *, .ar[open] > :not(summary) { animation: none !important; transition: none !important; } }
 `;
 
 // ── the numbers ─────────────────────────────────────────────────────────────

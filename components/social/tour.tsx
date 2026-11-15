@@ -25,9 +25,12 @@
  *    where your ads live" actually takes you there and carries on. Nothing has
  *    to be saved to survive that: this is mounted by the console's layout, and
  *    a Next.js layout is not remounted when you move between its own pages.
- *  • **A missing target is skipped, not fatal.** Pages differ by plan: a
- *    customer without the sales plan has no WhatsApp row to light up. A step
- *    whose target is not on the page is passed over silently.
+ *  • **A missing target is skipped, not fatal — but patiently.** Pages differ
+ *    by plan: a customer without the sales plan has no WhatsApp row to light
+ *    up. Such a step is passed over silently, after two and a half seconds of
+ *    looking: long enough for the page a `goto` just opened, a cold callable
+ *    and a closed box, so that a slow page is never mistaken for a missing one.
+ *    Nothing is said out loud until the target has actually been found.
  *
  * To put a step on something, give it `data-tour="<id>"`. Nothing else.
  */
@@ -100,6 +103,8 @@ export function Tour({
   const router = useRouter();
   const [i, setI] = useState(0);
   const [spot, setSpot] = useState<Spot | null>(null);
+  /** The step whose target has been found and measured; nothing is said before it. */
+  const [found, setFound] = useState(-1);
   const [turnedDown, setTurnedDown] = useState(false);
   const stopSaying = useRef<() => void>(() => undefined);
   // Both of these are this browser's, and both have to outlive a reload.
@@ -109,27 +114,47 @@ export function Tour({
   const offer = Boolean(autoOffer) && !seen && !turnedDown && !open;
 
   const step: TourStep | undefined = steps[i];
+  /** This step is on screen: a target that has been measured, or no target at all. */
+  const ready = !step?.target || found === i;
+  /** What the veil cuts a hole for. A step with no target dims the whole screen. */
+  const hole = step?.target ? spot : null;
 
   /** The element this step lights up, if it is on this page. */
   const find = useCallback(() => {
     if (!step?.target) return null;
-    return document.querySelector<HTMLElement>(`[data-tour="${step.target}"]`);
+    const el = document.querySelector<HTMLElement>(`[data-tour="${step.target}"]`);
+    // The dashboard's boxes open and close, and three of the four start closed.
+    // A step pointing inside one opens it, because a spotlight on a box that is
+    // shut is a spotlight on nothing.
+    el?.closest('details:not([open])')?.setAttribute('open', '');
+    return el;
   }, [step]);
 
+  // A step can live on another page. This runs for the step the tour *opens*
+  // on as well, which is the whole point: pressing Next used to be the only
+  // thing that honoured `goto`, so a tour started anywhere but the home page
+  // spent its first steps looking for things that were on a page it had not
+  // gone to — and skipped every one of them.
+  useEffect(() => {
+    if (!open || !step?.goto) return;
+    if (window.location.pathname !== step.goto) router.push(step.goto);
+  }, [open, step, router]);
 
-
-  // The voice follows the step.
+  // The voice follows the step — but only once the step is actually on screen.
+  // Speaking before that is how a skipped step still got read aloud, so a run
+  // of missing steps sounded like the tour talking over itself.
   useEffect(() => {
     stopSaying.current();
-    if (!open || !step || muted) return;
+    if (!open || !step || muted || !ready) return;
     stopSaying.current = say(`${step.title}. ${step.say}`);
     return () => stopSaying.current();
-  }, [open, step, muted]);
+  }, [open, step, muted, ready]);
 
   const finish = useCallback(() => {
     stopSaying.current();
     setSeen('1');
     setI(0);
+    setFound(-1);
     setTurnedDown(true);
     onClose();
   }, [onClose, setSeen]);
@@ -137,56 +162,64 @@ export function Tour({
   const go = useCallback(
     (to: number) => {
       if (to >= steps.length || to < 0) return finish();
-      const next = steps[to];
-      // A step that lives on another page takes us there. The console's layout
-      // holds this component, so `i` simply carries over.
-      if (next.goto && typeof window !== 'undefined' && window.location.pathname !== next.goto) {
-        stopSaying.current();
-        router.push(next.goto);
-      }
       setI(to);
     },
-    [steps, finish, router],
+    [steps.length, finish],
   );
 
   // Measure the lit element, and keep measuring while the page settles: a card
-  // that rises in, an image that loads and a scroll all move it.
+  // that rises in, a box that opens, an image that loads and a scroll all move
+  // it. `ready` is true from the moment it has been found, and the card and the
+  // voice both wait for it.
   useEffect(() => {
-    if (!open || !step) return;
+    if (!open || !step?.target) return;
     let raf = 0;
+    let tracking = true;
     const measure = () => {
       const el = find();
-      if (!el) {
-        setSpot(null);
-        return;
-      }
-      const r = el.getBoundingClientRect();
-      setSpot({ top: r.top - 8, left: r.left - 8, width: r.width + 16, height: r.height + 16 });
+      const r = el?.getBoundingClientRect();
+      // Zero-sized: in a box that has been told to open but has not laid out yet.
+      if (!r || (!r.width && !r.height)) return false;
+      const next = { top: r.top - 8, left: r.left - 8, width: r.width + 16, height: r.height + 16 };
+      // Same rectangle, same object: tracking runs every frame and React must
+      // not re-render for a spotlight that has not moved.
+      setSpot((was) =>
+        was && was.top === next.top && was.left === next.left && was.width === next.width && was.height === next.height
+          ? was
+          : next,
+      );
+      setFound(i);
+      return true;
     };
-    const el = find();
-    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    measure();
     const tick = () => {
+      if (!tracking) return;
       measure();
       raf = requestAnimationFrame(tick);
     };
-    // A second of tracking covers the scroll and the rise-in, then it stops —
-    // a permanent rAF loop behind a modal is a battery bug.
+    find()?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     raf = requestAnimationFrame(tick);
-    const stop = setTimeout(() => cancelAnimationFrame(raf), 1100);
-    // This step wants something that is not on this page: a plan that does not
-    // include it, or a card that only draws once there is data. Pass over it
-    // rather than talking about something nobody can see. The wait is for the
-    // page a `goto` has just navigated to, which has not painted yet. If every
-    // remaining step is missing this walks to the end and closes, which is the
-    // right outcome and a terminating one.
-    const missing = step.target ? setTimeout(() => !find() && go(i + 1), 600) : undefined;
+    // A second and a half of tracking covers the navigation, the scroll, the
+    // box opening and the rise-in; then it stops, because a permanent rAF loop
+    // behind a modal is a battery bug. Scroll and resize keep it in place after.
+    const stop = setTimeout(() => {
+      tracking = false;
+      cancelAnimationFrame(raf);
+    }, 1500);
+    // Only now is the step genuinely not here: a plan that does not include it,
+    // or a card that draws only once there is data. Pass over it rather than
+    // talk about something nobody can see. This used to be 600ms, which is less
+    // than a page navigation, a cold callable or a card's own animation — so a
+    // single Next could run the whole tour out in a few seconds.
+    const giveUp = setTimeout(() => !measure() && go(i + 1), 2600);
     window.addEventListener('resize', measure);
+    window.addEventListener('scroll', measure, true);
     return () => {
+      tracking = false;
       cancelAnimationFrame(raf);
       clearTimeout(stop);
-      if (missing) clearTimeout(missing);
+      clearTimeout(giveUp);
       window.removeEventListener('resize', measure);
+      window.removeEventListener('scroll', measure, true);
     };
   }, [open, step, i, find, go]);
 
@@ -215,6 +248,7 @@ export function Tour({
     const H = window.innerHeight;
     const w = Math.min(380, W - 32);
     const h = 230;
+    const spot = hole;
     if (!spot) return { top: Math.max(24, H / 2 - 150), left: (W - w) / 2, centred: true, w };
 
     // A tall target — the whole sidebar, a long list — has no room above or
@@ -235,7 +269,7 @@ export function Tour({
       centred: false,
       w,
     };
-  }, [spot]);
+  }, [hole]);
 
   if (offer) {
     return (
@@ -274,15 +308,15 @@ export function Tour({
       <style>{TOUR_CSS}</style>
 
       {/* four blurred panels tiling around the lit element — the hole */}
-      {spot ? (
+      {hole ? (
         <>
-          <span className="tr-veil" style={{ top: 0, left: 0, right: 0, height: Math.max(0, spot.top) }} />
-          <span className="tr-veil" style={{ top: Math.max(0, spot.top), left: 0, width: Math.max(0, spot.left), height: spot.height }} />
-          <span className="tr-veil" style={{ top: Math.max(0, spot.top), left: spot.left + spot.width, right: 0, height: spot.height }} />
-          <span className="tr-veil" style={{ top: spot.top + spot.height, left: 0, right: 0, bottom: 0 }} />
+          <span className="tr-veil" style={{ top: 0, left: 0, right: 0, height: Math.max(0, hole.top) }} />
+          <span className="tr-veil" style={{ top: Math.max(0, hole.top), left: 0, width: Math.max(0, hole.left), height: hole.height }} />
+          <span className="tr-veil" style={{ top: Math.max(0, hole.top), left: hole.left + hole.width, right: 0, height: hole.height }} />
+          <span className="tr-veil" style={{ top: hole.top + hole.height, left: 0, right: 0, bottom: 0 }} />
           <span
             className="tr-ring"
-            style={{ top: spot.top, left: spot.left, width: spot.width, height: spot.height }}
+            style={{ top: hole.top, left: hole.left, width: hole.width, height: hole.height }}
             aria-hidden
           />
         </>
