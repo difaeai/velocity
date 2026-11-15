@@ -27,13 +27,21 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useWorkspace } from '@/lib/workspace';
 import { colors } from '@/lib/config';
-import { socialApi, type SocialPageRead, type SocialProfileAudit, type SocialRankedPost } from '@/lib/api';
+import {
+  socialApi,
+  type SocialPageRead,
+  type SocialProfileAudit,
+  type SocialRankedPost,
+  type SocialReview,
+  type SocialReviewFinding,
+} from '@/lib/api';
 import { Button, Card } from '@/components/ui';
 
 export default function PerformancePage() {
   const { path } = useWorkspace();
   const [read, setRead] = useState<SocialPageRead | null>(null);
   const [audit, setAudit] = useState<SocialProfileAudit | null>(null);
+  const [review, setReview] = useState<SocialReview | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,9 +55,13 @@ export default function PerformancePage() {
     const b = onSnapshot(doc(db, path('socialInsights/profile')), (snap) => {
       setAudit(snap.exists() ? (snap.data() as SocialProfileAudit) : null);
     });
+    const c = onSnapshot(doc(db, path('socialInsights/review')), (snap) => {
+      setReview(snap.exists() ? (snap.data() as SocialReview) : null);
+    });
     return () => {
       a();
       b();
+      c();
     };
   }, [path]);
 
@@ -81,6 +93,161 @@ export default function PerformancePage() {
           <p style={{ margin: 0, fontSize: 13, color: '#ff6b6b' }}>{error}</p>
         </Card>
       ) : null}
+
+      {/* ── the five-day review: the desk marking its own work ── */}
+      <Card>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+          <h2 style={h2}>The last five days</h2>
+          <Button onClick={() => run('review', () => socialApi.selfReview({}))} disabled={busy === 'review'}>
+            {busy === 'review' ? 'Working through it…' : 'Review now'}
+          </Button>
+        </div>
+        <p style={{ fontSize: 12.5, color: colors.muted, margin: '6px 0 12px', lineHeight: 1.5 }}>
+          Every five days the desk marks its own work: was the job done, did the reach come and if not why, is
+          the ad money the right size, and what is somebody else doing better. You do not have to act on any of
+          it &mdash; what the numbers showed goes into the team&rsquo;s instructions by itself.
+        </p>
+
+        {!review ? (
+          <Empty>
+            Not reviewed yet. The first one runs five days after the desk starts, and the button above does it
+            now.
+          </Empty>
+        ) : (
+          <>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 34, fontWeight: 900, color: scoreTone(review.score) }}>{review.score}</span>
+              <span style={{ fontSize: 13, color: colors.muted }}>
+                / 100 &middot;{' '}
+                {review.previousScore === null
+                  ? 'the first one, so nothing to compare with'
+                  : `${review.score - review.previousScore >= 0 ? '+' : ''}${review.score - review.previousScore} against last time`}{' '}
+                &middot; {new Date(review.atMs).toLocaleDateString()}
+              </span>
+            </div>
+
+            <div
+              style={{
+                display: 'grid',
+                gap: 10,
+                gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+                margin: '14px 0',
+              }}
+            >
+              <Tile
+                label="Went out"
+                value={`${review.delivery.published}${review.delivery.expected ? ` / ${review.delivery.expected}` : ''}`}
+                note={
+                  review.delivery.waiting
+                    ? `${review.delivery.waiting} waiting for you`
+                    : review.delivery.failed
+                      ? `${review.delivery.failed} failed`
+                      : `${review.windowDays - review.delivery.quietDays} of ${review.windowDays} days covered`
+                }
+              />
+              <Tile
+                label="Reach"
+                value={review.reach.sampled ? review.reach.medianReach.toLocaleString() : '—'}
+                note={
+                  review.reach.trendPct === null
+                    ? `${review.reach.sampled} posts measured`
+                    : `${review.reach.trendPct >= 0 ? '+' : ''}${review.reach.trendPct}% on the five days before`
+                }
+                tone={review.reach.trendPct === null ? undefined : review.reach.trendPct >= 0 ? '#28c76f' : '#ff6b6b'}
+              />
+              <Tile
+                label="Ad spend"
+                value={
+                  review.spend
+                    ? `${review.spend.currency} ${Math.round(review.spend.spent).toLocaleString()}`
+                    : 'None'
+                }
+                note={
+                  review.spend
+                    ? `${Math.round(review.spend.shouldHave).toLocaleString()} is what ${
+                        review.spend.running === 1 ? 'it' : 'they'
+                      } needed`
+                    : 'no ad account connected'
+                }
+                tone={
+                  review.spend && review.spend.shouldHave > 0 && review.spend.spent < review.spend.shouldHave * 0.6
+                    ? '#ffd166'
+                    : undefined
+                }
+              />
+              <Tile
+                label="Somebody else"
+                value={review.competitors?.theirsPerK ? `${review.competitors.theirsPerK}/1k` : '—'}
+                note={
+                  review.competitors
+                    ? review.competitors.oursPerK === null
+                      ? 'ours not counted yet'
+                      : `ours ${review.competitors.oursPerK}/1k followers`
+                    : 'no handles to read'
+                }
+                tone={review.competitors?.ahead ? '#ff6b6b' : undefined}
+              />
+            </div>
+
+            {review.summary ? (
+              <p style={{ fontSize: 13, lineHeight: 1.7, margin: '0 0 4px', whiteSpace: 'pre-line' }}>
+                {review.summary}
+              </p>
+            ) : null}
+
+            {review.findings.length ? (
+              <div style={{ marginTop: 16 }}>
+                <Label>What to fix, worst first</Label>
+                {review.findings.map((f) => (
+                  <FindingRow key={f.id} finding={f} />
+                ))}
+              </div>
+            ) : null}
+
+            {review.directives.doMore.length ||
+            review.directives.stopDoing.length ||
+            review.directives.fromIndustry.length ? (
+              <div style={{ marginTop: 18 }}>
+                <Label>What the team does differently from now on</Label>
+                <p style={{ fontSize: 12, color: colors.muted, margin: '4px 0 8px', lineHeight: 1.5 }}>
+                  Already in front of every employee on every job. Your own standing instructions still outrank
+                  it.
+                </p>
+                <div
+                  style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}
+                >
+                  {review.directives.doMore.length ? (
+                    <Pills title="Do more of" tone="#28c76f" items={review.directives.doMore} />
+                  ) : null}
+                  {review.directives.stopDoing.length ? (
+                    <Pills title="Stop doing" tone="#ff6b6b" items={review.directives.stopDoing} />
+                  ) : null}
+                  {review.directives.fromIndustry.length ? (
+                    <Pills
+                      title="From businesses like yours"
+                      tone="#ffd166"
+                      items={review.directives.fromIndustry}
+                    />
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
+            {review.history.length > 1 ? (
+              <p style={{ fontSize: 12, color: colors.muted, margin: '16px 0 0' }}>
+                Score each time: {review.history.map((h) => h.score).join(' → ')}
+              </p>
+            ) : null}
+
+            {review.error ? (
+              <p style={{ fontSize: 12, color: colors.muted, margin: '10px 0 0' }}>
+                The numbers above are measured; the words were written without the model this time (
+                {review.error}).
+              </p>
+            ) : null}
+          </>
+        )}
+      </Card>
 
       {/* ── the page read ── */}
       <Card>
@@ -252,6 +419,39 @@ function PostRow({ post }: { post: SocialRankedPost }) {
         {post.reach.toLocaleString()} reached · {post.sends} sends ({post.sendRate}/1k) · {post.saves} saves (
         {post.saveRate}/1k) · {post.comments} comments · hook {post.hookScore}/100
       </div>
+    </div>
+  );
+}
+
+/** One number from the review, with what it is measured against under it. */
+function Tile({ label, value, note, tone }: { label: string; value: string; note: string; tone?: string }) {
+  return (
+    <div style={{ border: `1px solid ${colors.border}`, borderRadius: 9, padding: '9px 11px' }}>
+      <Label>{label}</Label>
+      <div style={{ fontSize: 19, fontWeight: 900, marginTop: 2, color: tone ?? colors.text }}>{value}</div>
+      <div style={{ fontSize: 11.5, color: colors.muted, marginTop: 2, lineHeight: 1.45 }}>{note}</div>
+    </div>
+  );
+}
+
+/** One shortcoming: what, the numbers behind it, and whose move it is. */
+function FindingRow({ finding }: { finding: SocialReviewFinding }) {
+  const tone = finding.severity === 'blocking' ? '#ff6b6b' : finding.severity === 'big' ? '#ffd166' : colors.muted;
+  return (
+    <div style={{ padding: '9px 0', borderTop: `1px solid ${colors.border}`, fontSize: 13 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 10.5, fontWeight: 900, color: tone, minWidth: 58, textTransform: 'uppercase' }}>
+          {finding.severity === 'blocking' ? 'stops it' : finding.severity}
+        </span>
+        <span style={{ flex: 1, minWidth: 220, fontWeight: 700 }}>{finding.what}</span>
+        <span style={{ fontSize: 10.5, fontWeight: 800, color: finding.who === 'you' ? '#ffd166' : '#28c76f' }}>
+          {finding.who === 'you' ? 'NEEDS YOU' : 'VEXA HANDLES IT'}
+        </span>
+      </div>
+      <div style={{ fontSize: 12.5, color: colors.muted, marginTop: 3, paddingLeft: 66, lineHeight: 1.5 }}>
+        {finding.evidence}
+      </div>
+      <div style={{ fontSize: 12.5, marginTop: 3, paddingLeft: 66, lineHeight: 1.5 }}>&rarr; {finding.fix}</div>
     </div>
   );
 }

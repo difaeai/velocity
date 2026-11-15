@@ -66,6 +66,13 @@ export interface RankedPost {
   saves: number;
   sends: number;
   comments: number;
+  /**
+   * Likes — worth almost no reach on their own, kept because likes and comments
+   * are the only numbers another account's posts report through Business
+   * Discovery, so they are the only basis on which the five-day review can
+   * compare us with anybody else. Absent on reads stored before 2026-11-15.
+   */
+  likes?: number;
   /** How far past our own normal this went. 1.0 is an ordinary day. */
   multiple: number;
   /** Sends per thousand reached — the number that actually predicts reach. */
@@ -130,6 +137,7 @@ export function rank(posts: PostPerformance[]): {
         saves: post.saves,
         sends: post.sends,
         comments: post.comments,
+        likes: post.likes,
         multiple: Math.round((post.reach / baseline) * 100) / 100,
         sendRate: Math.round((post.sends / post.reach) * 10000) / 10,
         saveRate: Math.round((post.saves / post.reach) * 10000) / 10,
