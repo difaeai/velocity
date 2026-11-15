@@ -16,6 +16,7 @@ import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestor
 import { db } from '@/lib/firebase';
 import { colors } from '@/lib/config';
 import { glass } from '@/components/ui';
+import { WhatsAppSignup } from './whatsappSignup';
 import {
   agentPrice,
   agentsApi,
@@ -344,6 +345,12 @@ export function WhatsAppLine({
         <button type="button" className="fx-btn ghost small" onClick={() => setOpen(!open)}>
           {open ? 'Close' : line ? 'Change' : 'Connect'}
         </button>
+      </div>
+
+      {/* One press, no pasting. The paste form below stays for anyone who
+          already holds a token, and for the days Embedded Signup is not set up. */}
+      <div style={{ margin: '14px 0 0' }}>
+        <WhatsAppSignup />
       </div>
 
       {line ? (

@@ -2413,6 +2413,24 @@ export const agentsApi = {
     { ok: boolean; line: AgentWaLine; webhookUrl: string }
   >('agentSaveWhatsApp'),
   disconnectWhatsApp: callable<Record<string, never>, { ok: boolean }>('agentDisconnectWhatsApp'),
+  /** Embedded Signup: what the console needs to draw the one-press connect. */
+  whatsAppSignupState: callable<
+    Record<string, never>,
+    {
+      ready: boolean;
+      appId: string | null;
+      configId: string | null;
+      graphVersion: string;
+      vaultReady: boolean;
+      connected: { displayNumber: string; verifiedName: string } | null;
+      missing: string[];
+    }
+  >('agentWhatsAppSignupState'),
+  /** Embedded Signup: hand back what Meta's window returned. */
+  finishWhatsAppSignup: callable<
+    { code: string; wabaId: string; phoneNumberId: string },
+    { ok: boolean; line: AgentWaLine; needsTemplate: boolean; webhookUrl: string }
+  >('agentFinishWhatsAppSignup'),
   threadAction: callable<{ waId: string; action: 'send' | 'takeover' | 'handback' | 'read'; text?: string }, { ok: boolean }>(
     'agentThreadAction',
   ),

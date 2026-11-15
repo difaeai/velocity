@@ -732,6 +732,8 @@ export {
   agentVoiceStatus,
   agentWhatsappWebhook,
   agentSaveWhatsApp,
+  agentWhatsAppSignupState,
+  agentFinishWhatsAppSignup,
   agentDisconnectWhatsApp,
   agentThreadAction,
   adminAgentsOverview,
