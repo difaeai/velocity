@@ -26,6 +26,7 @@ import { PLATFORM_META, PlatformBadge, StatusPill } from '@/components/social/sh
 import { EmptyState } from '@/components/states';
 
 const INTENT_LABEL: Record<string, string> = {
+  lead: 'Wants to buy',
   praise: 'Likes it',
   question: 'Asking something',
   complaint: 'Complaint',

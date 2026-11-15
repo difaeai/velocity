@@ -157,6 +157,22 @@ describe('a lead writes to the client’s WhatsApp', () => {
     expect(row?.messages[1].from).toBe('us');
   });
 
+  it('remembers what they are buying, and never forgets it mid-conversation', async () => {
+    // `wants` is what the console counts under "what they booked today", so two
+    // sales of the same thing have to land on the same string. The failure that
+    // matters is the second one: a later turn where the model simply leaves the
+    // field out must not wipe what the sale was for.
+    modelReply = { ...modelReply, wants: '5 marla plot' };
+    await handleInbound({ phoneNumberId: PN, from: LEAD, name: 'Bilal', text: 'bhai rate kya hai' });
+    expect((await chat())?.wants).toBe('5 marla plot');
+
+    modelReply = { reply: 'Theek hai, kal visit karwa dete hain.', stage: 'won', summary: 'Agreed', nextStep: 'Book the visit', handover: false };
+    await handleInbound({ phoneNumberId: PN, from: LEAD, name: 'Bilal', text: 'theek hai, book kar dein' });
+    const row = await chat();
+    expect(row?.stage).toBe('won');
+    expect(row?.wants).toBe('5 marla plot');
+  });
+
   it('leaves a number that belongs to nobody alone', async () => {
     expect(await handleInbound({ phoneNumberId: '999999', from: LEAD, name: null, text: 'hello' })).toBe(false);
     expect(sent).toHaveLength(0);

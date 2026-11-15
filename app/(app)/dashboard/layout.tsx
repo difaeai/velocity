@@ -10,10 +10,20 @@
  * live at all.
  *
  * So the sidebar has two sections. **Manage app** is everything about running
- * Velocity, grouped by the job you came here to do. **Manage social** is the
- * accounts and the daily content pipeline that posts to them. The switcher is
- * driven by the URL, so a link into either section lands with the right section
- * open and a refresh keeps it.
+ * Velocity, grouped by the job you came here to do. **Manage social** is Vexa:
+ * the accounts and the daily content pipeline that posts to them. The switcher
+ * is driven by the URL, so a link into either section lands with the right
+ * section open and a refresh keeps it.
+ *
+ * Vexa's half is grouped by *department*, not by page (owner, 2026-11-15). A
+ * person who has just bought this does not want a list of eleven tools; they
+ * want to know which part of the screen is making their content, which part is
+ * spending their ad money, and which part is talking to customers and closing
+ * them. Each group says that in one line, and `Sidebar` draws it.
+ *
+ * The help button at the bottom right and the guided tour are mounted here, so
+ * they are on every page of the console rather than on the one page somebody
+ * remembered to put them.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -27,127 +37,159 @@ import { WorkspaceProvider, useWorkspace } from '@/lib/workspace';
 import { colors } from '@/lib/config';
 import { Button, glass } from '@/components/ui';
 import { VelocityIcon } from '@/components/BrandMark';
+import { Sidebar, type SideGroup } from '@/components/social/sidebar';
+import { HelpLauncher, Tour, type TourStep } from '@/components/social/tour';
+import { SetupGuide, type GuideKey } from '@/components/social/setupGuide';
 
-interface NavItem {
-  href: string;
-  label: string;
-  /** Other pages that light this item: halves of one page that keep their own routes. */
-  also?: string[];
-}
+type NavGroup = SideGroup;
 
-const isActive = (item: NavItem, pathname: string) => pathname === item.href || Boolean(item.also?.includes(pathname));
-interface NavGroup {
-  title: string;
-  items: NavItem[];
-}
+/** The accent each Vexa department takes: its icons, its highlight, its heading. */
+const TINT = {
+  content: '#0058bb',
+  ads: '#b45309',
+  sales: '#11794c',
+  research: '#7c3aed',
+  setup: '#004c31',
+  account: '#6f7a72',
+} as const;
 
 /** Everything about running the platform, grouped by the job at hand. */
 const APP_NAV: NavGroup[] = [
   {
     title: '',
-    items: [{ href: '/dashboard', label: '📊 Overview' }],
+    items: [{ href: '/dashboard', label: 'Overview', icon: 'analytics' }],
   },
   {
     title: 'People',
     items: [
-      { href: '/dashboard/drivers', label: '🚗 Driver approvals' },
-      { href: '/dashboard/cnic', label: '🪪 CNIC verification' },
-      { href: '/dashboard/passengers', label: '👥 Passengers' },
-      { href: '/dashboard/disputes', label: '⚖️ Disputes' },
-      { href: '/dashboard/safety', label: '🆘 Safety desk' },
-      { href: '/dashboard/support', label: '⚡ Rapid Response' },
+      { href: '/dashboard/drivers', label: 'Driver approvals', icon: 'people' },
+      { href: '/dashboard/cnic', label: 'CNIC verification', icon: 'shield' },
+      { href: '/dashboard/passengers', label: 'Passengers', icon: 'people' },
+      { href: '/dashboard/disputes', label: 'Disputes', icon: 'shield' },
+      { href: '/dashboard/safety', label: 'Safety desk', icon: 'shield' },
+      { href: '/dashboard/support', label: 'Rapid Response', icon: 'comments' },
     ],
   },
   {
     title: 'Operations',
     items: [
-      { href: '/dashboard/live-ops', label: '🗺️ Live ops map' },
+      { href: '/dashboard/live-ops', label: 'Live ops map', icon: 'map' },
       // Live ops is the rides happening now; this is every ride that ever did.
       // Next to each other because an operator moves between the two mid-call.
-      { href: '/dashboard/rides', label: '🧾 Ride record' },
-      { href: '/dashboard/locations', label: '📍 Locations' },
-      { href: '/dashboard/travel-areas', label: '🧭 Travel demand' },
-      { href: '/dashboard/whatsapp-leads', label: '💬 WhatsApp demand' },
-      { href: '/dashboard/ride-settings', label: '⚙️ Ride settings' },
-      { href: '/dashboard/pooling', label: '🔀 Ride pooling' },
-      { href: '/dashboard/pricing', label: '🧮 Pricing engine' },
-      { href: '/dashboard/market-rates', label: '📊 Market rates' },
-      { href: '/dashboard/special-rides', label: '🚙 Rent a car' },
-      { href: '/dashboard/travel-mate', label: '🤝 Travel Partner' },
+      { href: '/dashboard/rides', label: 'Ride record', icon: 'content' },
+      { href: '/dashboard/locations', label: 'Locations', icon: 'map' },
+      { href: '/dashboard/travel-areas', label: 'Travel demand', icon: 'map' },
+      { href: '/dashboard/whatsapp-leads', label: 'WhatsApp demand', icon: 'whatsapp' },
+      { href: '/dashboard/ride-settings', label: 'Ride settings', icon: 'settings' },
+      { href: '/dashboard/pooling', label: 'Ride pooling', icon: 'funnel' },
+      { href: '/dashboard/pricing', label: 'Pricing engine', icon: 'money' },
+      { href: '/dashboard/market-rates', label: 'Market rates', icon: 'analytics' },
+      { href: '/dashboard/special-rides', label: 'Rent a car', icon: 'map' },
+      { href: '/dashboard/travel-mate', label: 'Travel Partner', icon: 'people' },
     ],
   },
   {
     title: 'Money',
     items: [
-      { href: '/dashboard/payouts', label: '💳 Payouts' },
-      { href: '/dashboard/commission', label: '📋 Commission' },
-      { href: '/dashboard/settlements', label: '🧾 Settlements' },
-      { href: '/dashboard/manual-topups', label: '🏦 Balance top-ups' },
-      { href: '/dashboard/receiving-accounts', label: '🏧 Receiving accounts' },
-      { href: '/dashboard/cancellations', label: '🚫 Cancellation fees' },
+      { href: '/dashboard/payouts', label: 'Payouts', icon: 'money' },
+      { href: '/dashboard/commission', label: 'Commission', icon: 'money' },
+      { href: '/dashboard/settlements', label: 'Settlements', icon: 'money' },
+      { href: '/dashboard/manual-topups', label: 'Balance top-ups', icon: 'money' },
+      { href: '/dashboard/receiving-accounts', label: 'Receiving accounts', icon: 'money' },
+      { href: '/dashboard/cancellations', label: 'Cancellation fees', icon: 'shield' },
     ],
   },
   {
     title: 'Growth',
     items: [
-      { href: '/dashboard/partners', label: '🏢 Partner Program' },
-      { href: '/dashboard/fleet-submissions', label: '📄 Fleet submissions' },
-      { href: '/dashboard/advertise', label: '📣 Advertise' },
+      { href: '/dashboard/partners', label: 'Partner Program', icon: 'people' },
+      { href: '/dashboard/fleet-submissions', label: 'Fleet submissions', icon: 'content' },
+      { href: '/dashboard/advertise', label: 'Advertise', icon: 'ads' },
     ],
   },
   {
     title: 'System',
     items: [
-      { href: '/dashboard/features', label: '🚦 Feature flags' },
-      { href: '/dashboard/testing', label: '🧪 Testing' },
-      { href: '/dashboard/app-version', label: '⬆️ App version' },
-      { href: '/dashboard/website', label: '🌐 Website' },
-      { href: '/dashboard/costs', label: '💸 Cost of Velocity Rides' },
+      { href: '/dashboard/features', label: 'Feature flags', icon: 'tools' },
+      { href: '/dashboard/testing', label: 'Testing', icon: 'tools' },
+      { href: '/dashboard/app-version', label: 'App version', icon: 'tools' },
+      { href: '/dashboard/website', label: 'Website', icon: 'map' },
+      { href: '/dashboard/costs', label: 'Cost of Velocity Rides', icon: 'money' },
     ],
   },
 ];
 
-/** The marketing side: the accounts, and the machine that feeds them. */
+/**
+ * Vexa, grouped by department rather than by page.
+ *
+ * The order is the order the money moves in: you make something, you pay to put
+ * it in front of people, somebody answers, you sell to them. Research sits
+ * after those because it feeds all three. Everything you only ever touch once
+ * is last, where it belongs.
+ *
+ * The caption on each group is the whole point of the regrouping — it is the
+ * sentence a person needs to be able to say about their own business.
+ */
 const SOCIAL_NAV: NavGroup[] = [
   {
     title: '',
-    items: [{ href: '/dashboard/social', label: '🏠 Dashboard' }],
+    items: [{ href: '/dashboard/social', label: 'Home', icon: 'home' }],
   },
-  // Two groups, not four: what you do every day, then the things you set up
-  // once and rarely open again. A sidebar heading per link is a filing system,
-  // not navigation.
   {
-    title: 'Every day',
+    title: 'Content',
+    caption: 'Everything that goes out in your name.',
+    tint: TINT.content,
     items: [
-      { href: '/dashboard/social/queue', label: '🎬 Content & calendar', also: ['/dashboard/social/calendar'] },
-      { href: '/dashboard/social/research', label: '🔬 Research Assistant' },
-      { href: '/dashboard/social/ads', label: '💸 Meta & Google Ad Expert' },
-      { href: '/dashboard/social/inbox', label: '💬 Comments' },
-      { href: '/dashboard/social/whatsapp', label: '🟢 WhatsApp sales' },
-      { href: '/dashboard/social/performance', label: '📈 Analytics' },
-      { href: '/dashboard/social/email', label: '✉️ Email agent' },
-      { href: '/dashboard/social/sales', label: '🤝 Sales, calls & email' },
+      { href: '/dashboard/social/queue', label: 'Content & calendar', icon: 'content', also: ['/dashboard/social/calendar'] },
+      { href: '/dashboard/social/inbox', label: 'Comments', icon: 'comments' },
+      { href: '/dashboard/social/performance', label: 'Analytics', icon: 'analytics' },
     ],
   },
   {
-    title: 'Set up once',
+    title: 'Ads',
+    caption: 'Your money buying reach, on Meta and Google.',
+    tint: TINT.ads,
+    items: [{ href: '/dashboard/social/ads', label: 'Meta & Google Ad Expert', icon: 'ads' }],
+  },
+  {
+    title: 'Sales',
+    caption: 'Vexa talking to people, and closing them.',
+    tint: TINT.sales,
     items: [
-      { href: '/dashboard/social/accounts', label: '🔗 Connected accounts' },
-      { href: '/dashboard/social/employees', label: '🤖 AI agents' },
-      { href: '/dashboard/social/automation', label: '⚙️ Settings' },
+      { href: '/dashboard/social/whatsapp', label: 'WhatsApp sales', icon: 'whatsapp' },
+      { href: '/dashboard/social/email', label: 'Email agent', icon: 'email' },
+      { href: '/dashboard/social/sales', label: 'Finding customers', icon: 'calls' },
+    ],
+  },
+  {
+    title: 'Research',
+    caption: 'What your market and your competitors are doing.',
+    tint: TINT.research,
+    items: [{ href: '/dashboard/social/research', label: 'Research Assistant', icon: 'research' }],
+  },
+  {
+    title: 'Set up once',
+    caption: 'Connect it, then forget it.',
+    tint: TINT.setup,
+    items: [
+      { href: '/dashboard/social/accounts', label: 'Connected accounts', icon: 'plug' },
+      { href: '/dashboard/social/employees', label: 'Your AI team', icon: 'agents' },
+      { href: '/dashboard/social/automation', label: 'Settings', icon: 'settings' },
     ],
   },
 ];
 
 /** Admins only: everyone on Velocity Studio, the payments our AI has read, the sign-up mailbox, agent billing and AI spend. */
 const STUDIO_ADMIN_NAV: NavGroup = {
-  title: 'Vexa',
+  title: 'Vexa (Velocity only)',
+  caption: 'The customers who bought Vexa, and what it costs us to run.',
+  tint: TINT.account,
   items: [
-    { href: '/dashboard/social/studio-customers', label: '👥 Users' },
-    { href: '/dashboard/social/studio-payments', label: '🧾 Payments · AI checked' },
-    { href: '/dashboard/social/studio-email', label: '✉️ Sign-up email' },
-    { href: '/dashboard/social/agents-billing', label: '📞 AI agents & billing' },
-    { href: '/dashboard/social/ai-usage', label: '🔑 AI keys & usage' },
+    { href: '/dashboard/social/studio-customers', label: 'Users', icon: 'people' },
+    { href: '/dashboard/social/studio-payments', label: 'Payments · AI checked', icon: 'money' },
+    { href: '/dashboard/social/studio-email', label: 'Sign-up email', icon: 'email' },
+    { href: '/dashboard/social/agents-billing', label: 'AI agents & billing', icon: 'calls' },
+    { href: '/dashboard/social/ai-usage', label: 'AI keys & usage', icon: 'usage' },
   ],
 };
 
@@ -186,9 +228,11 @@ const USAGE = '/dashboard/social/usage';
 const ACCOUNT_PAGES = [UPGRADE, BILLING, USAGE];
 const ACCOUNT_NAV: NavGroup = {
   title: 'Account',
+  caption: 'What you pay, and what you have used.',
+  tint: TINT.account,
   items: [
-    { href: UPGRADE, label: '⬆️ Plans & upgrade', also: [BILLING] },
-    { href: USAGE, label: '📊 Usage & credits' },
+    { href: UPGRADE, label: 'Plans & upgrade', icon: 'plan', also: [BILLING] },
+    { href: USAGE, label: 'Usage & credits', icon: 'usage' },
   ],
 };
 
@@ -204,6 +248,66 @@ const SECTIONS = [
   { key: 'app', label: 'Manage app', home: '/dashboard', nav: APP_NAV },
   { key: 'social', label: 'Manage social', home: '/dashboard/social', nav: SOCIAL_NAV },
 ] as const;
+
+/**
+ * The guided tour of Vexa, in the order a business actually works: here is
+ * where you ask for something, here is what goes out, here is what your ad
+ * money is doing, here is the part that talks to customers and sells to them,
+ * and here is where you plug your accounts in.
+ *
+ * Every step is written to be *said*, because it is — short sentences, no
+ * punctuation a voice cannot read, no "click the button in the top right".
+ * A step whose target is not on the page (a plan without ads, a card with no
+ * data yet) is passed over by `Tour` without a word.
+ */
+const VEXA_TOUR: TourStep[] = [
+  {
+    title: 'This is Vexa',
+    say: 'Think of it as a small marketing team that works for you all day. It makes your posts, it runs your ads, and it answers your customers. Let me show you where each of those lives. It takes about two minutes.',
+    goto: '/dashboard/social',
+  },
+  {
+    target: 'brain',
+    title: 'Start by asking',
+    say: 'This is the quickest way to use Vexa. Type what you want in plain words. Make a reel about our weekend offer. Email everyone about Eid. It works out which part of the team should do it, and sends the job there.',
+  },
+  {
+    target: 'approval',
+    title: 'Who presses send',
+    say: 'This is the one decision that matters. Either every piece waits for you to approve it, or Vexa posts on its own every day. Start by approving them yourself. When you trust what it writes, switch it over.',
+  },
+  {
+    target: 'area-content',
+    title: 'Your content',
+    say: 'Everything that goes out in your name is in this area. What has been posted, what is waiting for you, and how far each piece travelled.',
+  },
+  {
+    target: 'area-ads',
+    title: 'Your ads',
+    say: 'This area is your money buying reach on Facebook, Instagram and Google. The Ad Expert plans the campaign with you first, and you set the daily limit. It never spends more than you allow.',
+  },
+  {
+    target: 'funnel',
+    title: 'Your sales',
+    say: 'This is the part most people never see. Somebody watches a reel, asks the price underneath, Vexa answers and gives them your WhatsApp. Then it talks to them there until they buy. Every step of that journey is counted here, and underneath you can read exactly what Vexa said to each person.',
+  },
+  {
+    target: 'nav',
+    title: 'The five departments',
+    say: 'The menu is grouped the same way. Content, Ads, Sales, Research, and the things you set up once. Each one says what it does, so you never have to guess which page you want.',
+  },
+  {
+    target: 'accounts-list',
+    title: 'Plug in your accounts',
+    say: 'Nothing can go out until your accounts are connected. Press Connect, sign in, and you are done. If you get stuck, every one of them has step by step instructions next to the button.',
+    goto: '/dashboard/social/accounts',
+  },
+  {
+    target: 'help',
+    title: 'That is the whole thing',
+    say: 'This button is always here, at the bottom of every page. Press it to take this tour again, or to get the setting up instructions for any account. Good luck.',
+  },
+];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { initializing, user, isAdmin, workspaceId, signOut } = useAuth();
@@ -258,81 +362,89 @@ interface ShellProps {
   children: React.ReactNode;
 }
 
+/**
+ * The help that follows you everywhere: the tour, and the connecting
+ * instructions. Mounted by both shells, so it is on every page rather than on
+ * whichever page somebody remembered to put it.
+ *
+ * `admin` decides how much the setup guide says: on Velocity's own console the
+ * steps about tokens, app ids and secrets are shown, because somebody here
+ * actually has to paste them. A customer never sees a word about a token.
+ */
+function Help({ admin, offerTour }: { admin: boolean; offerTour: boolean }) {
+  const [tour, setTour] = useState(false);
+  const [guide, setGuide] = useState<GuideKey | null | false>(false);
+
+  return (
+    <>
+      <Tour steps={VEXA_TOUR} open={tour} onStart={() => setTour(true)} onClose={() => setTour(false)} autoOffer={offerTour} />
+      {guide !== false ? (
+        <SetupGuide which={guide} admin={admin} onClose={() => setGuide(false)} onPick={(k) => setGuide(k ?? null)} />
+      ) : null}
+      <HelpLauncher onTour={() => setTour(true)} onSetup={() => setGuide(null)} />
+    </>
+  );
+}
+
 /** Velocity's own console: both sections, plus the Studio customers desk. */
 function AdminShell({ email, signOut, children }: ShellProps) {
   const pathname = usePathname();
 
   // The URL decides which section is open, so deep links and refreshes agree.
   const section = pathname.startsWith('/dashboard/social') ? SECTIONS[1] : SECTIONS[0];
+  const groups = section.key === 'social' ? [...section.nav, STUDIO_ADMIN_NAV] : [...section.nav];
 
   return (
     <div style={pageStyle}>
-      <aside style={asideStyle}>
-        <Link href="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-          <VelocityIcon size={32} />
-          <strong>Velocity Rides</strong>
-        </Link>
-
-        <div style={switcherStyle}>
-          {SECTIONS.map((s) => {
-            const active = s.key === section.key;
-            return (
-              <Link
-                key={s.key}
-                href={s.home}
-                style={{
-                  flex: 1,
-                  textAlign: 'center',
-                  padding: '7px 6px',
-                  borderRadius: 8,
-                  fontSize: 12,
-                  fontWeight: 800,
-                  background: active ? colors.surface : 'transparent',
-                  color: active ? colors.primary : colors.muted,
-                  boxShadow: active ? '0 1px 3px rgba(0,0,0,0.10)' : 'none',
-                }}
-              >
-                {s.label}
-              </Link>
-            );
-          })}
-        </div>
-
-        <nav style={{ display: 'grid', gap: 2, marginTop: 16 }}>
-          {(section.key === 'social' ? [...section.nav, STUDIO_ADMIN_NAV] : section.nav).map((group) => (
-            <div key={group.title || 'root'} style={{ display: 'grid', gap: 2 }}>
-              {group.title ? <div style={groupTitleStyle}>{group.title}</div> : null}
-              {group.items.map((item) => {
-                const active = isActive(item, pathname);
+      <Sidebar
+          groups={groups}
+          pathname={pathname}
+          storageKey={`nav.${section.key}`}
+          brand={
+            <Link href="/dashboard">
+              <VelocityIcon size={30} />
+              <span>Velocity Rides</span>
+            </Link>
+          }
+          top={
+            <div style={switcherStyle}>
+              {SECTIONS.map((s) => {
+                const active = s.key === section.key;
                 return (
                   <Link
-                    key={item.href}
-                    href={item.href}
+                    key={s.key}
+                    href={s.home}
                     style={{
-                      padding: '9px 12px',
-                      borderRadius: 10,
-                      fontWeight: 700,
-                      fontSize: 13.5,
-                      background: active ? `${colors.primary}1A` : 'transparent',
-                      color: active ? colors.primary : colors.text,
+                      flex: 1,
+                      textAlign: 'center',
+                      padding: '7px 6px',
+                      borderRadius: 8,
+                      fontSize: 12,
+                      fontWeight: 800,
+                      background: active ? colors.surface : 'transparent',
+                      color: active ? colors.primary : colors.muted,
+                      boxShadow: active ? '0 1px 3px rgba(0,0,0,0.10)' : 'none',
                     }}
                   >
-                    {item.label}
+                    {s.label}
                   </Link>
                 );
               })}
             </div>
-          ))}
-        </nav>
-
-        <div style={{ marginTop: 'auto', paddingTop: 24 }}>
-          <div style={{ fontSize: 12, color: colors.muted, marginBottom: 8 }}>{email}</div>
-          <Button variant="ghost" onClick={signOut}>
-            Sign out
-          </Button>
-        </div>
-      </aside>
+          }
+          footer={
+            <>
+              <div style={{ fontSize: 12, color: colors.muted, marginBottom: 8, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {email}
+              </div>
+              <Button variant="ghost" onClick={signOut}>
+                Sign out
+              </Button>
+            </>
+          }
+      />
       <main style={{ flex: 1, padding: 28, overflow: 'auto', minWidth: 0 }}>{children}</main>
+      {section.key === 'social' ? <Help admin offerTour={false} /> : null}
     </div>
   );
 }
@@ -418,47 +530,30 @@ function StudioShell({ email, name, signOut, children }: ShellProps) {
 
   return (
     <div style={pageStyle}>
-      <aside style={asideStyle}>
-        <Link href={home} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-          <VelocityIcon size={32} />
-          <strong>Vexa</strong>
-        </Link>
-        <div style={{ fontSize: 12, color: colors.muted, marginBottom: 8 }}>
-          {ws.name} · {STUDIO_PLANS[ws.plan].name} plan
-        </div>
-        <nav style={{ display: 'grid', gap: 2, marginTop: 8 }}>
-          {nav.map((group) => (
-            <div key={group.title || 'root'} style={{ display: 'grid', gap: 2 }}>
-              {group.title ? <div style={groupTitleStyle}>{group.title}</div> : null}
-              {group.items.map((item) => {
-                const active = isActive(item, pathname);
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    style={{
-                      padding: '9px 12px',
-                      borderRadius: 10,
-                      fontWeight: 700,
-                      fontSize: 13.5,
-                      background: active ? `${colors.primary}1A` : 'transparent',
-                      color: active ? colors.primary : colors.text,
-                    }}
-                  >
-                    {item.label}
-                  </Link>
-                );
-              })}
+      <Sidebar
+          groups={nav}
+          pathname={pathname}
+          storageKey="nav.vexa"
+          brand={
+            <Link href={home}>
+              <VelocityIcon size={30} />
+              <span>Vexa</span>
+            </Link>
+          }
+          top={
+            <div style={{ fontSize: 12, color: colors.muted, margin: '0 0 2px 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {ws.name} · {STUDIO_PLANS[ws.plan].name} plan
             </div>
-          ))}
-        </nav>
-        <AccountMenu
-          name={name || ws.name}
-          email={email}
-          status={`${STUDIO_PLANS[ws.plan].name} · ${ws.suspended ? 'Paused' : trial ? 'Free trial' : over ? (credits ? 'On credit' : 'Run out') : 'Paid'}`}
-          signOut={signOut}
-        />
-      </aside>
+          }
+          footer={
+            <AccountMenu
+              name={name || ws.name}
+              email={email}
+              status={`${STUDIO_PLANS[ws.plan].name} · ${ws.suspended ? 'Paused' : trial ? 'Free trial' : over ? (credits ? 'On credit' : 'Run out') : 'Paid'}`}
+              signOut={signOut}
+            />
+          }
+      />
       <main style={{ flex: 1, padding: 28, overflow: 'auto', minWidth: 0 }}>
         {ws.suspended ? (
           <Banner tone="stop" href={`mailto:${SUPPORT_EMAIL}`} cta="Email us">
@@ -496,6 +591,8 @@ function StudioShell({ email, name, signOut, children }: ShellProps) {
           </div>
         )}
       </main>
+      {/* A customer gets the tour offered on their first visit; after that it waits behind the Help button. */}
+      <Help admin={false} offerTour={!locked} />
     </div>
   );
 }
@@ -675,22 +772,6 @@ const pageStyle: React.CSSProperties = {
   backgroundAttachment: 'fixed',
 };
 
-const asideStyle: React.CSSProperties = {
-  ...glass,
-  borderRadius: 0,
-  borderTop: 'none',
-  borderLeft: 'none',
-  borderBottom: 'none',
-  width: 246,
-  flex: 'none',
-  padding: 20,
-  display: 'flex',
-  flexDirection: 'column',
-  position: 'sticky',
-  top: 0,
-  height: '100vh',
-  overflowY: 'auto',
-};
 
 const switcherStyle: React.CSSProperties = {
   display: 'flex',
@@ -701,11 +782,3 @@ const switcherStyle: React.CSSProperties = {
   padding: 3,
 };
 
-const groupTitleStyle: React.CSSProperties = {
-  fontSize: 10.5,
-  fontWeight: 800,
-  letterSpacing: 0.7,
-  textTransform: 'uppercase',
-  color: colors.muted,
-  padding: '14px 12px 4px',
-};

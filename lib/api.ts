@@ -1675,7 +1675,9 @@ export interface SocialCommentDoc {
   permalink: string | null;
   createdAtMs: number;
   status: 'new' | 'drafted' | 'replied' | 'ignored' | 'escalated';
-  intent: 'praise' | 'question' | 'complaint' | 'safety' | 'spam' | 'other' | null;
+  // 'lead' is the one worth money — somebody asking the price under a post —
+  // and it was missing here while the backend has always written it.
+  intent: 'lead' | 'praise' | 'question' | 'complaint' | 'safety' | 'spam' | 'other' | null;
   draftReply: string | null;
   draftedBy?: string | null;
   sentReply: string | null;
@@ -1841,6 +1843,8 @@ export interface SalesChatDoc {
   lastInboundAtMs: number | null;
   lastOutboundAtMs: number | null;
   summary: string;
+  /** What they are buying, a few words, named the same way every time — what the funnel counts. Absent on chats from before it existed. */
+  wants?: string;
   nextStep: string;
   followUps: number;
   handover: boolean;
