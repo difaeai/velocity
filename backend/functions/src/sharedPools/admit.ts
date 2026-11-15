@@ -26,8 +26,11 @@ import { logger } from 'firebase-functions';
 
 import { db, FieldValue } from '../lib/firebase';
 import type { PoolingSettings } from '../domain/poolingSettings';
+import { fetchRouteServerSide, serverRoutingConfigured } from '../lib/routes';
+import type { LatLng } from '../lib/corridor';
 import {
   detourOf,
+  orderedPoints,
   poolAdmit,
   type AdmitDecision,
   type PricedRider,
@@ -55,6 +58,89 @@ export interface Admission extends AdmitDecision {
   /** True when the engine must refuse: the limits failed AND mode is live. */
   refuse: boolean;
   mode: PoolingSettings['mode'];
+  /** Whether the detour above came off the road network or the straight line. */
+  detourSource: 'road' | 'straight';
+  /**
+   * The ledger write. Already awaited for a refusal; still in flight for a
+   * seated rider, who is not kept waiting on bookkeeping. Callers in the rider's
+   * path ignore it; a caller that must know the row landed — a test, a backfill
+   * — awaits it. It never rejects.
+   */
+  recorded: Promise<void>;
+}
+
+/**
+ * The road a car drives through `points`, in metres and minutes, from Google
+ * Routes — or null if the road is not available for any leg.
+ *
+ * WHY THIS IS NOT OPTIONAL POLISH. The straight-line detour is not a rough
+ * version of the road detour; for the shapes this gate exists to judge it is a
+ * different number entirely. Measured on OpenStreetMap, a PWD→G-10 rider joining
+ * a PWD→F-10 car adds 4.32 km and 6.3 minutes of real road — while the straight
+ * line says 0.47 km and 1.6 minutes, because as the crow flies G-10 sits almost
+ * on top of the route. That is nine times out, and it is out in the direction
+ * that lets a bad detour through: `maxDetourKm: 5` would behave like 45 km.
+ *
+ * COST. One cached Routes call per leg, in parallel, on the Essentials SKU
+ * ($5/1,000 with 10,000 free a month) — and `lib/mapsCache` shares roads across
+ * trips and screens, so a pool's own legs are bought once and then reused by
+ * every later join on that route. No traffic: `trafficAware` doubles the price
+ * for a duration this gate does not read, since the limits are distance and
+ * free-flow minutes.
+ *
+ * ALL OR NOTHING. If one leg is unavailable the whole measurement returns null
+ * rather than mixing road and straight-line legs, which would give a figure
+ * that is neither and silently understate the detour again.
+ */
+async function roadPath(points: LatLng[]): Promise<{ m: number; min: number } | null> {
+  if (points.length < 2) return { m: 0, min: 0 };
+  const legs = await Promise.all(
+    points.slice(1).map((to, i) => fetchRouteServerSide(points[i]!, to)),
+  );
+  let m = 0;
+  let sec = 0;
+  for (let i = 0; i < legs.length; i += 1) {
+    const leg = legs[i];
+    if (leg) {
+      m += leg.distanceM;
+      sec += leg.durationSec;
+      continue;
+    }
+    // Two points Routes treats as the same place have no road worth buying and
+    // come back null; that is a zero-length leg, not a failed measurement.
+    const a = points[i]!;
+    const b = points[i + 1]!;
+    if (Math.abs(a.lat - b.lat) < 1e-4 && Math.abs(a.lng - b.lng) < 1e-4) continue;
+    return null;
+  }
+  return { m, min: sec / 60 };
+}
+
+/**
+ * What one more rider really costs the car: the road with them, less the road
+ * without. Falls back to the straight line whenever the road is unavailable —
+ * no key, quota, an outage — because a Maps failure must never stop a rider
+ * sharing a car. The verdict records which one it used.
+ */
+async function measureDetour(
+  aboard: RiderGeometry[],
+  joiner: RiderGeometry,
+  start: LatLng | null,
+): Promise<{ km: number; min: number; source: 'road' | 'straight' }> {
+  if (serverRoutingConfigured()) {
+    const [withJoiner, without] = await Promise.all([
+      roadPath(orderedPoints([...aboard, joiner], start)),
+      roadPath(orderedPoints(aboard, start)),
+    ]);
+    if (withJoiner && without) {
+      return {
+        km: Math.max(0, withJoiner.m - without.m) / 1000,
+        min: Math.max(0, withJoiner.min - without.min),
+        source: 'road',
+      };
+    }
+  }
+  return { ...detourOf(aboard, joiner, start), source: 'straight' };
 }
 
 /**
@@ -84,6 +170,8 @@ export async function recordAdmission(
       detourMin: 0,
       mode: settings.mode,
       refuse: false,
+      detourSource: 'straight',
+      recorded: Promise.resolve(),
     };
   }
   const geometry = (r: PricedRider & RiderGeometry): RiderGeometry => ({
@@ -91,7 +179,11 @@ export async function recordAdmission(
     pickup: r.pickup,
     dropoff: r.dropoff,
   });
-  const detour = detourOf(ctx.aboard.map(geometry), geometry(ctx.joiner), ctx.start ?? null);
+  const detour = await measureDetour(
+    ctx.aboard.map(geometry),
+    geometry(ctx.joiner),
+    ctx.start ?? null,
+  );
   const decision = poolAdmit(
     ctx.aboard.map(({ uid, soloFare }) => ({ uid, soloFare })),
     { uid: ctx.joiner.uid, soloFare: ctx.joiner.soloFare },
@@ -99,21 +191,31 @@ export async function recordAdmission(
     detour,
     ctx.currentGross,
   );
-  const admission: Admission = {
+  const verdict = {
     ...decision,
     mode: settings.mode,
     refuse: !decision.ok && settings.mode === 'live',
+    detourSource: detour.source,
   };
-
-  // The rider's seat does not wait on the ledger, and never fails because of it.
-  void write(ctx, admission, settings).catch((error) => {
+  const recorded = write(ctx, verdict, settings).catch((error) => {
     // `error:` not `message:` — the firebase logger overwrites `message`.
     logger.warn('pooling admission not recorded', { poolId: ctx.poolId, error });
   });
+  const admission: Admission = { ...verdict, recorded };
+  // A rider being SEATED does not wait on the ledger, and never fails because
+  // of it. A rider being REFUSED does: the caller throws the moment this
+  // returns, and a refusal that went unrecorded is the one row the desk most
+  // needs — it is also the only evidence the rider was turned away at all.
+  // Waiting costs that request nothing, since it is failing regardless.
+  if (admission.refuse) await recorded;
   return admission;
 }
 
-async function write(ctx: AdmissionContext, a: Admission, settings: PoolingSettings): Promise<void> {
+async function write(
+  ctx: AdmissionContext,
+  a: Omit<Admission, 'recorded'>,
+  settings: PoolingSettings,
+): Promise<void> {
   const riders = ctx.aboard.length + 1;
   await Promise.all([
     db.collection(DECISIONS).add({
@@ -133,6 +235,10 @@ async function write(ctx: AdmissionContext, a: Admission, settings: PoolingSetti
       worstSavingPct: a.worstSavingPct,
       detourKm: a.detourKm,
       detourMin: a.detourMin,
+      // Whether this row's detour is the real road or the straight line. A
+      // straight-line row understates the detour and must not be read as
+      // evidence that a limit was comfortably met.
+      detourSource: a.detourSource,
       // What the limits were at the time, so a row still means something after
       // an admin moves them.
       limits: {
@@ -157,6 +263,7 @@ async function write(ctx: AdmissionContext, a: Admission, settings: PoolingSetti
       driverGainSum: FieldValue.increment(a.driverGain),
       detourKmSum: FieldValue.increment(a.detourKm),
       detourMinSum: FieldValue.increment(a.detourMin),
+      roadMeasured: FieldValue.increment(a.detourSource === 'road' ? 1 : 0),
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true }),
   ]);

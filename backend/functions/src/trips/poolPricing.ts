@@ -229,18 +229,37 @@ export interface RiderGeometry {
 }
 
 /** The road a car drives to serve `riders` in the best order, in metres. */
-export function pathM(riders: RiderGeometry[], start?: LatLng | null): number {
+/**
+ * The points the car drives through, in order, starting where it is. Shared by
+ * the straight-line measurement below and the road measurement in
+ * sharedPools/admit.ts, so the two can never be measuring different journeys.
+ *
+ * The ORDER is chosen on straight-line distance (`orderStops`), including when
+ * the distance is then measured on real roads.
+ *
+ * shortcut: four riders is up to 2,520 candidate orders, so costing each one on
+ * the road network is not affordable — the order is picked geometrically and
+ * only the chosen one is measured. On real roads these can disagree: for
+ * PWD→F-10 with a PWD→G-10 joiner, dropping F-10 first is 0.5 km shorter while
+ * dropping G-10 first is 3.7 minutes faster. Revisit if a travel-time matrix
+ * ever becomes cheap enough to rank orders with.
+ */
+export function orderedPoints(riders: RiderGeometry[], start?: LatLng | null): LatLng[] {
   const order = orderStops(riders, start ?? null);
   const at = (s: Stop): LatLng => {
     const r = riders.find((x) => x.uid === s.uid)!;
     return s.kind === 'pickup' ? r.pickup : r.dropoff;
   };
+  return [...(start ? [start] : []), ...order.map(at)];
+}
+
+export function pathM(riders: RiderGeometry[], start?: LatLng | null): number {
+  const points = orderedPoints(riders, start);
   let total = 0;
-  let here: LatLng | null = start ?? null;
-  for (const s of order) {
-    const p = at(s);
-    if (here) total += haversineM(here.lat, here.lng, p.lat, p.lng);
-    here = p;
+  for (let i = 1; i < points.length; i += 1) {
+    const a = points[i - 1]!;
+    const b = points[i]!;
+    total += haversineM(a.lat, a.lng, b.lat, b.lng);
   }
   return total;
 }

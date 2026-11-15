@@ -55,7 +55,6 @@ interface Settings {
   matchWindowMin: number;
   bookingCutoffMin: number;
   maxRiders: number;
-  lockOnDriverAssigned: boolean;
 }
 
 /** Mirrors DEFAULT_POOLING in backend/functions/src/domain/poolingSettings.ts. */
@@ -70,7 +69,6 @@ const DEFAULTS: Settings = {
   matchWindowMin: 10,
   bookingCutoffMin: 0,
   maxRiders: 4,
-  lockOnDriverAssigned: false,
 };
 
 /** label → [min, max], the backend's clamp. */
@@ -97,11 +95,13 @@ interface Totals {
   driverGainSum: number;
   detourKmSum: number;
   detourMinSum: number;
+  roadMeasured: number;
 }
 
 const ZERO: Totals = {
   evaluated: 0, passed: 0, refused: 0, wouldRefuse: 0, ridersSum: 0,
   savingPctSum: 0, savingPkrSum: 0, driverGainSum: 0, detourKmSum: 0, detourMinSum: 0,
+  roadMeasured: 0,
 };
 
 const num = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
@@ -132,7 +132,6 @@ export default function PoolingPage() {
           matchWindowMin: num(d.matchWindowMin, DEFAULTS.matchWindowMin),
           bookingCutoffMin: num(d.bookingCutoffMin, DEFAULTS.bookingCutoffMin),
           maxRiders: num(d.maxRiders, DEFAULTS.maxRiders),
-          lockOnDriverAssigned: d.lockOnDriverAssigned === true,
         });
         const a = an.data() ?? {};
         setTotals({ ...ZERO, ...Object.fromEntries(Object.keys(ZERO).map((k) => [k, num(a[k], 0)])) } as Totals);
@@ -269,7 +268,12 @@ export default function PoolingPage() {
         </div>
         <p style={hintBoxStyle}>
           A rider still has to share at least half the car&apos;s route, whatever these say — two points
-          near two points is not a shared journey.
+          near two points is not a shared journey. The two detour limits are measured on the{' '}
+          <strong>real road network</strong>, not the straight line: as the crow flies a rider can
+          look like a 0.5 km diversion and cost 4 km of driving. If the mapping service is
+          unavailable the engine falls back to the straight line and marks that row, which the
+          ledger below counts — a straight-line row understates the detour, so do not read it as a
+          limit comfortably met.
         </p>
       </Card>
 
@@ -322,19 +326,12 @@ export default function PoolingPage() {
             <Num value={s.maxRiders} step={1} onChange={(v) => set('maxRiders', v)} />
           </Field>
         </div>
-        <div style={{ marginTop: 12 }}>
-          <Toggle
-            on={s.lockOnDriverAssigned}
-            onChange={(v) => set('lockOnDriverAssigned', v)}
-            label="Lock the pool as soon as a driver is assigned"
-          />
-          <p style={{ color: colors.muted, fontSize: 12, marginTop: 6, lineHeight: 1.5 }}>
-            Off (how it works today): a car keeps filling its empty seats until the driver taps
-            Start. On: the moment a driver takes it, the passenger list is closed — no rider joins a
-            car already on its way. Either way, nobody joins after Start, and the driver cannot take
-            another ride until every passenger is dropped off.
-          </p>
-        </div>
+        <p style={hintBoxStyle}>
+          The lifecycle itself is not a setting. A car keeps filling its empty seats while its
+          driver is on the way, because a seat filled cuts the fare for everyone in it and pays the
+          driver more. The driver tapping <strong>Start</strong> closes it for good: no rider joins
+          after that, and the driver takes no other ride until every passenger is dropped off.
+        </p>
       </Card>
 
       {/* ── The ledger ────────────────────────────────────────────────────── */}
@@ -362,6 +359,11 @@ export default function PoolingPage() {
             <Stat label="Saved per rider" value={`PKR ${Math.round(per(totals.savingPkrSum))}`} />
             <Stat label="Extra per car" value={`PKR ${Math.round(per(totals.driverGainSum))}`} />
             <Stat label="Average detour" value={`${per(totals.detourKmSum).toFixed(2)} km · ${Math.round(per(totals.detourMinSum))} min`} />
+            <Stat
+              label="Measured on real roads"
+              value={`${totals.roadMeasured} of ${totals.evaluated}`}
+              warn={totals.roadMeasured < totals.evaluated}
+            />
           </div>
         )}
         {totals.evaluated > 0 && totals.wouldRefuse > 0 && s.mode === 'shadow' && (
@@ -411,34 +413,6 @@ function Stat({ label, value, warn }: { label: string; value: string; warn?: boo
       <div style={{ fontSize: 11, color: colors.muted, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700 }}>{label}</div>
       <div style={{ fontSize: 18, fontWeight: 800, color: warn ? colors.danger : colors.text, marginTop: 2 }}>{value}</div>
     </div>
-  );
-}
-
-function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
-  return (
-    <button
-      type="button"
-      onClick={() => onChange(!on)}
-      style={{
-        display: 'inline-flex', alignItems: 'center', gap: 10, background: 'transparent',
-        border: 'none', cursor: 'pointer', padding: 0, fontSize: 13, fontWeight: 700, color: colors.text,
-      }}
-    >
-      <span
-        style={{
-          width: 42, height: 24, borderRadius: 12, flexShrink: 0,
-          background: on ? colors.success : colors.border, position: 'relative', transition: 'background 140ms',
-        }}
-      >
-        <span
-          style={{
-            position: 'absolute', top: 3, left: on ? 21 : 3, width: 18, height: 18,
-            borderRadius: '50%', background: '#fff', transition: 'left 140ms',
-          }}
-        />
-      </span>
-      {label}
-    </button>
   );
 }
 

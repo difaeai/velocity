@@ -279,3 +279,61 @@ describe('live mode refuses what shadow mode only records', () => {
     expect(totals).toMatchObject({ evaluated: 2, passed: 0, refused: 1, wouldRefuse: 2 });
   });
 });
+
+describe('the timing and seat settings each take effect on their own', () => {
+  it('closes JOINS before a timed departure once a cutoff is set, but never the pool’s own first seat', async () => {
+    // A pool leaving in an hour, asked for ten minutes before — so its car has
+    // NOT gone out yet and the bookings are still gathering. The cutoff is 90
+    // minutes, which this hour-away departure is inside.
+    //
+    // Its creator is choosing that time, so a cutoff must never refuse them: it
+    // is only a late JOINER who is late.
+    const departTime = pktClock(60 * 60_000);
+    await setPooling({ bookingCutoffMin: 90, matchWindowMin: 10 });
+    const made = (await createSharedPool.run(makeReq({
+      city: 'islamabad', departTime, rideType: 'mini', pickup: PWD, dropoff: F10,
+    }, 'asad'))) as { poolId: string; status: string };
+    expect(made.status).toBe('booked');
+
+    // Bilal is inside the window: this car is about to be asked for.
+    await expect(joinSharedPool.run(makeReq({ poolId: made.poolId }, 'bilal')))
+      .rejects.toThrow(/closed 90 minutes before it leaves/);
+
+    // The default — 0, no cutoff — is how the engine shipped: the seat is taken.
+    await setPooling({ bookingCutoffMin: 0 });
+    expect((await joinSharedPool.run(makeReq({ poolId: made.poolId }, 'bilal'))) as { status: string })
+      .toMatchObject({ status: 'booked' });
+  });
+
+  it('books only as many seats as maxRiders allows', async () => {
+    await setPooling({ maxRiders: 2 });
+    const departTime = pktClock(2 * 3600_000);
+    const made = (await createSharedPool.run(makeReq({
+      city: 'islamabad', departTime, rideType: 'mini', pickup: PWD, dropoff: F10,
+    }, 'asad'))) as { poolId: string };
+    // Asad holds seat one; Bilal takes the second; Chaudhry finds it full.
+    await joinSharedPool.run(makeReq({ poolId: made.poolId }, 'bilal'));
+    await expect(joinSharedPool.run(makeReq({ poolId: made.poolId }, 'chaudhry')))
+      .rejects.toThrow(/full/);
+  });
+
+  it('asks for the car matchWindowMin before departure, and tells the rider that time', async () => {
+    const departTime = pktClock(3 * 3600_000);
+    await setPooling({ matchWindowMin: 25 });
+    const made = (await createSharedPool.run(makeReq({
+      city: 'islamabad', departTime, rideType: 'mini', pickup: PWD, dropoff: F10,
+    }, 'asad'))) as { poolId: string; departsAtMs: number | null };
+
+    // dispatchAt is the departure less the window; the lead is stored on the
+    // pool so a later settings change cannot move a departure already promised.
+    const pool = (await db().doc(`sharedPools/${made.poolId}`).get()).data()!;
+    expect(pool.dispatchLeadMs).toBe(25 * 60_000);
+    const dispatchMs = (pool.dispatchAt as { toMillis(): number }).toMillis();
+    expect(made.departsAtMs! - dispatchMs).toBe(25 * 60_000);
+
+    // Moving the window now leaves this pool's promised departure untouched.
+    await setPooling({ matchWindowMin: 5 });
+    const after = (await getSharedPools.run(makeReq({ city: 'islamabad', mine: true }, 'asad'))) as { pools: PoolCard[] };
+    expect(after.pools.find((p) => p.id === made.poolId)!.departsAtMs).toBe(made.departsAtMs);
+  });
+});

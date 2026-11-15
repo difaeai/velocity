@@ -210,18 +210,7 @@ function closedForComfort(genders: string[]): boolean {
 }
 
 /** What the pool's last car can still do, read off its trip. */
-export function carOf(
-  trip: FirebaseFirestore.DocumentData | null | undefined,
-  nowMs: number,
-  /**
-   * Lock the car the moment a driver is assigned, rather than when they tap
-   * Start. The spec's timeline (2026-11-14) locks at assignment; this engine
-   * shipped locking at Start, so a car on its way to the first pickup still
-   * fills its empty seats. Default false keeps that — `lockOnDriverAssigned` in
-   * the dashboard's Ride Pooling page turns the stricter rule on.
-   */
-  lockOnDriverAssigned = false,
-) {
+export function carOf(trip: FirebaseFirestore.DocumentData | null | undefined, nowMs: number) {
   if (!trip) return null;
   const status = trip.status as string;
   const members = (trip.poolMembers as string[] | undefined) ?? [trip.passengerId as string];
@@ -237,9 +226,16 @@ export function carOf(
     members,
     ended,
     full,
-    // Started: the driver is collecting its riders, and the box is the next car's.
-    joinable: !full && !trip.poolStartedAt
-      && (gathering || (WITH_DRIVER.has(status) && !lockOnDriverAssigned)),
+    /**
+     * Started: the driver is collecting its riders, and the box is the next
+     * car's. A car with a driver on the way still fills its empty seats —
+     * the owner's ruling (2026-11-15), confirmed against the spec's stricter
+     * "lock at driver assignment": seats filled is fare cut for everyone in
+     * the car and more for the driver, and Start is the line that matters.
+     * Nobody joins after it, and the driver takes no other ride until every
+     * passenger is out (placeBid's assertNotCarryingPool).
+     */
+    joinable: !full && !trip.poolStartedAt && (gathering || WITH_DRIVER.has(status)),
     /** When the last seat went: the newest roster entry. */
     filledAtMs: full ? Math.max(0, ...rosterForTrip(trip).map((r) => timestampMs(r.joinedAt) ?? 0)) : null,
     fare: (trip.fare as number | null) ?? (trip.offeredFare as number),
@@ -1219,7 +1215,7 @@ async function seatOnPool(
   if (tripId) {
     const tripRef = db.doc(`trips/${tripId}`);
     const tripData = (await tripRef.get()).data();
-    const car = carOf(tripData, Date.now(), pooling.lockOnDriverAssigned);
+    const car = carOf(tripData, Date.now());
     const aboard = !!car && car.members.includes(uid);
     if (car && !car.ended && (aboard || (car.joinable && (await riderIsIn(uid, tripId)) !== 'waiting'))) {
       // Is one more rider in this car worth it — for them, for the others and
@@ -1289,7 +1285,20 @@ async function seatOnPool(
     // Booking cutoff: a timed pool stops taking seats this close to departure,
     // so a car that is about to be asked for is not re-priced under its riders.
     // 0 (the default) is no cutoff, which is how this engine shipped.
-    if (departTime && pooling.bookingCutoffMin > 0) {
+    //
+    // Only a JOIN is ever late. The first seat belongs to whoever is creating
+    // the pool and choosing its time, and refusing them would make a 10-minute
+    // pool uncreatable under a 30-minute cutoff — which is what it did.
+    //
+    // It also only applies to a car still gathering. Once the car is out, the
+    // rider takes a seat in it above (joinPoolTripAsRider) and its own join
+    // window governs that, not a cutoff for a departure already under way.
+    //
+    // shortcut: a rider inside the window is refused rather than rolled on to
+    // the next departure, so a daily pool is unbookable for its last few
+    // minutes each day. Roll `dueMs` to the departure after next if the owner
+    // ever sets a cutoff above zero.
+    if (departTime && bookings.length > 0 && pooling.bookingCutoffMin > 0) {
       const departsMs = nextDepartureMs(departTime, nowMs);
       if (departsMs - nowMs < pooling.bookingCutoffMin * 60_000) {
         throw new HttpsError(

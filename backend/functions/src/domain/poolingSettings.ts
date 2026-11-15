@@ -49,14 +49,17 @@ export interface PoolingSettings {
   bookingCutoffMin: number;
   /** Seats a pool will book. Capped by the car itself (MAX_POOL_RIDERS). */
   maxRiders: number;
-  /**
-   * Lock the pool when its driver is assigned instead of when they tap Start.
-   * The spec's timeline locks at assignment; this engine shipped locking at
-   * Start, so a car driving to its first pickup still fills empty seats. False
-   * keeps what riders and drivers have today (see `carOf`).
-   */
-  lockOnDriverAssigned: boolean;
 }
+
+/**
+ * NOT a setting, by the owner's ruling (2026-11-15). The spec locked the pool
+ * when its driver was assigned; this engine keeps filling empty seats until the
+ * driver taps Start, and that stays — a seat filled cuts the fare for everyone
+ * in the car and pays the driver more. It was briefly a `lockOnDriverAssigned`
+ * flag; it was removed rather than left switchable, because a switch that can
+ * turn off a decided rule is a way to turn it off by accident. The lock lives
+ * in `carOf` (poolStartedAt) and in `placeBid` (assertNotCarryingPool).
+ */
 
 /**
  * What the engine did before any of this was configurable, plus the spec's
@@ -74,7 +77,6 @@ export const DEFAULT_POOLING: PoolingSettings = {
   matchWindowMin: 10,
   bookingCutoffMin: 0,
   maxRiders: 4,
-  lockOnDriverAssigned: false,
 };
 
 /**
@@ -115,7 +117,5 @@ export async function getPoolingSettings(): Promise<PoolingSettings> {
     matchWindowMin: Math.round(setting(snap.get('matchWindowMin'), d.matchWindowMin, 0, 240)),
     bookingCutoffMin: Math.round(setting(snap.get('bookingCutoffMin'), d.bookingCutoffMin, 0, 240)),
     maxRiders: Math.round(setting(snap.get('maxRiders'), d.maxRiders, 2, 4)),
-    // Only an explicit true tightens the lock; anything else keeps today's rule.
-    lockOnDriverAssigned: snap.get('lockOnDriverAssigned') === true,
   };
 }
