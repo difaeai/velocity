@@ -262,14 +262,13 @@ const SECTIONS = [
  */
 const VEXA_TOUR: TourStep[] = [
   {
-    title: 'This is Vexa',
-    say: 'Think of it as a small marketing team that works for you all day. It makes your posts, it runs your ads, and it answers your customers. Let me show you where each of those lives. It takes about two minutes.',
-    goto: '/dashboard/social',
-  },
-  {
+    // The welcome and the circle are one step, so there is something lit up
+    // from the very first card. A tour that opens on a dimmed screen with
+    // nothing pointed at reads as a mistake (owner, 2026-11-15).
     target: 'pulse',
-    title: 'What Vexa is doing right now',
-    say: 'This circle is the whole of it. Your content team, your ads, the agent on WhatsApp, the voice agents. A light means that part is working this minute. A dark one means it is not, and it tells you why.',
+    title: 'This is Vexa',
+    say: 'Think of it as a small marketing team that works for you all day. This circle is the whole of it. Your content team, your ads, the agent on WhatsApp, the voice agents. A light means that part is working this minute. A dark one means it is not, and it tells you why. Let me show you the rest. It takes about two minutes.',
+    goto: '/dashboard/social',
   },
   {
     target: 'brain',

@@ -49,14 +49,17 @@ import {
   type SocialPlatform,
 } from '@/lib/api';
 import { Button, Card } from '@/components/ui';
-import { PlatformBadge, PLATFORM_META, StatusPill } from '@/components/social/shared';
+import { PLATFORM_META } from '@/components/social/shared';
+// NAV_ICON_CSS is injected once by the sidebar, which is in this page's layout.
+import { NavIcon, type NavIconName } from '@/components/social/navIcons';
+import { FX_CSS, Ring } from '@/components/social/fx';
 import { InstagramConnect } from '@/components/social/instagramConnect';
 import { GoogleAdsConnect } from '@/components/social/googleAdsConnect';
 import { VideoConnect } from '@/components/social/videoConnect';
 import { StoreConnect } from '@/components/social/storeConnect';
 import { SkeletonRows } from '@/components/states';
 import { AREA_CSS, Area } from '@/components/social/dashboard';
-import { HowLink, SetupGuide, type GuideKey } from '@/components/social/setupGuide';
+import { HowLink, SETUP_CSS, SetupGuide, type GuideKey } from '@/components/social/setupGuide';
 
 export default function AccountsPage() {
   const { path, includes, house } = useWorkspace();
@@ -144,28 +147,37 @@ export default function AccountsPage() {
 
   return (
     <div className="fx">
-      <style>{AREA_CSS + ACC_CSS}</style>
+      {/* FX_CSS was missing here, which is why this page's buttons and muted
+          text were the only ones in the console drawn without it. */}
+      <style>{FX_CSS + AREA_CSS + SETUP_CSS + ACC_CSS}</style>
 
-      <header className="ac-top">
+      <header className="ac-top fx-rise">
+        <span className="ac-orb" aria-hidden />
         <div style={{ flex: 1, minWidth: 260 }}>
+          <div className="fx-eyebrow">Set up once</div>
           <h1>Connected accounts</h1>
           <p>
             Everything Vexa can plug into, and what each one gets you. Nothing goes out anywhere until the account it
             posts to is connected.
           </p>
+          <button type="button" className="ac-guide" onClick={() => setGuide(null)}>
+            <span aria-hidden>📖</span> Setting-up guide
+          </button>
         </div>
         <div className="ac-prog">
-          <span className="ac-prog-n">
-            {progress.done}
-            <i>/{progress.all}</i>
-          </span>
+          <Ring
+            value={progress.all ? progress.done / progress.all : 0}
+            size={104}
+            stroke={9}
+            color="#ccff00"
+            track="rgba(255,255,255,.14)"
+          >
+            <span className="ac-prog-n">
+              {progress.done}
+              <i>/{progress.all}</i>
+            </span>
+          </Ring>
           <span className="ac-prog-k">connected</span>
-          <span className="ac-prog-bar" aria-hidden>
-            <i style={{ width: `${progress.all ? (progress.done / progress.all) * 100 : 0}%` }} />
-          </span>
-          <button type="button" className="ac-guide" onClick={() => setGuide(null)}>
-            Setting-up guide
-          </button>
         </div>
       </header>
 
@@ -197,47 +209,69 @@ export default function AccountsPage() {
           title="Where you post"
           says="The accounts Vexa posts your reels, pictures and stories to, and reads the comments on."
         >
-          <Tool
-            title="Instagram & Facebook"
-            says="One Facebook sign-in connects both. Reels, posts, stories and carousels go out here, and comments come back to your Comments page."
-            onHow={() => setGuide('instagram')}
-          >
-            <InstagramConnect account={accounts.instagram} />
-          </Tool>
-
-          {includes('content') ? (
+          <div className="ac-grid">
             <Tool
-              title="YouTube"
-              says="Every reel also goes up as a Short."
-              onHow={() => setGuide('youtube')}
+              i={1}
+              logo={<Logos of={['instagram', 'facebook']} />}
+              brand="#c13584"
+              title="Instagram & Facebook"
+              status={state(accounts.instagram) === 'off' ? state(accounts.facebook) : state(accounts.instagram)}
+              said={line(accounts.instagram ?? accounts.facebook)}
+              says="One Facebook sign-in connects both. Reels, posts, stories and carousels go out here, and comments come back to your Comments page."
+              onHow={() => setGuide('instagram')}
             >
-              <VideoConnect provider="youtube" account={accounts.youtube} />
+              <InstagramConnect account={accounts.instagram} />
             </Tool>
-          ) : null}
 
-          {includes('content') ? (
-            <Tool title="TikTok" says="Reels go up as TikTok videos." onHow={() => setGuide('tiktok')}>
-              <VideoConnect provider="tiktok" account={accounts.tiktok} />
-            </Tool>
-          ) : null}
+            {includes('content') ? (
+              <Tool
+                i={2}
+                logo={<Logos of={['youtube']} />}
+                brand="#ff0000"
+                title="YouTube"
+                status={state(accounts.youtube)}
+                said={line(accounts.youtube)}
+                says="Every reel also goes up as a Short."
+                onHow={() => setGuide('youtube')}
+              >
+                <VideoConnect provider="youtube" account={accounts.youtube} />
+              </Tool>
+            ) : null}
 
-          {!schema ? <SkeletonRows rows={3} /> : null}
+            {includes('content') ? (
+              <Tool
+                i={3}
+                logo={<Logos of={['tiktok']} />}
+                brand="#010101"
+                title="TikTok"
+                status={state(accounts.tiktok)}
+                said={line(accounts.tiktok)}
+                says="Reels go up as TikTok videos."
+                onHow={() => setGuide('tiktok')}
+              >
+                <VideoConnect provider="tiktok" account={accounts.tiktok} />
+              </Tool>
+            ) : null}
 
-          {tokenPlatforms.map((p) =>
-            pasteHere ? (
-              <AccountCard
-                key={p.platform}
-                meta={p}
-                account={accounts[p.platform]}
-                open={openFor === p.platform}
-                disabled={!schema?.vaultReady}
-                onHow={() => setGuide('token')}
-                onToggle={() => setOpenFor(openFor === p.platform ? null : p.platform)}
-              />
-            ) : (
-              <WeDoIt key={p.platform} platform={p.platform} label={p.label} account={accounts[p.platform]} />
-            ),
-          )}
+            {!schema ? <SkeletonRows rows={3} /> : null}
+
+            {tokenPlatforms.map((p, n) =>
+              pasteHere ? (
+                <AccountCard
+                  key={p.platform}
+                  i={4 + n}
+                  meta={p}
+                  account={accounts[p.platform]}
+                  open={openFor === p.platform}
+                  disabled={!schema?.vaultReady}
+                  onHow={() => setGuide('token')}
+                  onToggle={() => setOpenFor(openFor === p.platform ? null : p.platform)}
+                />
+              ) : (
+                <WeDoIt key={p.platform} i={4 + n} platform={p.platform} label={p.label} account={accounts[p.platform]} />
+              ),
+            )}
+          </div>
         </Area>
       ) : null}
 
@@ -249,24 +283,32 @@ export default function AccountsPage() {
           title="Where you sell"
           says="The two places Vexa actually talks to customers and closes them."
         >
-          <Linked
-            title="WhatsApp"
-            says="Vexa answers your WhatsApp from your own number — price, booking, following up — and hands the chat to you the moment it should be a person."
-            on={Boolean(wa?.connected)}
-            onText={wa?.displayNumber ? `Connected · ${wa.displayNumber}` : 'Connected'}
-            href="/dashboard/social/whatsapp"
-            cta={wa?.connected ? 'Open WhatsApp sales' : 'Connect your number'}
-            onHow={() => setGuide('whatsapp')}
-          />
-          <Linked
-            title="Email"
-            says="Vexa writes to customers from your own address and answers what comes back."
-            on={Boolean(mail?.smtp)}
-            onText={mail?.smtp ? `Connected · ${mail.smtp.from}` : 'Connected'}
-            href="/dashboard/social/email"
-            cta={mail?.smtp ? 'Open the email agent' : 'Connect your mailbox'}
-            onHow={() => setGuide('email')}
-          />
+          <div className="ac-grid">
+            <Linked
+              i={1}
+              icon="whatsapp"
+              brand="#25d366"
+              title="WhatsApp"
+              says="Vexa answers your WhatsApp from your own number — price, booking, following up — and hands the chat to you the moment it should be a person."
+              on={Boolean(wa?.connected)}
+              onText={wa?.displayNumber ? `Connected · ${wa.displayNumber}` : 'Connected'}
+              href="/dashboard/social/whatsapp"
+              cta={wa?.connected ? 'Open WhatsApp sales' : 'Connect your number'}
+              onHow={() => setGuide('whatsapp')}
+            />
+            <Linked
+              i={2}
+              icon="email"
+              brand="#0058bb"
+              title="Email"
+              says="Vexa writes to customers from your own address and answers what comes back."
+              on={Boolean(mail?.smtp)}
+              onText={mail?.smtp ? `Connected · ${mail.smtp.from}` : 'Connected'}
+              href="/dashboard/social/email"
+              cta={mail?.smtp ? 'Open the email agent' : 'Connect your mailbox'}
+              onHow={() => setGuide('email')}
+            />
+          </div>
         </Area>
       ) : null}
 
@@ -291,26 +333,55 @@ export default function AccountsPage() {
             </Card>
           ) : null}
 
-          <Tool
-            title="Meta ads"
-            says="Facebook and Instagram ads, run on your own ad account."
-            onHow={() => setGuide('meta-ads')}
-          >
-            <AdsAccount cfg={ads} postingPageId={accounts.facebook?.externalId ?? null} pasteHere={pasteHere} />
-          </Tool>
-          <Tool title="Google Ads" says="What your Google campaigns cost and brought in." onHow={() => setGuide('google-ads')}>
-            <GoogleAdsConnect link={ads?.google} />
-          </Tool>
-          <Tool title="TikTok Ads" says="The same reporting, for TikTok." onHow={() => setGuide('tiktok-ads')}>
-            <VideoConnect provider="tiktok-ads" link={ads?.tiktok} />
-          </Tool>
-          <Tool
-            title="Your online shop"
-            says="So the ads can be judged on orders instead of clicks. Totals only — no customer's name, phone or address is ever read in."
-            onHow={() => setGuide('store')}
-          >
-            <StoreConnect />
-          </Tool>
+          <div className="ac-grid">
+            <Tool
+              i={1}
+              wide
+              logo={<Logos of={['meta']} />}
+              brand="#0081fb"
+              title="Meta ads"
+              status={ads?.adAccountId ? 'connected' : 'off'}
+              said={ads?.adAccountId ? `Connected · ${ads.accountName ?? ads.adAccountId}` : 'Not connected'}
+              says="Facebook and Instagram ads, run on your own ad account."
+              onHow={() => setGuide('meta-ads')}
+            >
+              <AdsAccount cfg={ads} postingPageId={accounts.facebook?.externalId ?? null} pasteHere={pasteHere} />
+            </Tool>
+            <Tool
+              i={2}
+              logo={<Logos of={['google-ads']} />}
+              brand="#4285f4"
+              title="Google Ads"
+              status={ads?.google?.customerId ? 'connected' : 'off'}
+              said={ads?.google?.customerId ? 'Connected' : 'Not connected'}
+              says="What your Google campaigns cost and brought in."
+              onHow={() => setGuide('google-ads')}
+            >
+              <GoogleAdsConnect link={ads?.google} />
+            </Tool>
+            <Tool
+              i={3}
+              logo={<Logos of={['tiktok']} />}
+              brand="#010101"
+              title="TikTok Ads"
+              status={ads?.tiktok?.advertiserId ? 'connected' : 'off'}
+              said={ads?.tiktok?.advertiserId ? 'Connected' : 'Not connected'}
+              says="The same reporting, for TikTok."
+              onHow={() => setGuide('tiktok-ads')}
+            >
+              <VideoConnect provider="tiktok-ads" link={ads?.tiktok} />
+            </Tool>
+            <Tool
+              i={4}
+              logo={<NavIcon name="money" size={24} />}
+              brand="#11794c"
+              title="Your online shop (WooCommerce)"
+              says="So the ads can be judged on orders instead of clicks. Totals only — no customer's name, phone or address is ever read in."
+              onHow={() => setGuide('store')}
+            >
+              <StoreConnect />
+            </Tool>
+          </div>
         </Area>
       ) : null}
 
@@ -321,32 +392,101 @@ export default function AccountsPage() {
   );
 }
 
-/** One connector, with its name, what it gets you, and the instructions beside it. */
+type Wired = 'connected' | 'error' | 'off';
+
+/** The status of a posting account, in the one word the tile needs. */
+const state = (a?: SocialAccountDoc): Wired =>
+  a?.status === 'connected' ? 'connected' : a?.status === 'error' ? 'error' : 'off';
+
+/** The line under a connector's name: who it is connected as, or that it is not. */
+const line = (a?: SocialAccountDoc) =>
+  a?.status === 'connected'
+    ? `Connected${a.displayName ? ` · ${a.displayName}` : ''}${a.handle ? ` (${a.handle})` : ''}`
+    : a?.status === 'error'
+      ? 'Signed out — connect it again'
+      : 'Not connected';
+
+/**
+ * The real logos, from `public/site/logos`. A brand is recognised before it is
+ * read, which is the entire job of this page: somebody scanning for the thing
+ * they already have an account with should find it without reading a word.
+ * Two of them overlap where one sign-in covers both networks.
+ */
+function Logos({ of }: { of: string[] }) {
+  return (
+    <span className={`ac-logos${of.length > 1 ? ' pair' : ''}`} aria-hidden>
+      {of.map((n) => (
+        // eslint-disable-next-line @next/next/no-img-element -- a fixed local SVG; next/image would only add a request
+        <img key={n} src={`/site/logos/${n}.svg`} alt="" />
+      ))}
+    </span>
+  );
+}
+
+/**
+ * One connector: its logo, its name, whether it is on, what it gets you, the
+ * thing you press, and the instructions beside it.
+ *
+ * Every connector on this page is this tile — before, each of the four kinds
+ * drew its own head, its own status and its own card, which is why the page
+ * read as a pile rather than a catalogue (owner, 2026-11-15: "it is a mess").
+ */
 function Tool({
+  i,
+  logo,
+  brand,
   title,
   says,
+  status = 'off',
+  said,
+  wide,
   onHow,
   children,
 }: {
+  /** The stagger: tiles rise in one after another. */
+  i: number;
+  logo: React.ReactNode;
+  brand: string;
   title: string;
   says: string;
-  onHow: () => void;
+  status?: Wired;
+  /** The line under the name. Omitted for a connector with no state of its own. */
+  said?: string;
+  /** Takes the whole row — the ad account, which carries a form. */
+  wide?: boolean;
+  /** Omitted where there is nothing to instruct. */
+  onHow?: () => void;
   children: React.ReactNode;
 }) {
   return (
-    <div className="ac-tool">
-      <div className="ac-tool-head">
-        <strong>{title}</strong>
-        <HowLink onClick={onHow} />
+    <article
+      className={`ac-card fx-rise ${status}${wide ? ' wide' : ''}`}
+      style={{ ['--i' as string]: i, ['--brand' as string]: brand } as React.CSSProperties}
+    >
+      <div className="ac-card-top">
+        <span className="ac-logo">{logo}</span>
+        <div style={{ minWidth: 0 }}>
+          <strong>{title}</strong>
+          {said ? <em>{said}</em> : null}
+        </div>
+        {status === 'connected' ? (
+          <svg className="ac-tick" viewBox="0 0 24 24" aria-label="Connected" role="img">
+            <path d="M5 13l4.5 4.5L19 7" />
+          </svg>
+        ) : null}
       </div>
       <p className="ac-says">{says}</p>
-      {children}
-    </div>
+      <div className="ac-do">{children}</div>
+      {onHow ? <HowLink onClick={onHow} /> : null}
+    </article>
   );
 }
 
 /** A connector that lives on its own page: its state here, the work there. */
 function Linked({
+  i,
+  icon,
+  brand,
   title,
   says,
   on,
@@ -355,6 +495,9 @@ function Linked({
   cta,
   onHow,
 }: {
+  i: number;
+  icon: NavIconName;
+  brand: string;
   title: string;
   says: string;
   on: boolean;
@@ -364,24 +507,20 @@ function Linked({
   onHow: () => void;
 }) {
   return (
-    <div className="ac-tool">
-      <div className="ac-tool-head">
-        <strong>{title}</strong>
-        <StatusPill status={on ? 'connected' : 'disconnected'} />
-        <HowLink onClick={onHow} />
-      </div>
-      <p className="ac-says">{says}</p>
-      <Card>
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-          <span style={{ flex: 1, minWidth: 200, fontSize: 13.5, fontWeight: on ? 700 : 400, color: on ? colors.text : colors.muted }}>
-            {on ? onText : 'Not connected yet.'}
-          </span>
-          <Link href={href} className="fx-btn small">
-            {cta}
-          </Link>
-        </div>
-      </Card>
-    </div>
+    <Tool
+      i={i}
+      logo={<NavIcon name={icon} size={24} />}
+      brand={brand}
+      title={title}
+      says={says}
+      status={on ? 'connected' : 'off'}
+      said={on ? onText : 'Not connected'}
+      onHow={onHow}
+    >
+      <Link href={href} className={`fx-btn small${on ? ' ghost' : ''}`}>
+        {cta}
+      </Link>
+    </Tool>
   );
 }
 
@@ -390,39 +529,38 @@ function Linked({
  * connect one alone, so they are not shown a form they cannot fill.
  */
 function WeDoIt({
+  i,
   platform,
   label,
   account,
 }: {
+  i: number;
   platform: SocialPlatform;
   label: string;
   account?: SocialAccountDoc;
 }) {
   const connected = account?.status === 'connected';
   return (
-    <div className="ac-tool">
-      <Card>
-        <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
-          <PlatformBadge platform={platform} />
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <strong style={{ fontSize: 15 }}>{label}</strong>
-              <StatusPill status={account?.status ?? 'disconnected'} />
-            </div>
-            <p style={{ fontSize: 13, color: colors.muted, margin: '4px 0 0', lineHeight: 1.5 }}>
-              {connected && account?.displayName
-                ? `Connected as ${account.displayName}${account.handle ? ` (${account.handle})` : ''}.`
-                : `${PLATFORM_META[platform].note} This one has no sign-in button of its own, so we connect it for you — ask and we will.`}
-            </p>
-          </div>
-          {connected ? null : (
-            <a href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(`Please connect my ${label}`)}`} className="fx-btn small ghost">
-              Ask us to connect it
-            </a>
-          )}
-        </div>
-      </Card>
-    </div>
+    <Tool
+      i={i}
+      logo={<span className="ac-glyph">{PLATFORM_META[platform].glyph}</span>}
+      brand={PLATFORM_META[platform].brand}
+      title={label}
+      status={state(account)}
+      said={line(account)}
+      says={`${PLATFORM_META[platform].note} This one has no sign-in button of its own, so we connect it for you — ask and we will.`}
+    >
+      {connected ? (
+        <span className="ac-quiet">Nothing more to do here.</span>
+      ) : (
+        <a
+          href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(`Please connect my ${label}`)}`}
+          className="fx-btn small ghost"
+        >
+          Ask us to connect it
+        </a>
+      )}
+    </Tool>
   );
 }
 
@@ -560,6 +698,7 @@ function AdsAccount({
 }
 
 function AccountCard({
+  i,
   meta,
   account,
   open,
@@ -567,6 +706,7 @@ function AccountCard({
   onToggle,
   onHow,
 }: {
+  i: number;
   meta: ConnectSchema['platforms'][number];
   account?: SocialAccountDoc;
   open: boolean;
@@ -613,86 +753,66 @@ function AccountCard({
   }
 
   return (
-    <div className="ac-tool">
-      <Card>
-        <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-          <PlatformBadge platform={meta.platform} />
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <strong style={{ fontSize: 15 }}>{meta.label}</strong>
-              <StatusPill status={status} />
-              {!meta.canPublishVideo ? (
-                <span style={{ fontSize: 11, color: colors.muted, fontWeight: 700 }}>REPORTING ONLY</span>
-              ) : null}
-              <HowLink onClick={onHow} />
-            </div>
-            <p style={{ fontSize: 13, color: colors.muted, margin: '4px 0 0' }}>
-              {connected && account?.displayName ? (
-                <>
-                  Connected as <strong style={{ color: colors.text }}>{account.displayName}</strong>
-                  {account.handle ? ` (${account.handle})` : ''}
-                  {typeof account.followers === 'number'
-                    ? ` · ${account.followers.toLocaleString('en-PK')} followers`
-                    : ''}
-                  {account.tokenHint ? ` · token ${account.tokenHint}` : ''}
-                </>
-              ) : (
-                PLATFORM_META[meta.platform].note
-              )}
-            </p>
-            {account?.lastError ? (
-              <p style={{ fontSize: 12.5, color: colors.danger, margin: '6px 0 0' }}>{account.lastError}</p>
-            ) : null}
-          </div>
+    <Tool
+      i={i}
+      logo={<span className="ac-glyph">{PLATFORM_META[meta.platform].glyph}</span>}
+      brand={PLATFORM_META[meta.platform].brand}
+      title={meta.label}
+      status={state(account)}
+      said={
+        connected && account?.displayName
+          ? `Connected · ${account.displayName}${
+              typeof account.followers === 'number' ? ` · ${account.followers.toLocaleString('en-PK')} followers` : ''
+            }${account.tokenHint ? ` · token ${account.tokenHint}` : ''}`
+          : line(account)
+      }
+      says={`${PLATFORM_META[meta.platform].note}${meta.canPublishVideo ? '' : ' Reporting only.'}`}
+      onHow={onHow}
+    >
+      {account?.lastError ? <p className="ac-bad">{account.lastError}</p> : null}
 
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {stored ? (
-              <>
-                <Button variant="ghost" onClick={() => run('verify')} disabled={busy !== null}>
-                  {busy === 'verify' ? 'Checking…' : 'Check'}
-                </Button>
-                <Button variant="danger" onClick={() => run('disconnect')} disabled={busy !== null}>
-                  Disconnect
-                </Button>
-              </>
-            ) : null}
-            <Button variant={stored ? 'ghost' : 'primary'} onClick={onToggle} disabled={disabled}>
-              {open ? 'Cancel' : stored ? 'Replace token' : 'Connect'}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {stored ? (
+          <>
+            <Button variant="ghost" onClick={() => run('verify')} disabled={busy !== null}>
+              {busy === 'verify' ? 'Checking…' : 'Check'}
+            </Button>
+            <Button variant="danger" onClick={() => run('disconnect')} disabled={busy !== null}>
+              Disconnect
+            </Button>
+          </>
+        ) : null}
+        <Button variant={stored ? 'ghost' : 'primary'} onClick={onToggle} disabled={disabled}>
+          {open ? 'Cancel' : stored ? 'Replace token' : 'Connect'}
+        </Button>
+      </div>
+
+      {message ? <p className={message.kind === 'ok' ? 'ac-good' : 'ac-bad'}>{message.text}</p> : null}
+
+      {open ? (
+        <div className="ac-form">
+          {meta.fields.map((f) => (
+            <label key={f.key} style={{ display: 'grid', gap: 4 }}>
+              <span style={{ fontSize: 13, fontWeight: 700 }}>{f.label}</span>
+              <span style={{ fontSize: 12, color: colors.muted }}>{f.hint}</span>
+              <input
+                type={f.secret ? 'password' : 'text'}
+                value={values[f.key] ?? ''}
+                onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
+                autoComplete="off"
+                spellCheck={false}
+                style={inputStyle}
+              />
+            </label>
+          ))}
+          <div>
+            <Button onClick={() => run('connect')} disabled={busy !== null || !(values.accessToken ?? '').trim()}>
+              {busy === 'connect' ? 'Checking with the network…' : 'Verify and connect'}
             </Button>
           </div>
         </div>
-
-        {message ? (
-          <p style={{ fontSize: 13, marginTop: 12, marginBottom: 0, color: message.kind === 'ok' ? colors.success : colors.danger }}>
-            {message.text}
-          </p>
-        ) : null}
-
-        {open ? (
-          <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${colors.border}`, display: 'grid', gap: 12 }}>
-            {meta.fields.map((f) => (
-              <label key={f.key} style={{ display: 'grid', gap: 4 }}>
-                <span style={{ fontSize: 13, fontWeight: 700 }}>{f.label}</span>
-                <span style={{ fontSize: 12, color: colors.muted }}>{f.hint}</span>
-                <input
-                  type={f.secret ? 'password' : 'text'}
-                  value={values[f.key] ?? ''}
-                  onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
-                  autoComplete="off"
-                  spellCheck={false}
-                  style={inputStyle}
-                />
-              </label>
-            ))}
-            <div>
-              <Button onClick={() => run('connect')} disabled={busy !== null || !(values.accessToken ?? '').trim()}>
-                {busy === 'connect' ? 'Checking with the network…' : 'Verify and connect'}
-              </Button>
-            </div>
-          </div>
-        ) : null}
-      </Card>
-    </div>
+      ) : null}
+    </Tool>
   );
 }
 
@@ -706,22 +826,76 @@ const inputStyle: React.CSSProperties = {
 };
 
 const ACC_CSS = `
-.ac-top { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; margin-bottom: 22px; }
-.ac-top h1 { font-size: 24px; font-weight: 900; letter-spacing: -.02em; margin: 0 0 5px; }
-.ac-top p { margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--muted); max-width: 640px; }
-.ac-prog { flex: none; width: 190px; padding: 13px 14px; border-radius: 16px; background: var(--glass-sheen, #fff); border: 1px solid var(--glass-edge, #e2e8e4); }
-.ac-prog-n { font-size: 26px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; }
-.ac-prog-n i { font-style: normal; font-size: 15px; color: var(--muted); }
-.ac-prog-k { display: block; font-size: 11px; font-weight: 900; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); margin-top: 3px; }
-.ac-prog-bar { display: block; height: 6px; border-radius: 999px; background: #eef2ef; overflow: hidden; margin: 9px 0 10px; }
-.ac-prog-bar > i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg,#19c37d,#ccff00);
-  transition: width .6s cubic-bezier(.3,1,.35,1); }
-.ac-guide { width: 100%; border: 1px solid var(--line, #e2e8e4); background: #fff; border-radius: 10px; padding: 7px 10px;
-  font: inherit; font-size: 12.5px; font-weight: 800; color: #004c31; cursor: pointer; transition: all .2s ease; }
-.ac-guide:hover { border-color: #a8d5bd; transform: translateY(-1px); }
+/* the band on top: the one number that answers "am I set up?" */
+.ac-top { position: relative; overflow: hidden; display: flex; gap: 24px; align-items: center; flex-wrap: wrap; margin-bottom: 20px;
+  border-radius: 26px; padding: 24px 26px; color: #eaf5ee;
+  background: radial-gradient(120% 140% at 0% 0%, #0f5a3c 0%, #06301f 48%, #04150e 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.2); }
+.ac-orb { position: absolute; right: -60px; top: -80px; width: 260px; height: 260px; border-radius: 50%; background: #ccff00;
+  filter: blur(70px); opacity: .16; animation: ac-drift 14s ease-in-out infinite alternate; pointer-events: none; }
+@keyframes ac-drift { to { transform: translate(-40px, 30px) scale(1.2); } }
+.ac-top h1 { font-size: 25px; font-weight: 900; letter-spacing: -.02em; margin: 6px 0 6px; }
+.ac-top p { margin: 0; font-size: 13.5px; line-height: 1.6; color: #b9d6c6; max-width: 620px; }
+.ac-guide { margin-top: 14px; display: inline-flex; align-items: center; gap: 8px; border: 1px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.07); border-radius: 11px; padding: 9px 14px; font: inherit; font-size: 13px; font-weight: 800;
+  color: #eaf5ee; cursor: pointer; transition: transform .2s ease, background .2s ease, border-color .2s ease; }
+.ac-guide:hover { background: rgba(204,255,0,.14); border-color: rgba(204,255,0,.45); transform: translateY(-1px); }
+.ac-prog { flex: none; display: grid; justify-items: center; gap: 7px; }
+.ac-prog-n { font-size: 25px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; color: #fff; }
+.ac-prog-n i { font-style: normal; font-size: 14px; color: #8fb3a0; }
+.ac-prog-k { font-size: 10.5px; font-weight: 900; letter-spacing: .09em; text-transform: uppercase; color: #8fb3a0; }
 
-.ac-tool { margin-bottom: 18px; }
-.ac-tool-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 3px; }
-.ac-tool-head strong { font-size: 15px; font-weight: 900; }
-.ac-says { margin: 0 0 10px; font-size: 13px; line-height: 1.55; color: var(--muted); max-width: 680px; }
+/* the catalogue: one tile per connector, two across */
+.ac-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; align-items: start; }
+.ac-card { position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 10px; background: #fff;
+  border: 1px solid var(--line); border-radius: 20px; padding: 18px;
+  transition: transform .25s cubic-bezier(.3,1,.35,1), box-shadow .25s ease, border-color .25s ease; }
+.ac-card.wide { grid-column: 1 / -1; }
+/* a thread of the brand's own colour down the left edge, lit when it is on */
+.ac-card::before { content: ''; position: absolute; left: 0; top: 18px; bottom: 18px; width: 3px; border-radius: 0 3px 3px 0;
+  background: var(--brand); opacity: .18; transition: opacity .3s ease, top .3s ease, bottom .3s ease; }
+.ac-card.connected::before { opacity: 1; }
+.ac-card:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--brand) 35%, var(--line));
+  box-shadow: 0 2px 4px rgba(16,40,28,.05), 0 22px 44px -22px color-mix(in srgb, var(--brand) 45%, transparent); }
+.ac-card:hover::before { top: 8px; bottom: 8px; opacity: 1; }
+.ac-card.error { border-color: #f3c6c6; }
+
+.ac-card-top { display: flex; align-items: center; gap: 12px; }
+.ac-logo { flex: none; width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; position: relative;
+  background: color-mix(in srgb, var(--brand) 10%, #fff); color: var(--brand);
+  transition: transform .3s cubic-bezier(.3,1.5,.5,1), background .25s ease; }
+.ac-card:hover .ac-logo { transform: scale(1.06) rotate(-4deg); background: color-mix(in srgb, var(--brand) 18%, #fff); }
+.ac-logo img { width: 26px; height: 26px; object-fit: contain; }
+.ac-logos { display: grid; place-items: center; }
+/* one sign-in, two networks: the logos overlap to say so */
+.ac-logos.pair { display: flex; }
+.ac-logos.pair img { width: 22px; height: 22px; }
+.ac-logos.pair img:last-child { margin-left: -7px; }
+.ac-glyph { font-size: 19px; font-weight: 900; line-height: 1; }
+.ac-card-top strong { display: block; font-size: 15px; font-weight: 900; letter-spacing: -.01em; }
+.ac-card-top em { display: block; font-style: normal; font-size: 12px; color: var(--muted); margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ac-card.connected .ac-card-top em { color: #047857; font-weight: 700; }
+.ac-card.error .ac-card-top em { color: #ba1a1a; font-weight: 700; }
+/* the tick draws itself the first time the tile paints connected */
+.ac-tick { flex: none; margin-left: auto; width: 22px; height: 22px; fill: none; stroke: #19c37d; stroke-width: 2.6;
+  stroke-linecap: round; stroke-linejoin: round; }
+.ac-tick path { stroke-dasharray: 24; animation: ac-tick .5s cubic-bezier(.3,1,.35,1) both .25s; }
+@keyframes ac-tick { from { stroke-dashoffset: 24; } }
+
+.ac-says { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--muted); }
+.ac-do { display: grid; gap: 10px; }
+.ac-quiet { font-size: 12.5px; color: var(--muted); }
+.ac-good { margin: 0; font-size: 13px; color: #047857; }
+.ac-bad { margin: 0; font-size: 12.5px; color: #ba1a1a; }
+/* the paste form, opening under the buttons */
+.ac-card .sg-how { align-self: flex-start; margin-top: auto; }
+/* Each connector draws its own name. Inside a tile the name is already on the
+   tile, so the second one is hidden — here only, where the tile provides it. */
+.ac-do h2 { display: none; }
+.ac-form { display: grid; gap: 12px; padding-top: 14px; border-top: 1px solid var(--line);
+  animation: ac-open .35s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes ac-open { from { opacity: 0; transform: translateY(-8px); } }
+
+@media (prefers-reduced-motion: reduce) { .ac-top *, .ac-card, .ac-card *, .ac-form { animation: none !important; transition: none !important; } }
 `;
