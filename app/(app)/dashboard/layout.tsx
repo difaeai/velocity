@@ -267,6 +267,11 @@ const VEXA_TOUR: TourStep[] = [
     goto: '/dashboard/social',
   },
   {
+    target: 'pulse',
+    title: 'What Vexa is doing right now',
+    say: 'This circle is the whole of it. Your content team, your ads, the agent on WhatsApp, the voice agents. A light means that part is working this minute. A dark one means it is not, and it tells you why.',
+  },
+  {
     target: 'brain',
     title: 'Start by asking',
     say: 'This is the quickest way to use Vexa. Type what you want in plain words. Make a reel about our weekend offer. Email everyone about Eid. It works out which part of the team should do it, and sends the job there.',

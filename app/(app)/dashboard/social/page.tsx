@@ -45,7 +45,8 @@ import { InstagramConnect } from '@/components/social/instagramConnect';
 import { VideoConnect } from '@/components/social/videoConnect';
 import { Blockers, readBlockers } from '@/components/social/blockers';
 import { LaunchSequence, localHourLabel } from '@/components/social/launch';
-import { AREA_CSS, AdsSection, ApprovalBox, Area, Hero, KpiTile, SalesSection, readDesk } from '@/components/social/dashboard';
+import { AREA_CSS, AdsSection, ApprovalBox, Area, KpiTile, SalesSection, readDesk } from '@/components/social/dashboard';
+import { PULSE_CSS, VexaPulse } from '@/components/social/pulse';
 import { SalesFunnel } from '@/components/social/funnel';
 import { BRAIN_CSS, Brain } from '@/components/social/brain';
 import { AreaSpark, FX_CSS } from '@/components/social/fx';
@@ -91,7 +92,7 @@ export default function SocialOverview() {
   const [switching, setSwitching] = useState(false);
   const [pageRead, setPageRead] = useState<SocialPageRead | null>(null);
   const [want, setWant] = useState<SocialFormat>('reel');
-  const { user, workspaceId } = useAuth();
+  const { workspaceId } = useAuth();
   // Held here so "Make one like this" on the content page can fill the box — and kept in
   // this browser until the piece is made, so a reload or a sign-in that ended loses nothing.
   const [brief, setBrief] = useDraft(`composer.brief.${workspaceId ?? 'house'}`);
@@ -341,37 +342,28 @@ export default function SocialOverview() {
         : 'The daily run is paused. Nothing will be made until you start it again, or ask for something above.',
     );
 
-  const running = Boolean(settings?.enabled);
   const desk = useMemo(() => readDesk(posts, nowMs), [posts, nowMs]);
   const followers = connected.reduce((n, a) => n + (a.followers ?? 0), 0);
-  const pktHour = nowMs ? new Date(nowMs + 5 * 3600_000).getUTCHours() : null;
-  const greeting =
-    pktHour === null ? 'Welcome back' : pktHour < 12 ? 'Good morning' : pktHour < 17 ? 'Good afternoon' : 'Good evening';
   const networks = connected.length
     ? connected.map((a) => PLATFORM_META[a.platform].label.replace(' Page', '')).join(' and ')
     : 'your accounts';
-  const summary = [
-    desk.postedThisWeek
-      ? `The team posted ${desk.postedThisWeek} piece${desk.postedThisWeek === 1 ? '' : 's'} this week`
-      : 'Tell the team what to make — or let it post on its own every day',
-    desk.waiting.length ? `${desk.waiting.length} waiting for your Approve` : running ? 'nothing waiting on you' : '',
-  ]
-    .filter(Boolean)
-    .join(' · ');
 
   return (
     <div className="fx">
-      <style>{FX_CSS + BRAIN_CSS + AREA_CSS}</style>
+      <style>{FX_CSS + BRAIN_CSS + AREA_CSS + PULSE_CSS}</style>
 
-      <Hero
-        greeting={greeting}
-        name={user?.displayName?.split(' ')[0] ?? null}
-        today={nowMs ? desk.today : null}
-        summary={`${summary}.`}
-        running={running}
-        waiting={desk.waiting.length}
-        staff={staff}
+      {/* Above every box: the whole of Vexa, and what it is doing this minute. */}
+      <VexaPulse
         desk={desk}
+        settings={settings}
+        ads={ads}
+        campaigns={campaigns}
+        sales={sales}
+        chats={chats}
+        leads={leads}
+        pageRead={pageRead}
+        nowMs={nowMs}
+        has={includes}
       />
 
       {error ? <p style={{ color: colors.danger, marginBottom: 14 }}>{error}</p> : null}
@@ -393,7 +385,7 @@ export default function SocialOverview() {
       {settings && !settings.goal?.trim() ? <GoalBox busy={switching} onSave={answerGoal} /> : null}
 
       {settings ? (
-        <div id="make" data-tour="brain" style={{ scrollMarginTop: 16 }}>
+        <div id="make" style={{ scrollMarginTop: 16 }}>
           <Brain
             settings={settings}
             accounts={accounts}
@@ -407,45 +399,14 @@ export default function SocialOverview() {
             refLink={refLink}
             onRefLink={setRefLink}
             disabled={onShift.length === 0}
-            onDone={(message) => {
-              setError(null);
-              setNotice(message);
-            }}
-            onError={(message) => {
-              setNotice(null);
-              setError(message);
-            }}
-          >
-            <ApprovalBox
-              settings={settings}
-              waiting={desk.waiting.length}
-              busy={switching}
-              noTeam={onShift.length === 0}
-              networks={networks}
-              nextRun={nextRun}
-              coverage={coverage[0] ?? null}
-              onChoose={chooseMode}
-              onRunning={setRunning}
-            />
-          </Brain>
-        </div>
-      ) : (
-        <div className="fx-skel" style={{ height: 460, borderRadius: 28, marginBottom: 18 }} />
-      )}
-
-      {/* Three named areas, in the order the money moves: you make something,
-          you pay to put it in front of people, somebody answers and buys.
-          Until this the overview was one unbroken run of cards and nothing
-          said which part of the business any of them belonged to. */}
-      <Area
-        n={1}
-        tour="area-content"
-        tint="#0058bb"
-        title="Your content"
-        says="Everything that goes out in your name — what has been posted, what is waiting for you, how far it travelled."
-        href="/dashboard/social/queue"
-        cta="Open content & calendar"
-      >
+            below={
+              <>
+                <div className="bn-eyebrow-row">
+                  <span className="fx-eyebrow">Your content this week</span>
+                  <Link href="/dashboard/social/queue" className="fx-link">
+                    Open content &amp; calendar →
+                  </Link>
+                </div>
         <div className="fx-grid-kpi">
           <KpiTile
             i={3}
@@ -493,25 +454,41 @@ export default function SocialOverview() {
             href="/dashboard/social/queue"
           />
         </div>
-      </Area>
+              </>
+            }
+            onDone={(message) => {
+              setError(null);
+              setNotice(message);
+            }}
+            onError={(message) => {
+              setNotice(null);
+              setError(message);
+            }}
+          >
+            <ApprovalBox
+              settings={settings}
+              waiting={desk.waiting.length}
+              busy={switching}
+              noTeam={onShift.length === 0}
+              networks={networks}
+              nextRun={nextRun}
+              coverage={coverage[0] ?? null}
+              onChoose={chooseMode}
+              onRunning={setRunning}
+            />
+          </Brain>
+        </div>
+      ) : (
+        <div className="fx-skel" style={{ height: 460, borderRadius: 28, marginBottom: 18 }} />
+      )}
 
-      {showAds ? (
-        <Area
-          n={2}
-          tour="area-ads"
-          tint="#b45309"
-          title="Your ads"
-          says="Your money buying reach on Facebook, Instagram and Google. The Ad Expert plans it with you, and never spends past the limit you set."
-          href="/dashboard/social/ads"
-          cta="Open the Ad Expert"
-        >
-          <AdsSection ads={ads} campaigns={campaigns} nowMs={nowMs} house={house} i={7} />
-        </Area>
-      ) : null}
-
+      {/* Three named areas, in the order the money moves: you make something,
+          you pay to put it in front of people, somebody answers and buys.
+          Until this the overview was one unbroken run of cards and nothing
+          said which part of the business any of them belonged to. */}
       {showSales ? (
         <Area
-          n={showAds ? 3 : 2}
+          n={3}
           tour="area-sales"
           tint="#11794c"
           title="Your sales"
@@ -521,6 +498,20 @@ export default function SocialOverview() {
         >
           <SalesFunnel chats={chats} comments={comments} nowMs={nowMs} autoReply={Boolean(settings?.autoReply)} i={7} />
           <SalesSection sales={sales} leads={leads} nowMs={nowMs} i={8} />
+        </Area>
+      ) : null}
+
+      {showAds ? (
+        <Area
+          n={4}
+          tour="area-ads"
+          tint="#b45309"
+          title="Your ads"
+          says="Your money buying reach on Facebook, Instagram and Google. The Ad Expert plans it with you, and never spends past the limit you set."
+          href="/dashboard/social/ads"
+          cta="Open the Ad Expert"
+        >
+          <AdsSection ads={ads} campaigns={campaigns} nowMs={nowMs} house={house} i={7} />
         </Area>
       ) : null}
 
