@@ -388,6 +388,9 @@ export {
   // The examples a driver part-way through registration is shown — never a real pool.
   getStarterRides,
 } from './sharedPools';
+// Nightly: fits the pooling distances to what actually happened — how far off a
+// route riders really stand, and what a worthwhile join really costs in road.
+export { calibratePooling } from './sharedPools/calibrate';
 // Any rider leaves a shared pool's car — not only its host, and without
 // cancelling everyone else's ride with theirs.
 export { leaveSharedRide } from './trips/poolLeave';
