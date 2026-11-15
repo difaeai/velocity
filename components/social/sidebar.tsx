@@ -46,8 +46,6 @@ export interface SideItem {
   icon: NavIconName;
   /** Other paths that should light this row up — a page and its sub-pages. */
   also?: string[];
-  /** A count worth seeing before you click, e.g. pieces waiting for approval. */
-  badge?: number | null;
 }
 
 export interface SideGroup {
@@ -60,8 +58,8 @@ export interface SideGroup {
   items: SideItem[];
 }
 
-/** Whether a row owns the current path. Exported so the layout can reuse the rule. */
-export const owns = (item: SideItem, pathname: string): boolean =>
+/** Whether a row owns the current path. */
+const owns = (item: SideItem, pathname: string): boolean =>
   pathname === item.href || (item.also ?? []).some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
 export function Sidebar({
@@ -188,7 +186,6 @@ export function Sidebar({
                       >
                         <NavIcon name={item.icon} />
                         <span className="sb-label">{item.label}</span>
-                        {item.badge ? <span className="sb-badge">{item.badge > 99 ? '99+' : item.badge}</span> : null}
                       </Link>
                     );
                   })}
@@ -266,15 +263,12 @@ export const SIDEBAR_CSS = `
 .sb-row:hover .ni, .sb-row.open .ni { color: var(--tint); }
 .sb-row.open .ni { transform: scale(1.06); }
 .sb-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: opacity .26s ease; }
-.sb-badge { margin-left: auto; flex: none; font-size: 10.5px; font-weight: 900; border-radius: 999px; padding: 1.5px 7px;
-  background: var(--lime); color: #0b1f17; box-shadow: 0 0 0 3px color-mix(in srgb, var(--lime) 22%, transparent); }
 
 /* the rail: icons only, with the label as a tooltip that slides out */
 .sb.rail .sb-row { justify-content: center; padding: 11px 0; gap: 0; }
 .sb.rail .sb-label, .sb.rail .sb-caption, .sb.rail .sb-title .t, .sb.rail .sb-chev { opacity: 0; width: 0; padding: 0; margin: 0; overflow: hidden; }
 .sb.rail .sb-title { padding: 12px 0 4px; justify-content: center; pointer-events: none; }
 .sb.rail .sb-title::before { content: ''; width: 18px; height: 2px; border-radius: 2px; background: var(--line); }
-.sb.rail .sb-badge { position: absolute; top: 4px; right: 8px; margin: 0; padding: 0 5px; font-size: 9.5px; }
 .sb.rail .sb-row::after { content: attr(data-label); position: absolute; left: calc(100% + 10px); top: 50%; transform: translate(-6px, -50%) scale(.96);
   background: #0b1f17; color: #fff; font-size: 12.5px; font-weight: 700; padding: 7px 11px; border-radius: 9px; white-space: nowrap;
   opacity: 0; pointer-events: none; z-index: 40; box-shadow: 0 10px 28px -12px rgba(4,35,26,.6);

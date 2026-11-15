@@ -53,7 +53,7 @@ const REACHED: Record<string, SalesChatStage[]> = {
   won: ['won'],
 };
 
-export interface FunnelRead {
+interface FunnelRead {
   /** Public questions under posts and ads: the top of the funnel. */
   asked: number;
   askedWeek: number;
