@@ -287,7 +287,8 @@ export function InstagramConnect({
                 {typeof account?.followers === 'number'
                   ? ` · ${account.followers.toLocaleString('en-PK')} followers`
                   : ''}
-                . Connecting again replaces the stored token.
+                . Connecting again opens Facebook — Instagram is reached through the Page it is linked to — and
+                replaces the stored token.
               </>
             ) : (
               <>
@@ -310,7 +311,10 @@ export function InstagramConnect({
                 : step === 'saving'
                   ? 'Connecting…'
                   : connected
-                    ? 'Reconnect'
+                    ? // Says Facebook because that is the window that opens. "Reconnect"
+                      // on an Instagram card and then a Facebook login is the moment
+                      // people think something went wrong.
+                      'Reconnect with Facebook'
                     : 'Continue with Facebook'}
           </Button>
         ) : null}
