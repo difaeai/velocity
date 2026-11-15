@@ -780,7 +780,13 @@ export const DEFAULT_COMPETITORS: Competitor[] = [
 export type CommentStatus = 'new' | 'drafted' | 'replied' | 'ignored' | 'escalated';
 
 /** How the manager read a comment, before deciding what to say back. */
-export type CommentIntent = 'praise' | 'question' | 'complaint' | 'safety' | 'spam' | 'other';
+/**
+ * `lead` is the one that is worth money: somebody describing a problem this
+ * business solves. It is answered in public like any other comment and then
+ * handed the door — the WhatsApp number, where `social/closer.ts` can actually
+ * close them (see REPLY_CRAFT in playbook.ts, which sorts threads this way).
+ */
+export type CommentIntent = 'lead' | 'praise' | 'question' | 'complaint' | 'safety' | 'spam' | 'other';
 
 export interface SocialComment {
   id: string;
@@ -973,6 +979,35 @@ export interface SocialSettings {
   lastRunStatus: string | null;
   lastEngagementAtMs: number | null;
   lastEngagementStatus: string | null;
+
+  /**
+   * What the desk worked out about its own work, five days at a time.
+   *
+   * Written only by `review.ts` — never by the console, which is why it is not
+   * in the settings schema — and read by every employee on every job
+   * (`crew.learnedBlock`). The owner's own `crewInstructions` sit beside it and
+   * outrank it: this is evidence, that is an instruction.
+   *
+   * Absent until the first review has run.
+   */
+  learned?: LearnedDirectives;
+}
+
+/**
+ * The directives one review left behind: what this account's own numbers say to
+ * do more of, what to stop, the shortcomings worth watching, and what other
+ * businesses of the same kind have already taught the desk.
+ *
+ * `fromIndustry` is the only field that crosses a workspace boundary, and it
+ * carries shapes rather than anybody's content — see `scrubLesson` in
+ * `review.ts`, which is where that rule is enforced rather than promised.
+ */
+export interface LearnedDirectives {
+  atMs: number;
+  doMore: string[];
+  stopDoing: string[];
+  watchOut: string[];
+  fromIndustry: string[];
 }
 
 /** What the desk writes and decides with unless the console says otherwise. */

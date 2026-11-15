@@ -53,6 +53,7 @@ import {
   type AudienceTest,
   type MarketAnalysis,
 } from './market';
+import { seedLearned } from './review';
 import { getSocialSettings, patchSettings } from './settings';
 import { planMonth, planRef } from './strategy';
 import { currentWorkspace, deskCall, forEachWorkspace, isHouse, sdb, workspaceBrand, workspaceRef } from './workspace';
@@ -370,6 +371,11 @@ async function stepContent(): Promise<Outcome> {
       .filter(Boolean)
       .join('\n');
   }
+  // What every other workspace selling this kind of thing already taught the
+  // desk, before this one has posted anything of its own. The twentieth estate
+  // agent should not start where the first one did (`review.ts`).
+  const learned = settings.learned ? null : await seedLearned(workspaceBrand()).catch(() => null);
+
   await patchSettings({
     brief,
     // Only searched names: the researcher reads around these every morning.
@@ -377,6 +383,7 @@ async function stepContent(): Promise<Outcome> {
       ? { competitors: a.competitors.map((c) => ({ name: c.name, url: c.url })) }
       : {}),
     ...(settings.makeAheadDays === 0 ? { makeAheadDays: MAKE_AHEAD_DAYS } : {}),
+    ...(learned ? { learned } : {}),
   });
 
   // This month and the next, so the 30 days ahead are always on the calendar. Never over a plan that exists.

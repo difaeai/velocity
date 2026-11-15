@@ -84,6 +84,38 @@ export const marketName = (): string => workspaceBrand()?.market || 'Pakistan';
 /** The line burned into the foot of every picture and reel; undefined keeps Velocity's own. */
 export const wordmark = (): string | undefined => (isHouse() ? undefined : brandName().toUpperCase().slice(0, 40));
 
+/**
+ * What the desk learned from its own last five days, and from every other
+ * workspace selling the same kind of thing.
+ *
+ * This is the half of `review.ts` that is not a report. A review nobody acts on
+ * is a page in a console; these four lists ride in every employee's system
+ * prompt from the moment the review is written, so the next piece is made
+ * differently without the owner being asked to do anything.
+ *
+ * It sits *below* the owner's standing instructions on purpose, and says so:
+ * what the numbers showed is evidence, and what the person paying asked for is
+ * an instruction. When they disagree, the person wins.
+ */
+export function learnedBlock(settings: SocialSettings): string {
+  const l = settings.learned;
+  if (!l) return '';
+  const parts = [
+    l.doMore.length ? `Do more of this, because this account's own numbers say so:\n${l.doMore.map((x) => `- ${x}`).join('\n')}` : '',
+    l.stopDoing.length ? `Stop doing this, for the same reason:\n${l.stopDoing.map((x) => `- ${x}`).join('\n')}` : '',
+    l.watchOut.length ? `Known shortcomings, still being watched:\n${l.watchOut.map((x) => `- ${x}`).join('\n')}` : '',
+    l.fromIndustry.length
+      ? `What worked for other businesses of this kind (shapes, not facts about them — never repeat these as claims):\n${l.fromIndustry
+          .map((x) => `- ${x}`)
+          .join('\n')}`
+      : '',
+  ].filter(Boolean);
+  if (!parts.length) return '';
+  return `WHAT THE LAST FIVE DAYS TAUGHT THIS DESK. Measured, not guessed. The team lead's own instructions outrank every line of it:\n${parts.join(
+    '\n',
+  )}`;
+}
+
 /** What the admin has told the whole team. */
 export function standingInstructions(settings: SocialSettings): string {
   const text = settings.crewInstructions.trim();
@@ -160,6 +192,8 @@ export function systemFor(
     hardRules(),
     '',
     playbookFor(employee.role, format),
+    '',
+    learnedBlock(settings),
     '',
     standingInstructions(settings),
   ]
@@ -298,7 +332,7 @@ Reply with one JSON object and nothing else:
     notes?: Record<string, unknown>;
   }>({
     model: params.settings.textModel,
-    system: `${system}\n\n${standingInstructions(params.settings)}`,
+    system: [system, learnedBlock(params.settings), standingInstructions(params.settings)].filter(Boolean).join('\n\n'),
     what: "The team's plan",
     prompt: [
       `FORMAT: ${spec.label} — ${spec.brief}`,

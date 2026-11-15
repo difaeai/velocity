@@ -125,9 +125,15 @@ describe('PWD → F-10 and PWD → G-10: the spec’s own example, end to end', 
     await expect(joinSharedPool.run(makeReq({ poolId: made.poolId, pickup: PWD, dropoff: G10 }, 'bilal')))
       .rejects.toThrow(/1 km off this shared ride/);
 
-    // Nothing economic objected: no verdict was ever reached, because the
-    // journey never got past the route check.
-    expect(await decisions()).toHaveLength(0);
+    // Nothing economic objected — the journey never got past the route check.
+    // But the near miss IS recorded, with how far off it was, because that is
+    // the only thing that can tell the engine its radius is set too tight
+    // (sharedPools/calibrate.ts). 1,276 m: refused by 276 metres.
+    const rows = await decisions();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ kind: 'offRoute', refused: true });
+    expect(rows[0]!.offsetM as number).toBe(1276);
+    expect(rows[0]!.reason as string).toMatch(/1276 m off the route, over the 1000 m limit/);
   });
 
   it('combines both riders into one car once the radius allows it, and runs the whole journey', async () => {

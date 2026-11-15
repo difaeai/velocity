@@ -48,8 +48,8 @@ import { computeGenderAccess } from '../lib/genderAccess';
 import { queryNearbyDriverDocs } from '../lib/nearbyDrivers';
 import { neighborGeohashes } from '../lib/geohash';
 import { MAX_POOL_RIDERS, poolPerSeatFare } from '../domain/fares';
-import { getPoolingSettings, type PoolingSettings } from '../domain/poolingSettings';
-import { recordAdmission } from './admit';
+import { getPoolingSettings, routeKeyOf, type PoolingSettings } from '../domain/poolingSettings';
+import { recordAdmission, recordOffRoute } from './admit';
 import type { DriverPublicInfo, TripStatus } from '../domain/types';
 import { assertOutstandingClear, getCancellationSettings, type CancellationSettings } from '../domain/cancellation';
 import { assertCommissionClear, getCommissionSettings } from '../domain/commission';
@@ -1197,13 +1197,36 @@ async function seatOnPool(
   }
   const pooling = await getPoolingSettings();
   const route = { pickup: snap.get('pickup') as Place, dropoff: snap.get('dropoff') as Place };
-  if (stops && !routeFit(route, stops.pickup, stops.dropoff, pooling.matchRadiusM)) {
-    throw new HttpsError(
-      'failed-precondition',
-      `Your pickup or drop-off is more than ${
-        Math.round(pooling.matchRadiusM / 100) / 10
-      } km off this shared ride’s route. Join one shown for your route, or start your own.`,
+  // The corridor this pool runs. Decides whether the engine enforces here.
+  const routeKey = routeKeyOf(route.pickup, route.dropoff);
+  if (stops) {
+    /**
+     * Measured at the WIDEST radius first, so a refusal knows how near a miss
+     * it was. Without this the engine threw the journey away and had nothing to
+     * learn the right radius from: the only riders it recorded were the ones it
+     * already accepted (see sharedPools/calibrate.ts).
+     *
+     * A fit at the wide radius means the journey is genuinely on the route —
+     * same direction, at least half of it shared — and only the offset keeps it
+     * out. A journey with no wide fit at all is going somewhere else, and is not
+     * evidence about the radius.
+     */
+    const wide = routeFit(
+      route,
+      stops.pickup,
+      stops.dropoff,
+      Math.max(pooling.candidateRadiusM, pooling.matchRadiusM),
     );
+    const offsetM = wide ? Math.max(wide.pickupOffsetM, wide.dropoffOffsetM) : null;
+    if (!wide || offsetM! > pooling.matchRadiusM) {
+      if (wide) await recordOffRoute(poolId, uid, offsetM!, pooling, routeKey);
+      throw new HttpsError(
+        'failed-precondition',
+        `Your pickup or drop-off is more than ${
+          Math.round(pooling.matchRadiusM / 100) / 10
+        } km off this shared ride’s route. Join one shown for your route, or start your own.`,
+      );
+    }
   }
   const own = stops ?? route;
   const rideType = snap.get('rideType') as string;
@@ -1228,6 +1251,7 @@ async function seatOnPool(
           joiner: { uid, ...ownStops },
           currentGross: car.gross,
           start: (tripData?.driverLocation as Place | undefined) ?? null,
+          routeKey,
         }, pooling);
         if (admission.refuse) throw new HttpsError('failed-precondition', poolRefusal(admission.reason));
       }
@@ -1260,6 +1284,7 @@ async function seatOnPool(
     aboard: bookedGeometry(pending, { ...snap.data(), fare: fresh?.fare ?? snap.get('fare') }, route),
     joiner: { uid, ...ownStops },
     start: null,
+    routeKey,
   }, pooling);
   if (admission?.refuse) throw new HttpsError('failed-precondition', poolRefusal(admission.reason));
 

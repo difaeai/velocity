@@ -87,7 +87,7 @@ import {
 } from './adsCost';
 import { downloadAsset, refreshAssetUrls, storeFile, type StoredFile } from './assets';
 import { competitorAdsBlock } from './competitorAds';
-import { brandBlock, brandName, briefBlock, hardRules, marketName, researchBlock, standingInstructions, wordmark } from './crew';
+import { brandBlock, brandName, briefBlock, hardRules, learnedBlock, marketName, researchBlock, standingInstructions, wordmark } from './crew';
 import { activeTeam, employeeIntro } from './employees';
 import { activeEngine, generateJson, modelReady } from './engine';
 import { personas, planningResearch, topObjections, verdictFor, type AudienceTest, type Persona } from './market';
@@ -512,6 +512,7 @@ function adsSystem(person: Employee | null, settings: Awaited<ReturnType<typeof 
     hardRules(),
     /pakistan/i.test(marketName()) ? `${ADS_CRAFT}\n${PAKISTAN_ADS}` : ADS_CRAFT,
     AD_NUMBERS,
+    learnedBlock(settings),
     standingInstructions(settings),
   ]
     .filter(Boolean)

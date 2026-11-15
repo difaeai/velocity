@@ -55,6 +55,9 @@ interface Settings {
   matchWindowMin: number;
   bookingCutoffMin: number;
   maxRiders: number;
+  autoTune: boolean;
+  autoMode: boolean;
+  liveRoutes: string[];
 }
 
 /** Mirrors DEFAULT_POOLING in backend/functions/src/domain/poolingSettings.ts. */
@@ -69,6 +72,9 @@ const DEFAULTS: Settings = {
   matchWindowMin: 10,
   bookingCutoffMin: 0,
   maxRiders: 4,
+  autoTune: true,
+  autoMode: false,
+  liveRoutes: [],
 };
 
 /** label → [min, max], the backend's clamp. */
@@ -108,6 +114,10 @@ const num = (v: unknown, fallback: number) => (typeof v === 'number' && Number.i
 
 export default function PoolingPage() {
   const [s, setS] = useState<Settings>(DEFAULTS);
+  const [fit, setFit] = useState<{ at: string | null; reasons: string[]; samples: { offRoute: number; goodJoins: number } | null }>(
+    { at: null, reasons: [], samples: null },
+  );
+  const [modeFit, setModeFit] = useState<{ at: string | null; reasons: string[] }>({ at: null, reasons: [] });
   const [totals, setTotals] = useState<Totals>(ZERO);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -132,6 +142,18 @@ export default function PoolingPage() {
           matchWindowMin: num(d.matchWindowMin, DEFAULTS.matchWindowMin),
           bookingCutoffMin: num(d.bookingCutoffMin, DEFAULTS.bookingCutoffMin),
           maxRiders: num(d.maxRiders, DEFAULTS.maxRiders),
+          autoTune: d.autoTune !== false,
+          autoMode: d.autoMode === true,
+          liveRoutes: Array.isArray(d.liveRoutes) ? (d.liveRoutes as string[]) : [],
+        });
+        setFit({
+          at: d.autoTunedAt?.toDate?.()?.toLocaleString() ?? null,
+          reasons: Array.isArray(d.autoTunedReasons) ? (d.autoTunedReasons as string[]) : [],
+          samples: (d.autoTunedSamples as { offRoute: number; goodJoins: number } | undefined) ?? null,
+        });
+        setModeFit({
+          at: d.autoModeAt?.toDate?.()?.toLocaleString() ?? null,
+          reasons: Array.isArray(d.autoModeReasons) ? (d.autoModeReasons as string[]) : [],
         });
         const a = an.data() ?? {};
         setTotals({ ...ZERO, ...Object.fromEntries(Object.keys(ZERO).map((k) => [k, num(a[k], 0)])) } as Totals);
@@ -233,6 +255,126 @@ export default function PoolingPage() {
           <p style={{ ...warnStyle, marginTop: 12 }}>
             Live mode refuses real riders a real car. Check “would have refused” below before saving
             this, and keep the limits where the ledger says they belong.
+          </p>
+        )}
+      </Card>
+
+      {/* ── Deciding where to enforce ─────────────────────────────────────── */}
+      <Card style={glass}>
+        <h3 style={{ margin: '0 0 10px', fontSize: 15 }}>Deciding where to enforce</h3>
+        <button
+          type="button"
+          onClick={() => set('autoMode', !s.autoMode)}
+          style={{
+            width: '100%',
+            textAlign: 'left',
+            padding: '12px 14px',
+            borderRadius: 12,
+            cursor: 'pointer',
+            border: `2px solid ${s.autoMode ? colors.primary : colors.border}`,
+            background: s.autoMode ? `${colors.primary}12` : '#fff',
+            color: colors.text,
+          }}
+        >
+          <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 2 }}>
+            {s.autoMode
+              ? 'On — a route goes live once it has earned it'
+              : 'Off — every route stays in shadow until you say otherwise'}
+          </div>
+          <div style={{ color: colors.muted, fontSize: 12, lineHeight: 1.5 }}>
+            Route by route, from each route&apos;s own record — not the city average. A route goes
+            live only when enforcing would <strong>barely change it</strong>: 30+ judged joins, 90%
+            of them already meeting the limits, and 80% measured on real roads. If a live route
+            starts refusing more than a fifth of its riders, it comes back to shadow by itself.
+          </div>
+        </button>
+        {!s.autoMode && (
+          <p style={hintBoxStyle}>
+            Turning this on is what authorises the engine to start refusing joins — on the routes
+            that have proved its judgement matches what already happens there, and nowhere else.
+            The global mode above stays shadow; it is the floor, not the ceiling.
+          </p>
+        )}
+        {s.liveRoutes.length > 0 ? (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 11, color: colors.muted, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700 }}>
+              Enforcing on {s.liveRoutes.length} route{s.liveRoutes.length === 1 ? '' : 's'}
+              {modeFit.at ? ` · last decided ${modeFit.at}` : ''}
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+              {s.liveRoutes.map((r) => (
+                <span
+                  key={r}
+                  style={{
+                    fontSize: 12, fontWeight: 700, padding: '3px 8px', borderRadius: 999,
+                    background: `${colors.success}18`, color: colors.success,
+                  }}
+                >
+                  {r}
+                </span>
+              ))}
+            </div>
+            {modeFit.reasons.length > 0 && (
+              <ul style={{ margin: '10px 0 0', paddingLeft: 18, color: colors.text, fontSize: 13, lineHeight: 1.6 }}>
+                {modeFit.reasons.map((r) => <li key={r}>{r}</li>)}
+              </ul>
+            )}
+          </div>
+        ) : (
+          <p style={{ color: colors.muted, fontSize: 13, margin: '12px 0 0' }}>
+            No route is enforcing yet — every one of them is being watched.
+          </p>
+        )}
+      </Card>
+
+      {/* ── Fitting itself ────────────────────────────────────────────────── */}
+      <Card style={glass}>
+        <h3 style={{ margin: '0 0 10px', fontSize: 15 }}>Setting its own distances</h3>
+        <button
+          type="button"
+          onClick={() => set('autoTune', !s.autoTune)}
+          style={{
+            width: '100%',
+            textAlign: 'left',
+            padding: '12px 14px',
+            borderRadius: 12,
+            cursor: 'pointer',
+            border: `2px solid ${s.autoTune ? colors.primary : colors.border}`,
+            background: s.autoTune ? `${colors.primary}12` : '#fff',
+            color: colors.text,
+          }}
+        >
+          <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 2 }}>
+            {s.autoTune ? 'On — the engine fits the three distances nightly' : 'Off — the distances are frozen where you set them'}
+          </div>
+          <div style={{ color: colors.muted, fontSize: 12, lineHeight: 1.5 }}>
+            Match radius, max detour km and max detour minutes are fitted at 03:30 each night from
+            what actually happened: how far off a route riders really stood when they were turned
+            away, and what a worthwhile join really cost in road. Money and mode are never touched.
+          </div>
+        </button>
+        {s.autoTune && (
+          <p style={hintBoxStyle}>
+            It needs <strong>40 turned-away riders</strong> before it moves the radius and{' '}
+            <strong>40 road-measured good joins</strong> before it moves a detour limit, moves each
+            by one small step a night, and will not fit the radius past 2.5 km whatever the data
+            says. Anything you type below is a starting point it works from, not a value it keeps.
+          </p>
+        )}
+        {fit.at ? (
+          <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 10, border: `1px solid ${colors.border}`, background: '#fff' }}>
+            <div style={{ fontSize: 11, color: colors.muted, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700 }}>
+              Last fitted {fit.at}
+              {fit.samples ? ` · from ${fit.samples.offRoute} turned away, ${fit.samples.goodJoins} good joins` : ''}
+            </div>
+            <ul style={{ margin: '8px 0 0', paddingLeft: 18, color: colors.text, fontSize: 13, lineHeight: 1.6 }}>
+              {fit.reasons.map((r) => <li key={r}>{r}</li>)}
+            </ul>
+          </div>
+        ) : (
+          <p style={{ color: colors.muted, fontSize: 13, margin: '12px 0 0' }}>
+            Not fitted yet — it is still collecting. Until then the distances below are the ones in
+            force.
           </p>
         )}
       </Card>

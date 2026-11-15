@@ -1732,6 +1732,175 @@ export interface SocialProfileAudit {
   error: string | null;
 }
 
+/** One thing the five-day review found wrong, with the numbers it found it from. Mirrors backend `Finding`. */
+export interface SocialReviewFinding {
+  id: string;
+  severity: 'blocking' | 'big' | 'small';
+  what: string;
+  evidence: string;
+  fix: string;
+  /** 'vexa' is already handled by the desk itself; 'you' needs the owner. */
+  who: 'vexa' | 'you';
+}
+
+/** What the desk now does differently because of what it measured. Mirrors backend `LearnedDirectives`. */
+export interface SocialLearned {
+  atMs: number;
+  doMore: string[];
+  stopDoing: string[];
+  watchOut: string[];
+  /** Shapes that worked for other businesses of the same kind — never their names or figures. */
+  fromIndustry: string[];
+}
+
+/**
+ * The desk marking its own five days: whether the job was done, why reach came
+ * or did not, whether the ad money is the right size, and who is ahead of us.
+ * Stored at `socialInsights/review`; mirrors backend `Review`.
+ */
+export interface SocialReview {
+  atMs: number;
+  date: string;
+  windowDays: number;
+  engine: string;
+  industry: string;
+  score: number;
+  previousScore: number | null;
+  goal: string;
+  measurable: boolean;
+  delivery: { expected: number; made: number; published: number; waiting: number; failed: number; quietDays: number };
+  reach: {
+    sampled: number;
+    medianReach: number;
+    beforeMedian: number;
+    trendPct: number | null;
+    medianHookScore: number;
+    sendRate: number;
+    saveRate: number;
+    reels: number;
+    profileScore: number | null;
+  };
+  spend: {
+    currency: string;
+    spent: number;
+    shouldHave: number;
+    dailyCap: number;
+    committed: number;
+    ctr: number | null;
+    ctrLow: number | null;
+    running: number;
+    wasting: number;
+    learning: number;
+    winning: number;
+    verdict: string;
+  } | null;
+  competitors: {
+    oursPerK: number | null;
+    theirsPerK: number | null;
+    ahead: string | null;
+    theirShapes: string[];
+    theirHooks: string[];
+  } | null;
+  /** The WhatsApp funnel when a number is connected (`social/closer.ts`). */
+  sales: { live: number; waiting: number; won: number; lost: number; queued: number } | null;
+  findings: SocialReviewFinding[];
+  summary: string;
+  directives: SocialLearned;
+  history: { atMs: number; score: number }[];
+  error: string | null;
+}
+
+/** Where a lead is in the funnel. Mirrors backend `Stage` in social/closer.ts. */
+export type SalesChatStage =
+  | 'new'
+  | 'talking'
+  | 'qualified'
+  | 'pitched'
+  | 'won'
+  | 'lost'
+  | 'needs_you'
+  | 'queued'
+  | 'stopped';
+
+export interface SalesChatMessage {
+  from: 'them' | 'us';
+  text: string;
+  atMs: number;
+  /** Written but not sent: the client asked to approve first. */
+  draft?: boolean;
+}
+
+/** One lead's WhatsApp conversation, at `salesChats/{waId}`. Mirrors backend `SalesChat`. */
+export interface SalesChatDoc {
+  waId: string;
+  name: string | null;
+  source: 'whatsapp' | 'sheet' | 'instagram' | 'facebook' | 'comment';
+  stage: SalesChatStage;
+  language: 'english' | 'roman-urdu' | 'urdu-script';
+  messages: SalesChatMessage[];
+  lastInboundAtMs: number | null;
+  lastOutboundAtMs: number | null;
+  summary: string;
+  nextStep: string;
+  followUps: number;
+  handover: boolean;
+  blocked: boolean;
+  blockedReason: string | null;
+  note?: string;
+  createdAtMs: number;
+  updatedAtMs: number;
+}
+
+/** The client's own WhatsApp number as the desk holds it. Mirrors backend `CloserConfig`. */
+export interface CloserConfigDoc {
+  phoneNumberId: string | null;
+  displayNumber: string | null;
+  wabaId: string | null;
+  templateName: string | null;
+  templateLang: string;
+  dailyCap: number;
+  sendMode: 'auto' | 'approve';
+  sentDay: string | null;
+  sentToday: number;
+  connectedAtMs: number | null;
+  lastInboundAtMs: number | null;
+  outreachConsentAtMs: number | null;
+  connected: boolean;
+}
+
+export interface CloserState {
+  config: CloserConfigDoc;
+  vaultReady: boolean;
+  engine: string;
+  /** Business-initiated messages still allowed today. Replies are never capped. */
+  leftToday: number;
+  byStage: Record<string, number>;
+  total: number;
+}
+
+/** Vexa answering leads on the client's own WhatsApp — see backend/functions/src/social/closer.ts. */
+export const closerApi = {
+  state: callable<Record<string, never>, CloserState>('vexaCloserState'),
+  connect: callable<
+    { phoneNumberId: string; token: string; templateName?: string; templateLang?: string },
+    { ok: boolean; displayNumber: string | null; wabaId: string | null }
+  >('vexaConnectWhatsApp'),
+  disconnect: callable<Record<string, never>, { ok: boolean }>('vexaDisconnectWhatsApp'),
+  settings: callable<
+    { dailyCap?: number; sendMode?: 'auto' | 'approve'; templateName?: string | null; templateLang?: string },
+    { ok: boolean; config: CloserConfigDoc }
+  >('vexaSetCloserSettings'),
+  uploadSheet: callable<
+    { rows: string; consent: true },
+    { ok: boolean; added: number; skipped: number; perDay: number; templateReady: boolean }
+  >('vexaUploadSheet'),
+  send: callable<{ waId: string; text: string }, { ok: boolean }>('vexaSendMessage'),
+  chatAction: callable<{ waId: string; action: 'take-over' | 'give-back' | 'won' | 'lost' | 'block' }, { ok: boolean }>(
+    'vexaChatAction',
+  ),
+  runNow: callable<Record<string, never>, { ok: boolean; status: string }>('vexaRunOutreach', 9 * 60_000),
+};
+
 /**
  * Where /connect/instagram leaves its result when it could not postMessage it.
  * Both halves of the handshake read it from here so they cannot drift apart.
@@ -2406,6 +2575,8 @@ export const socialApi = {
 
   readOwnPage: callable<Record<string, never>, SocialPageRead>('adminReadOwnPage'),
   auditProfile: callable<Record<string, never>, SocialProfileAudit>('adminAuditProfile'),
+  /** The five-day review, on demand. Nine minutes because it may think about the whole desk. */
+  selfReview: callable<Record<string, never>, SocialReview>('adminSelfReview', 9 * 60_000),
 
   roles: callable<Record<string, never>, { roles: SocialRoleOption[] }>('adminGetSocialRoles'),
   hire: callable<

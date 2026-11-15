@@ -25,7 +25,7 @@
 import { logger } from 'firebase-functions';
 
 import { db, FieldValue } from '../lib/firebase';
-import type { PoolingSettings } from '../domain/poolingSettings';
+import { modeForRoute, type PoolingSettings } from '../domain/poolingSettings';
 import { fetchRouteServerSide, serverRoutingConfigured } from '../lib/routes';
 import type { LatLng } from '../lib/corridor';
 import {
@@ -52,6 +52,12 @@ export interface AdmissionContext {
   currentGross?: number | null;
   /** Where the car starts from, when it is already out. */
   start?: { lat: number; lng: number } | null;
+  /**
+   * The corridor this pool runs, as `routeKeyOf` names it. It decides whether
+   * the engine ENFORCES here or only watches, and it is what each route's
+   * record is accumulated under.
+   */
+  routeKey?: string | null;
 }
 
 export interface Admission extends AdmitDecision {
@@ -168,7 +174,7 @@ export async function recordAdmission(
       worstSavingPct: 0,
       detourKm: 0,
       detourMin: 0,
-      mode: settings.mode,
+      mode: modeForRoute(settings, ctx.routeKey ?? null),
       refuse: false,
       detourSource: 'straight',
       recorded: Promise.resolve(),
@@ -191,10 +197,13 @@ export async function recordAdmission(
     detour,
     ctx.currentGross,
   );
+  // The route's mode, not the global one: enforcement starts on the routes that
+  // have earned it (domain/poolingSettings `modeForRoute`).
+  const mode = modeForRoute(settings, ctx.routeKey ?? null);
   const verdict = {
     ...decision,
-    mode: settings.mode,
-    refuse: !decision.ok && settings.mode === 'live',
+    mode,
+    refuse: !decision.ok && mode === 'live',
     detourSource: detour.source,
   };
   const recorded = write(ctx, verdict, settings).catch((error) => {
@@ -211,6 +220,46 @@ export async function recordAdmission(
   return admission;
 }
 
+/**
+ * A rider whose journey IS on the pool's route — same direction, half of it
+ * shared — and who was turned away only because their stops sit further off it
+ * than `matchRadiusM` allows. `offsetM` is how far: the worse of their pickup
+ * and drop-off.
+ *
+ * This is the one signal that says whether the radius is set too tight, and it
+ * was being thrown away. The calibration job reads these rows against the joins
+ * that were accepted, so the radius can follow where riders actually stand
+ * rather than the round number somebody once typed.
+ *
+ * Fire-and-forget, like every other ledger write: the rider is already being
+ * refused, and a bookkeeping failure must not change what they are told.
+ */
+export async function recordOffRoute(
+  poolId: string,
+  uid: string,
+  offsetM: number,
+  settings: PoolingSettings,
+  routeKey: string | null = null,
+): Promise<void> {
+  try {
+    await db.collection(DECISIONS).add({
+      kind: 'offRoute',
+      poolId,
+      routeKey,
+      uid,
+      at: FieldValue.serverTimestamp(),
+      mode: settings.mode,
+      ok: false,
+      refused: true,
+      reason: `${Math.round(offsetM)} m off the route, over the ${settings.matchRadiusM} m limit`,
+      offsetM: Math.round(offsetM),
+      limits: { matchRadiusM: settings.matchRadiusM, candidateRadiusM: settings.candidateRadiusM },
+    });
+  } catch (error) {
+    logger.warn('pooling off-route not recorded', { poolId, error });
+  }
+}
+
 async function write(
   ctx: AdmissionContext,
   a: Omit<Admission, 'recorded'>,
@@ -219,7 +268,11 @@ async function write(
   const riders = ctx.aboard.length + 1;
   await Promise.all([
     db.collection(DECISIONS).add({
+      // 'join' = a rider the engine priced and judged; 'offRoute' = one it never
+      // got to, turned away by the radius alone. Calibration reads both.
+      kind: 'join',
       poolId: ctx.poolId,
+      routeKey: ctx.routeKey ?? null,
       uid: ctx.uid,
       at: FieldValue.serverTimestamp(),
       mode: a.mode,
