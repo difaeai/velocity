@@ -513,3 +513,16 @@ jobs:
           done
           echo "Functions still not fully deployed after $attempts attempts — this is not a flake, go read the errors above."
           exit 1
+
+      # The bridge step is allowed to fail on purpose — see its comment above —
+      # but "allowed to fail" was being read by Actions as "nothing happened".
+      # The bridge's IAM was incomplete from 2026-10-26 until 2026-11-15: every
+      # run deployed the functions, skipped the bridge, and reported success, so
+      # voice-bridge never existed in production and nothing said so. The flag
+      # stays (a broken bridge must not hold back 216 functions); the silence
+      # does not.
+      - name: Fail the run if the voice bridge did not deploy
+        if: always() && steps.bridge.outcome == 'failure'
+        run: |
+          echo "::error::voice bridge deploy FAILED — functions deployed, the bridge did not. AI calls are off until this is fixed; read the 'Deploy the voice bridge' step above."
+          exit 1
