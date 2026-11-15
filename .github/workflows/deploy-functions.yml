@@ -150,6 +150,8 @@ jobs:
           PAYMENTS_GATEWAY_ENV: ${{ secrets.PAYMENTS_GATEWAY_ENV }}
           GOOGLE_MAPS_SERVER_KEY: ${{ secrets.GOOGLE_MAPS_SERVER_KEY }}
           SOCIAL_TOKEN_KEY: ${{ secrets.SOCIAL_TOKEN_KEY }}
+          META_APP_ID: ${{ secrets.META_APP_ID }}
+          META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GEMINI_KEY_RESEARCH: ${{ secrets.GEMINI_KEY_RESEARCH }}
@@ -192,6 +194,27 @@ jobs:
             echo "· social: token vault READY"
           else
             echo "· social: no SOCIAL_TOKEN_KEY — accounts cannot be connected"
+          fi
+          # Which Meta app the social desk signs people in with.
+          #
+          # Until now this was whatever WHATSAPP_ENV happened to carry, because
+          # metaApp() falls back to WHATSAPP_APP_ID/SECRET when nothing else is
+          # set — convenient while one app did everything, wrong once the desk
+          # onboards other businesses. Vexa is its own Tech Provider app, and
+          # these two take precedence over both the console-stored pair and the
+          # WhatsApp fallback (see backend/functions/src/social/meta.ts).
+          #
+          # Both or neither: an id without a secret silently drops through to
+          # the old app, which is the confusing failure this block exists to
+          # avoid. Absent → nothing changes, the fallback still applies.
+          if [ -n "$META_APP_ID" ] && [ -n "$META_APP_SECRET" ]; then
+            printf 'META_APP_ID=%s\n' "$META_APP_ID" >> .env.velocity-fe379
+            printf 'META_APP_SECRET=%s\n' "$META_APP_SECRET" >> .env.velocity-fe379
+            echo "· social: sign-in runs on its own Meta app (META_APP_ID set)"
+          elif [ -n "$META_APP_ID" ] || [ -n "$META_APP_SECRET" ]; then
+            echo "· social: META_APP_ID/META_APP_SECRET — only one is set, so BOTH are ignored"
+          else
+            echo "· social: no META_APP_ID — sign-in falls back to the WhatsApp app"
           fi
           # Stock footage under the reels (free key), for the beats our own
           # clip library does not cover.
