@@ -211,6 +211,12 @@ jobs:
             printf 'META_APP_ID=%s\n' "$META_APP_ID" >> .env.velocity-fe379
             printf 'META_APP_SECRET=%s\n' "$META_APP_SECRET" >> .env.velocity-fe379
             echo "· social: sign-in runs on its own Meta app (META_APP_ID set)"
+            # The Facebook Login configuration that drives WhatsApp Embedded
+            # Signup. Not a secret — it travels in the dialog in plain sight —
+            # so it is written here rather than being one more value to paste
+            # into GitHub. It belongs to the app above, so it is only useful
+            # when that app is the one signing people in.
+            printf 'META_WA_CONFIG_ID=%s\n' "1695933988985287" >> .env.velocity-fe379
           elif [ -n "$META_APP_ID" ] || [ -n "$META_APP_SECRET" ]; then
             echo "· social: META_APP_ID/META_APP_SECRET — only one is set, so BOTH are ignored"
           else

@@ -82,7 +82,7 @@ const stateRef = (state: string) => db.doc(`socialOAuthStates/${state}`);
 const appRef = db.doc('system/socialMetaApp');
 const appSecretRef = db.doc('system/socialMetaApp/secret/credentials');
 
-interface MetaApp {
+export interface MetaApp {
   appId: string;
   appSecret: string;
   /** Where the pair came from, so the console can explain itself. */
@@ -99,7 +99,7 @@ interface MetaApp {
  * dialog URL in plain sight — so it is kept in a readable document rather than
  * sealed.
  */
-async function metaApp(): Promise<MetaApp | null> {
+export async function metaApp(): Promise<MetaApp | null> {
   const envId = process.env.META_APP_ID?.trim();
   const envSecret = process.env.META_APP_SECRET?.trim();
   if (envId && envSecret) return { appId: envId, appSecret: envSecret, source: 'env' };
