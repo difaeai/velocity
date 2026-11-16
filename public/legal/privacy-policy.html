@@ -86,7 +86,7 @@
     <p class="lede">This policy explains what information the Velocity Rides mobile app collects,
       why we collect it, and the choices you have over your data.</p>
     <div class="meta">
-      <span><b>Effective:</b> 9 November 2026</span>
+      <span><b>Effective:</b> 16 November 2026</span>
       <span><b>Applies to:</b> Velocity Rides for Android &amp; iOS</span>
       <span><b>Contact:</b> <a href="mailto:business@velocityrides.app">business@velocityrides.app</a></span>
     </div>
@@ -364,6 +364,8 @@
       <li>Google Maps — <a href="https://policies.google.com/privacy" rel="noopener">policies.google.com/privacy</a></li>
       <li>Anthropic — <a href="https://www.anthropic.com/legal/privacy" rel="noopener">anthropic.com/legal/privacy</a></li>
       <li>Google AdMob &amp; advertising — <a href="https://policies.google.com/technologies/ads" rel="noopener">policies.google.com/technologies/ads</a></li>
+      <li>YouTube API Services (Vexa) — <a href="https://www.youtube.com/t/terms" rel="noopener">youtube.com/t/terms</a></li>
+      <li>Google Ads (Vexa) — <a href="https://policies.google.com/privacy" rel="noopener">policies.google.com/privacy</a></li>
       <li>Google Gemini (Vexa writing and research) — <a href="https://policies.google.com/privacy" rel="noopener">policies.google.com/privacy</a></li>
       <li>Meta (Facebook &amp; Instagram, for Vexa) — <a href="https://www.facebook.com/privacy/policy" rel="noopener">facebook.com/privacy/policy</a></li>
       <li>TikTok (posting and ads, for Vexa) — <a href="https://www.tiktok.com/legal/privacy-policy" rel="noopener">tiktok.com/legal/privacy-policy</a></li>
@@ -389,14 +391,68 @@
   </section>
 
   <section>
-    <h2><span class="n">15</span> Changes to this policy</h2>
+    <h2><span class="n">15</span> Google and YouTube API Services</h2>
+    <p>Vexa, described above, connects to a business's own Google account using Google's APIs. This
+      section covers that connection and applies wherever Vexa is used. By connecting a Google
+      account you also agree to the
+      <a href="https://www.youtube.com/t/terms" target="_blank" rel="noreferrer">YouTube Terms of Service</a>
+      and the
+      <a href="https://policies.google.com/privacy" target="_blank" rel="noreferrer">Google Privacy Policy</a>.</p>
+
+    <h3>What we access</h3>
+    <p>Only with the account holder's explicit consent, and only these scopes:</p>
+    <ul>
+      <li><b>YouTube — read only</b> (<code>youtube.readonly</code>): the connected channel's basic
+        details and the metadata and public statistics of its videos, so the workspace can show which
+        posts went out and how they performed.</li>
+      <li><b>YouTube — upload</b> (<code>youtube.upload</code>): permission to publish videos the
+        business has approved to its own channel.</li>
+      <li><b>Google Ads</b> (<code>adwords</code>): the connected Google Ads account's campaigns,
+        ad groups, ads and performance metrics, so the workspace can create, manage and report on the
+        business's own campaigns.</li>
+      <li><b>Account identity</b> (<code>userinfo.email</code>, <code>openid</code>): the email
+        address and basic profile of the Google account, used only to identify which account is
+        connected.</li>
+    </ul>
+
+    <h3>How we use it</h3>
+    <p>Solely to provide the user-facing features the business asked for: publishing approved videos
+      to its own YouTube channel, showing channel and video performance in its workspace, and
+      creating and reporting on its own Google Ads campaigns. We do not use Google user data for
+      advertising targeting, credit or lending decisions, or any purpose outside these features.</p>
+
+    <h3>What we share</h3>
+    <p>We do not sell Google user data, and we do not transfer it to data brokers, advertisers or any
+      other third party, except where the business itself directs it or the law requires it. Google
+      user data is not used to develop, improve or train any artificial intelligence or machine
+      learning model, and it is not sent to third-party AI services for that purpose.</p>
+
+    <h3>How we protect it</h3>
+    <p>Google user data is held in Google Cloud Firestore in the project that runs this service, and
+      is reachable only by that workspace's authenticated accounts. OAuth tokens are stored
+      server-side and are never exposed to the browser or the app. Transport is encrypted (HTTPS)
+      throughout.</p>
+
+    <h3>How long we keep it, and how to remove it</h3>
+    <p>We keep Google user data only while the Google account stays connected. Disconnecting the
+      account in the workspace deletes the stored tokens and the YouTube and Google Ads data held with
+      them within 30 days. Access can also be withdrawn at any time from
+      <a href="https://myaccount.google.com/permissions" target="_blank" rel="noreferrer">myaccount.google.com/permissions</a>,
+      which stops all further access immediately. To have everything erased, write to
+      <a href="mailto:business@velocityrides.app">business@velocityrides.app</a>. Anything already
+      published to the business's own YouTube channel stays on that channel: only the account holder
+      can take it down.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">16</span> Changes to this policy</h2>
     <p>We may update this Privacy Policy from time to time. When we do, we will revise the
       “Effective” date above and, where appropriate, notify you in the app. Continued use of the
       app after changes means you accept the updated policy.</p>
   </section>
 
   <section>
-    <h2><span class="n">16</span> Contact us</h2>
+    <h2><span class="n">17</span> Contact us</h2>
     <p>Questions about this policy or your data? Reach us at
       <a href="mailto:business@velocityrides.app">business@velocityrides.app</a>.</p>
   </section>
