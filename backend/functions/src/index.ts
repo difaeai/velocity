@@ -191,6 +191,11 @@ export { getCoRiderRatingTargets, submitCoRiderRating } from './ratings/coRiders
 // any one of them. Built for the call that starts "the police are asking".
 export { adminListRides, adminGetRideDetail, adminSearchRideParties } from './admin/rideHistory';
 
+// Who is online this minute, grouped by area — the Overview page's ONLINE box,
+// the one button that tells an area's riders a car is there (and the drivers
+// that people are), and the half-hourly job that does it without being asked.
+export { adminOnlineNow, adminNotifyArea, sweepAreaAlerts } from './admin/onlineNow';
+
 // Pool ride management
 export {
   startPoolBoarding,

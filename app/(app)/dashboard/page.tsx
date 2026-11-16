@@ -31,6 +31,7 @@ import {
   shortDate,
 } from '@/components/charts';
 import { CostOfVelocityTile } from '@/components/CostOfVelocity';
+import { OnlineNow } from '@/components/OnlineNow';
 import { SkeletonRows } from '@/components/states';
 
 const RANGES = [7, 30, 90] as const;
@@ -159,6 +160,12 @@ export default function Overview() {
           </button>
         </p>
       ) : null}
+
+      {/* The present tense, before any history: who has the app open right now
+          and where (owner, 2026-11-16). Outside the analytics block on purpose
+          — it must not wait on a thirty-day aggregate to say a driver is idle
+          in the same area as three riders. */}
+      <OnlineNow />
 
       {loading && !data ? <SkeletonRows rows={4} h={72} /> : null}
 

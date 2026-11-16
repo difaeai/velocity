@@ -956,6 +956,46 @@ export const analyticsApi = {
   get: callable<{ days?: number }, AnalyticsPayload>('adminGetAnalytics'),
 };
 
+// ── Who is online, by area ──────────────────────────────────────────────────
+// The ONLINE box on Overview. Backend: backend/functions/src/admin/onlineNow.ts.
+
+/** One person online now. The area is all the desk gets — never a coordinate. */
+export interface OnlineRow {
+  uid: string;
+  name: string;
+  area: string;
+  lastSeenMs: number;
+  phone: string | null;
+  /** Drivers only. */
+  vehicle?: string | null;
+}
+
+export interface OnlineAreaRow {
+  area: string;
+  drivers: number;
+  passengers: number;
+}
+
+export interface OnlineNowPayload {
+  areas: OnlineAreaRow[];
+  drivers: OnlineRow[];
+  passengers: OnlineRow[];
+  totals: { drivers: number; passengers: number };
+  /** Areas with both a driver and a passenger in them. */
+  matched: number;
+  autoAlerts: boolean;
+  generatedAt: number;
+}
+
+export const onlineApi = {
+  now: callable<Record<string, never>, OnlineNowPayload>('adminOnlineNow'),
+  /** `area: null` means everybody online, wherever they are. */
+  notify: callable<
+    { area: string | null; to: 'passengers' | 'drivers' | 'both'; title: string; body: string },
+    { ok: true; sent: number }
+  >('adminNotifyArea'),
+};
+
 // ── Cost of Velocity ────────────────────────────────────────────────────────
 
 /** What one refresh run found, per vendor. Mirrors backend costs/index.ts. */
