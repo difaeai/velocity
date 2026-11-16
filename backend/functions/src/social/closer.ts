@@ -831,21 +831,25 @@ export const vexaConnectWhatsApp = deskCall('sales', async (req) => {
   const { phoneNumberId, token } = parsed.data;
 
   // Whose number is this, and is the token really good for it?
+  //
+  // Only fields the phone-number node actually carries. It was also asked for
+  // `whatsapp_business_account`, which that node does not have, so Meta answered
+  // every connect with "(#100) Tried accessing nonexisting field" and no number
+  // could ever be connected here. The id it would have returned is written to
+  // the config and read by nobody — the cost reader has its own WHATSAPP_WABA_ID
+  // — so it is not worth a second call to recover.
   let display: string | null = null;
-  let waba: string | null = null;
   try {
-    const res = await fetch(`https://graph.facebook.com/v21.0/${phoneNumberId}?fields=display_phone_number,verified_name,whatsapp_business_account`, {
+    const res = await fetch(`https://graph.facebook.com/v21.0/${phoneNumberId}?fields=display_phone_number,verified_name`, {
       headers: { authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(15_000),
     });
     const body = (await res.json().catch(() => ({}))) as {
       display_phone_number?: string;
-      whatsapp_business_account?: { id?: string };
       error?: { message?: string };
     };
     if (!res.ok) throw new Error(body.error?.message ?? `Meta answered ${res.status}`);
     display = body.display_phone_number ?? null;
-    waba = body.whatsapp_business_account?.id ?? null;
   } catch (e) {
     throw new HttpsError('failed-precondition', `That number and token did not work together: ${(e as Error).message}`.slice(0, 300));
   }
@@ -861,7 +865,7 @@ export const vexaConnectWhatsApp = deskCall('sales', async (req) => {
     {
       phoneNumberId,
       displayNumber: display,
-      wabaId: waba,
+      wabaId: null,
       connectedAtMs: Date.now(),
       ...(parsed.data.templateName ? { templateName: parsed.data.templateName } : {}),
       ...(parsed.data.templateLang ? { templateLang: parsed.data.templateLang } : {}),
@@ -869,7 +873,7 @@ export const vexaConnectWhatsApp = deskCall('sales', async (req) => {
     { merge: true },
   );
   await numberRef(phoneNumberId).set({ wid: currentWorkspace(), atMs: Date.now() });
-  return { ok: true, displayNumber: display, wabaId: waba };
+  return { ok: true, displayNumber: display, wabaId: null };
 });
 
 export const vexaDisconnectWhatsApp = deskCall('sales', async () => {
