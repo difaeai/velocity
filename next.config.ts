@@ -1,5 +1,7 @@
 import type { NextConfig } from 'next';
 
+import { SITE_URL } from './lib/site';
+
 /**
  * Clean URLs for the legal documents.
  *
@@ -50,6 +52,36 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];
+  },
+
+  /**
+   * One host, not two.
+   *
+   * App Hosting answers on both `velocityrides.app` and `www.velocityrides.app`,
+   * and until now both returned 200. Every page therefore existed twice as far
+   * as a crawler was concerned: Search Console was reporting fourteen noindexed
+   * console pages where there are seven, six "alternate page with proper
+   * canonical" entries that are just the www copies, and /login blocked twice.
+   * The canonical tags were being obeyed, so nothing was *wrong* in the index —
+   * it was simply half the crawl budget spent fetching the same site again.
+   *
+   * A 301 to the apex settles it at the first request instead of asking the
+   * crawler to work it out from a tag in the body. The apex is the canonical
+   * host everywhere else already: lib/site.ts, the sitemap, the Play and App
+   * Store listings, the OAuth redirect URIs.
+   */
+  async redirects() {
+    // `has.value` is matched as a regular expression, so the dots in the host
+    // are escaped — an unescaped one would also match `wwwXvelocityrides.app`.
+    const apex = new URL(SITE_URL).host.replace(/\./g, '\\.');
+    return [
+      {
+        source: '/:path*',
+        has: [{ type: 'host', value: `www\\.${apex}` }],
+        destination: `${SITE_URL}/:path*`,
+        permanent: true,
+      },
+    ];
   },
 
   async rewrites() {
