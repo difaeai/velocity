@@ -280,12 +280,16 @@ export function Area({
 }
 
 export const AREA_CSS = `
-.ar { margin-bottom: 14px; }
+/* A box, not a heading with a rule under it: closed, each one was a horizontal
+   line across the page, which is not what a box looks like (owner, 2026-11-16).
+   They stack down the page, one under the other, and nothing sits beside them. */
+.ar { margin-bottom: 14px; background: #fff; border: 1px solid var(--line); border-radius: 22px; padding: 4px 18px;
+  box-shadow: 0 1px 2px rgba(16,40,28,.04), 0 18px 40px -30px rgba(16,40,28,.26);
+  transition: border-color .25s ease, box-shadow .25s ease; }
+.ar:hover { border-color: color-mix(in srgb, var(--tint) 32%, var(--line)); }
 .ar-head { display: flex; align-items: center; gap: 12px; margin: 0; padding: 12px 2px 11px; position: relative; cursor: pointer;
   list-style: none; transition: padding-left .25s ease; }
 .ar-head::-webkit-details-marker { display: none; }
-.ar-head::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--tint) 40%, transparent), transparent 70%); }
 .ar-head:hover { padding-left: 6px; }
 .ar-n { flex: none; width: 26px; height: 26px; border-radius: 9px; display: grid; place-items: center; font-size: 12.5px; font-weight: 900;
   color: #fff; background: var(--tint); box-shadow: 0 6px 16px -8px var(--tint); transition: transform .3s cubic-bezier(.3,1.5,.5,1); }
@@ -299,7 +303,7 @@ export const AREA_CSS = `
   border-bottom: 2px solid var(--tint); transform: rotate(45deg); }
 .ar[open] > .ar-head .ar-chev { transform: rotate(180deg); }
 .ar-head:hover .ar-chev { background: color-mix(in srgb, var(--tint) 20%, transparent); }
-.ar[open] { margin-bottom: 26px; }
+.ar[open] { margin-bottom: 26px; padding-bottom: 16px; }
 /* What is inside slides out from under the lid. The end state is written out
    because this replaces whatever animation the child had — and a child with
    .fx-rise sits at opacity 0 until its own animation runs it up. */

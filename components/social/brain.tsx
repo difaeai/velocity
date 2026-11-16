@@ -34,6 +34,7 @@ import {
   type SocialSettings,
 } from '@/lib/api';
 import { FORMAT_META, PLATFORM_META } from './shared';
+import { PageRows, pageHits } from './search';
 import { adMoney } from './ads';
 import { OWN_ACCEPT, hasVideo, ownFilesProblem, uploadOwnFiles } from './ownMedia';
 import { BRAIN_ART_CSS, BrainArt, r1, vars } from './brainArt';
@@ -53,6 +54,20 @@ const FORMATS: SocialFormat[] = ['reel', 'post', 'story', 'carousel'];
 
 /** Where the New campaign agent can run an ad. */
 const NETWORKS: Record<AdNetwork, string> = { meta: 'Facebook & Instagram', youtube: 'YouTube', tiktok: 'TikTok' };
+
+/**
+ * Four answers that cover most businesses, so nobody has to invent the words —
+ * typing your own into the box works too. The goal is not a setting among
+ * settings: it goes into every employee's prompt on every job (`briefBlock`),
+ * because a team told to sell writes a different post from a team told to be
+ * liked.
+ */
+const GOALS: { icon: string; label: string; text: string }[] = [
+  { icon: '💰', label: 'More sales', text: 'Sell more of what we already sell — turn the audience into paying customers.' },
+  { icon: '📞', label: 'More enquiries', text: 'Bring in enquiries we can follow up and close.' },
+  { icon: '📣', label: 'Be known', text: 'Get our name known where we sell. Reach and recognition first, sales after.' },
+  { icon: '🚀', label: 'Launch something', text: 'Launch something new and get people trying it.' },
+];
 
 const EXAMPLES = [
   'a reel for riders in Lahore: you name your own fare, no surge at night',
@@ -286,6 +301,8 @@ export function Brain({
   disabled,
   onDone,
   onError,
+  onGoal,
+  goalBusy,
   children,
 }: {
   settings: SocialSettings;
@@ -303,6 +320,13 @@ export function Brain({
   disabled: boolean;
   onDone: (message: string) => void;
   onError: (message: string) => void;
+  /**
+   * Save what the business is for. Asked here rather than in a box of its own
+   * (owner, 2026-11-16: one box that does everything), and only while it is
+   * unanswered — after that it lives in Settings.
+   */
+  onGoal: (goal: string) => void;
+  goalBusy: boolean;
   /** The approval choice, wired into the brain's own diagram. */
   children: React.ReactNode;
 }) {
@@ -326,6 +350,10 @@ export function Brain({
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
   const [example, setExample] = useState(0);
+  /** Which of the "open this page" rows the arrow keys have landed on. */
+  const [at, setAt] = useState(0);
+  /** With nothing typed the rows are offered, not parked: they appear on focus. */
+  const [focused, setFocused] = useState(false);
 
   // The empty box keeps suggesting what it can do.
   useEffect(() => {
@@ -363,6 +391,7 @@ export function Brain({
     const was = readIntent(brief);
     const now = readIntent(text);
     onBrief(text);
+    setAt(0);
     if (now.agent !== was.agent && order.includes(now.agent)) setAgent(now.agent);
     if (now.format && now.format !== was.format) onWant(now.format);
     if (now.network && now.network !== was.network) setNetwork(now.network);
@@ -449,6 +478,10 @@ export function Brain({
           ? false
           : disabled || (ownFiles.length > 0 && said.length < 3);
   const status = busy ? 'Thinking…' : sent ? 'Sent ✓' : said ? `Listening · ${AGENTS[agent].name}` : 'Ready';
+  // The same words that brief an agent also open a page — this is the console's
+  // only search. A brief is longer than four words, so the rows go quiet on one.
+  const hits = pageHits(brief, includes);
+  const goalAsked = !settings.goal?.trim();
   // The team's pieces show their own approve switch below; the ads desk keeps its own.
   const gate =
     agent === 'campaign'
@@ -471,12 +504,38 @@ export function Brain({
         <div className="bn-head">
           <div style={{ minWidth: 0 }}>
             <div className="fx-eyebrow">Ask Vexa</div>
-            <h2 id="brain-h">Tell it what you want. It sends the work to the right agent.</h2>
+            <h2 id="brain-h">Tell it what you want, or type where you want to go.</h2>
           </div>
           <span className="bn-status" aria-live="polite">
             <span className={busy || said ? 'fx-live lime' : 'fx-live'} /> {status}
           </span>
         </div>
+        {/* Asked once, in the same box, because a second box asking for words
+            was the thing the owner was counting (2026-11-16). One tap answers
+            it; anything typed above can be the answer instead. */}
+        {goalAsked ? (
+          <div className="bn-goal">
+            <strong>First — what do you want out of all this?</strong>
+            <div className="bn-goalrow">
+              {GOALS.map((g) => (
+                <button key={g.label} type="button" disabled={goalBusy} onClick={() => onGoal(g.text)}>
+                  <span aria-hidden>{g.icon}</span>
+                  {g.label}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="own"
+                disabled={goalBusy || said.length < 4}
+                onClick={() => onGoal(said)}
+                title="Use the words in the box below as your goal"
+              >
+                Use what I typed
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         <div className="bn-prompt">
           <span className="bn-spark-ico" aria-hidden>
             ✦
@@ -484,8 +543,28 @@ export function Brain({
           <textarea
             value={brief}
             onChange={(e) => hear(e.target.value)}
+            onFocus={() => setFocused(true)}
+            // Late enough for a click on a row to land before it is unmounted.
+            onBlur={() => setTimeout(() => setFocused(false), 180)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !blocked && !busy) void go();
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !blocked && !busy) {
+                void go();
+                return;
+              }
+              // While the rows are showing, the box behaves like a search box:
+              // arrows walk them and Enter opens one. With nothing typed there
+              // is nothing to open, so Enter is an ordinary newline.
+              if (!hits.length || !said) return;
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setAt((n) => Math.min(n + 1, hits.length - 1));
+              } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setAt((n) => Math.max(n - 1, 0));
+              } else if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                router.push(hits[at].href);
+              }
             }}
             id="make-brief"
             rows={2}
@@ -523,6 +602,16 @@ export function Brain({
                     : 'Make it'}
           </button>
         </div>
+
+        {/* Where those words could take you instead. Five departments before
+            anything is typed, the matches after — and nothing at all once the
+            box holds a brief. */}
+        {hits.length && (said || focused) ? (
+          <div className="bn-open">
+            <span className="bn-openlab">{said ? 'Open' : 'Or go straight to'}</span>
+            <PageRows hits={hits} at={said ? at : -1} onAt={setAt} />
+          </div>
+        ) : null}
 
         <div className="bn-route">
           <span className="bn-to">
@@ -844,6 +933,29 @@ export const BRAIN_CSS = `${BRAIN_ART_CSS}
 .bn .fx-switch:not([aria-checked='true']) { background: rgba(255,255,255,.2); }
 .bn .fx-link { color: var(--lime); }
 .bn .fx-card p[style] { color: #fcd34d !important; }
+
+/* The goal question, inside the one box rather than in a box of its own. */
+.bn-goal { margin: 14px 0 10px; }
+.bn-goal strong { display: block; font-size: 13.5px; font-weight: 800; color: #fff; margin-bottom: 8px; }
+.bn-goalrow { display: flex; flex-wrap: wrap; gap: 7px; }
+.bn-goalrow button { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 7px 13px; font: inherit;
+  font-size: 12.5px; font-weight: 700; cursor: pointer; color: #eaf5ee; background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.14); transition: background .2s ease, border-color .2s ease, transform .2s ease; }
+.bn-goalrow button:hover:not(:disabled) { background: rgba(204,255,0,.12); border-color: rgba(204,255,0,.5); transform: translateY(-1px); }
+.bn-goalrow button:disabled { opacity: .45; cursor: default; }
+.bn-goalrow .own { background: none; border-style: dashed; }
+
+/* The "open a page" rows, on a dark box: the shared row styles assume a white card. */
+.bn-open { margin-top: 12px; }
+.bn-openlab { display: block; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #6f8f7e; }
+.bn-open .vs-list { margin-top: 6px; }
+.bn-open .vs-row { color: #eaf5ee; }
+.bn-open .vs-row.on, .bn-open .vs-row:hover { background: rgba(204,255,0,.1); }
+.bn-open .vs-ico { background: rgba(255,255,255,.08); color: var(--lime); }
+.bn-open .vs-row.on .vs-ico, .bn-open .vs-row:hover .vs-ico { background: var(--lime); color: var(--ink); }
+.bn-open .vs-row em { color: #8fae9e; }
+.bn-open .vs-go { border-color: #4e6b5c; }
+.bn-open .vs-row.on .vs-go, .bn-open .vs-row:hover .vs-go { border-color: var(--lime); }
 
 .bn-prompt { position: relative; display: flex; gap: 10px; align-items: center; padding: 8px 8px 8px 16px; border-radius: 20px;
   background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.14); transition: border-color .25s ease, box-shadow .25s ease; }
