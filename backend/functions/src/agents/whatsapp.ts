@@ -345,13 +345,17 @@ export const agentSaveWhatsApp = deskCall('sales', { timeoutSeconds: 60 }, async
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Check the WhatsApp details — something is not valid.');
   const p = parsed.data;
   if (!tokenVaultReady()) throw new HttpsError('failed-precondition', 'Tokens cannot be stored safely right now.');
-  if (p.phoneNumberId === (process.env.WHATSAPP_PHONE_NUMBER_ID ?? '').trim()) {
+  const wid = currentWorkspace();
+  // Velocity's sign-in and driver-alert number. A client workspace must never claim
+  // it. The house may, asked for on 16 Nov 2026 with the cost understood: sales chats
+  // and sign-in codes then share one quality rating, so a run of reported sales chats
+  // can restrict the number that signs every rider and driver in.
+  if (p.phoneNumberId === (process.env.WHATSAPP_PHONE_NUMBER_ID ?? '').trim() && wid !== HOUSE) {
     throw new HttpsError(
       'failed-precondition',
-      'That number sends Velocity’s sign-in codes and driver alerts. Connect a separate WhatsApp number for sales, so a reported sales chat can never take the sign-in down.',
+      'That number sends Velocity’s sign-in codes and driver alerts. Connect your own WhatsApp number for sales.',
     );
   }
-  const wid = currentWorkspace();
   const idxRef = db.doc(`${WA_INDEX}/${p.phoneNumberId}`);
   const idx = (await idxRef.get()).data() as { wid?: string } | undefined;
   if (idx?.wid && idx.wid !== wid) throw new HttpsError('already-exists', 'That WhatsApp number is connected to another workspace.');
