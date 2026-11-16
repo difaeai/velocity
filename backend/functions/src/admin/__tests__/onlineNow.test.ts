@@ -18,7 +18,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
 import { clearFirestore, db } from '../../travelMate/__tests__/helpers';
-import { areaKey, areaOf, matchedAreas, runAreaAlerts, tallyAreas, UNKNOWN_AREA, type OnlineRow } from '../onlineNow';
+import { areaKey, areaOf, forgetPlaces, matchedAreas, runAreaAlerts, tallyAreas, UNKNOWN_AREA, type OnlineRow } from '../onlineNow';
 
 const BLUE_AREA = { lat: 33.7089, lng: 73.0551 };
 
@@ -77,6 +77,9 @@ describe('runAreaAlerts', () => {
 
   beforeEach(async () => {
     await clearFirestore();
+    // The registry is cached for ten minutes per instance; a test that seeds
+    // places must not be answered from the run before it.
+    forgetPlaces();
     await db().doc('drivers/driver-1').set({
       online: true,
       fullName: 'Kamran',

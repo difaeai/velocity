@@ -171,8 +171,21 @@ function toMillis(value: unknown): number {
 
 // ── reading the world ───────────────────────────────────────────────────────
 
-/** Verified places from our own map, for naming areas. Empty is fine: cities then. */
+/**
+ * Verified places from our own map, for naming areas. Empty is fine: cities then.
+ *
+ * Held per instance for ten minutes. The desk polls every minute and a verified
+ * place moves about once a month, so reading the registry on every poll would
+ * put five hundred document reads behind a tab somebody left open — about
+ * 700,000 reads a day from one browser. The staleness it buys is the only kind
+ * that does not matter here: a place pinned nine minutes ago groups its people
+ * under the city name until the cache turns over.
+ */
+let placesCache: { at: number; places: AreaPlace[] } | null = null;
+const PLACES_TTL_MS = 10 * 60 * 1000;
+
 async function loadPlaces(): Promise<AreaPlace[]> {
+  if (placesCache && Date.now() - placesCache.at < PLACES_TTL_MS) return placesCache.places;
   const snap = await db
     .collection(LOCATIONS_COLLECTION)
     .where('status', '==', 'verified')
@@ -187,7 +200,13 @@ async function loadPlaces(): Promise<AreaPlace[]> {
       places.push({ name, lat, lng });
     }
   }
+  placesCache = { at: Date.now(), places };
   return places;
+}
+
+/** The tests seed places between runs, so they clear what a previous run cached. */
+export function forgetPlaces(): void {
+  placesCache = null;
 }
 
 /**

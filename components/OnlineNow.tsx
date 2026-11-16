@@ -67,10 +67,21 @@ export function OnlineNow() {
       .catch((e) => setError(e instanceof Error ? e.message : 'Could not read who is online.'));
   }, []);
 
+  // A dashboard left open on a second monitor must not poll all night: a tab
+  // nobody is looking at is skipped, and reads once when it comes back.
   useEffect(() => {
     load();
-    const every = setInterval(load, POLL_MS);
-    return () => clearInterval(every);
+    const every = setInterval(() => {
+      if (document.visibilityState === 'visible') load();
+    }, POLL_MS);
+    const back = () => {
+      if (document.visibilityState === 'visible') load();
+    };
+    document.addEventListener('visibilitychange', back);
+    return () => {
+      clearInterval(every);
+      document.removeEventListener('visibilitychange', back);
+    };
   }, [load]);
 
   /** The switch is the one kill for the automatic half, so it writes straight through. */
