@@ -17,8 +17,25 @@ export function routeForNotification(data: Record<string, unknown> | null | unde
   // Daily-route pool alert → straight to the join screen for that pool.
   if (screen === 'pool-join' && str('code')) return `/passenger/pool-join/${str('code')}`;
   // "Time to book your ride" before a saved route's own time (backend:
-  // dailyRoutes/reminders.ts) → the ride-sharing screen, where they book it.
+  // dailyRoutes/reminders.ts), when shared rides ARE going their way → the
+  // ride-sharing screen, where a seat is taken.
   if (screen === 'daily-travel') return '/passenger/daily-travel';
+  // The same reminder when none are: straight to booking with the route's
+  // destination already in the box. My Routes belongs to the whole app, so the
+  // rider who only ever travels alone must not be dropped into ride sharing to
+  // book the trip they saved (owner, 2026-11-17).
+  if (screen === 'daily-route') {
+    const to = str('dropoff');
+    if (!to) return '/passenger/booking';
+    const q = new URLSearchParams({ dropoff: to });
+    const lat = str('dropoffLat');
+    const lng = str('dropoffLng');
+    if (lat && lng) {
+      q.set('dropoffLat', lat);
+      q.set('dropoffLng', lng);
+    }
+    return `/passenger/booking?${q.toString()}`;
+  }
   // The "see it on your phone" demo. No adId, no click to record — it is the
   // sample offer, rendered from a constant.
   if (screen === 'business-offer-demo') return '/passenger/offer/demo';

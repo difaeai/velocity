@@ -102,18 +102,25 @@ interface VoicePrefill {
 }
 
 /**
- * Read the voice screen's route params, or null for a normal typed booking.
+ * Read a destination handed to this screen, or null for a normal typed booking.
+ *
+ * Two senders, one shape. The voice screen fills the `voice*` params; a saved
+ * route's reminder notification fills the plain ones (`dropoff`,
+ * `dropoffLat`, `dropoffLng` — see src/lib/notificationRoute.ts), because a
+ * route reminder is not a spoken booking and should not have to pretend to be
+ * one to get its destination across.
  *
  * Everything is validated rather than trusted: the params survive a round trip
  * through the URL, so a ride type is checked against the real list and the seat
  * count is clamped to what a vehicle actually holds.
  */
 function readVoicePrefill(params: Record<string, string | string[] | undefined>): VoicePrefill | null {
-  const dropoff = typeof params.voiceDropoff === 'string' ? params.voiceDropoff.trim() : '';
+  const text = (v: string | string[] | undefined) => (typeof v === 'string' ? v.trim() : '');
+  const dropoff = text(params.voiceDropoff) || text(params.dropoff);
   if (!dropoff) return null;
 
-  const lat = Number(params.voiceDropoffLat);
-  const lng = Number(params.voiceDropoffLng);
+  const lat = Number(params.voiceDropoffLat ?? params.dropoffLat);
+  const lng = Number(params.voiceDropoffLng ?? params.dropoffLng);
   const coords =
     Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
 
@@ -251,6 +258,10 @@ export default function Booking() {
     mode?: string;
     /** 'bike' from home's Bike screen: Moto picked, solo. */
     rideType?: string;
+    /** A saved route's reminder, carrying where that route goes. */
+    dropoff?: string;
+    dropoffLat?: string;
+    dropoffLng?: string;
   }>();
   const { user, role } = useAuth();
   // Woken while the rider is choosing, so Book does not wait on a cold start.

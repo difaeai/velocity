@@ -18,6 +18,24 @@ import { useAuth } from '../../src/auth/AuthContext';
  */
 const SIGNED_OUT_DRIVER_DOOR = ['account', 'login'];
 
+/**
+ * Where "back" lands when there is nothing to go back to (owner, 2026-11-17:
+ * leaving the referral-code screen dropped riders into Bikes).
+ *
+ * The root layout is a `<Slot />`, not a Stack, so a root-level route such as
+ * `/referral-code` shares no history with anything under `/passenger`. Pressing
+ * back there falls through to this group's ANCHOR — and with no `index.tsx`
+ * here and no anchor declared, expo-router picked the first route in the
+ * directory, which is how a rider leaving the referral screen ended up looking
+ * at bike booking.
+ *
+ * Naming the anchor fixes it for every screen in the group at once, not just
+ * the one that was reported, which is why it is here rather than in a back
+ * handler. Home is the only honest answer: it is where a passenger with no
+ * history belongs.
+ */
+export const unstable_settings = { anchor: 'home', initialRouteName: 'home' };
+
 export default function PassengerLayout() {
   const { user, initializing } = useAuth();
   const segments = useSegments();

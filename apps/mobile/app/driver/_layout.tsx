@@ -7,6 +7,18 @@ import { faceCheckInStatus, useDriverActiveTrip, useDriverProfile } from '../../
 
 const FACE_CHECK_ROUTE = '/driver/face-check-in';
 
+/**
+ * Where "back" lands when there is nothing to go back to.
+ *
+ * The same trap the passenger group had (owner, 2026-11-17): the root layout is
+ * a `<Slot />`, so a root-level screen — the referral code, Safety, a call, a
+ * dash-cam clip — shares no history with anything under `/driver`. Backing out
+ * of one fell through to this group's anchor, and with no `index.tsx` here and
+ * no anchor declared that was the first route in the directory: a driver
+ * leaving the referral screen landed on Add vehicle.
+ */
+export const unstable_settings = { anchor: 'home', initialRouteName: 'home' };
+
 export default function DriverLayout() {
   const { user, role, initializing } = useAuth();
   const router = useRouter();

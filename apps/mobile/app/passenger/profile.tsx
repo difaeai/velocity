@@ -144,7 +144,7 @@ export default function ProfileScreen() {
         <View style={styles.listCard}>
           {/* My Fleet is not here: it is linked from home's Corporate,
               Students & daily screen, and one door to it is enough. */}
-          <Pressable style={styles.listItem} onPress={() => router.push('/referral-code')}>
+          <Pressable style={styles.listItem} onPress={() => router.push('/referral-code?from=/passenger/profile')}>
             <View style={styles.itemLeftRow}>
               <Text style={styles.itemIcon}>🎁</Text>
               <View>

@@ -422,9 +422,17 @@ export default function PassengerHome() {
             ) : null}
           </View>
 
+          {/* My Routes is the WHOLE app's, not the corporate/students
+              section's (owner, 2026-11-17). It opens the Routes tab, where a
+              route is saved whatever kind of ride the rider books — and the
+              reminder before each one arrives the same way for a rider who
+              only ever travels alone. It used to open the ride-sharing screen,
+              which quietly made it a sharing feature; it also no longer goes
+              through goSharing, because saving your own route asks nothing
+              about who you would share a car with. */}
           <MyRoutesTile
             count={routes?.length ?? 0}
-            onPress={() => goSharing('/passenger/daily-travel?mode=mine')}
+            onPress={() => router.push('/passenger/daily-routes?tab=routes')}
           />
         </View>
 

@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { PERIOD_MS, PKR_PER_USD, PLAN_IDS, PLANS, TRIAL_MS, YEAR_MS, canUse, extendPaid, paidAfter, pricePkr, priceUsd, refusal, startTerms } from '../plans';
+import { PERIOD_MS, PKR_PER_USD, PLAN_IDS, PLANS, TRIAL_MS, YEAR_MS, YEAR_SAVING_USD, canUse, extendPaid, paidAfter, pricePkr, priceMonthUsd, priceUsd, refusal, startTerms } from '../plans';
 import { PRICE_GRACE_MS, PRICE_WINDOW_MS, priceState } from '../priceClock';
 
 const NOW = 1_800_000_000_000;
@@ -101,11 +101,13 @@ describe('paidAfter', () => {
 });
 
 describe('the $2 rise after a customer’s 3 days', () => {
-  it('adds $2 a month, and a year is still twelve of those less 3%', () => {
+  it('adds $2 a month, and the year saves its $3 a month on top of that', () => {
     expect(PLAN_IDS.map((id) => priceUsd(id, 'month', true))).toEqual([22, 28, 34]);
-    expect(PLAN_IDS.map((id) => priceUsd(id, 'year', true))).toEqual([256.08, 325.92, 395.76]);
+    // $3 a month off the raised monthly rate, twelve times over.
+    expect(PLAN_IDS.map((id) => priceMonthUsd(id, 'year', true))).toEqual([19, 25, 31]);
+    expect(PLAN_IDS.map((id) => priceUsd(id, 'year', true))).toEqual([228, 300, 372]);
     expect(pricePkr('content', 'month', true)).toBe(28 * PKR_PER_USD);
-    expect(pricePkr('research', 'year', true)).toBe(71703);
+    expect(pricePkr('research', 'year', true)).toBe(19 * 12 * PKR_PER_USD);
   });
 
   it('holds the old price through the window and the grace after it, then raises it', () => {
@@ -122,7 +124,9 @@ describe('priceUsd', () => {
     expect(priceUsd('content', 'month')).toBe(PLANS.content.usd);
   });
   it('prices a year at the figures the site shows', () => {
-    expect([priceUsd('research', 'year'), priceUsd('content', 'year'), priceUsd('all', 'year')]).toEqual([232.8, 302.64, 372.48]);
+    // $17, $23 and $29 a month — twelve of each. The owner's shape (2026-11-18):
+    // the toggle quotes a monthly rate on both sides, $3 apart.
+    expect([priceUsd('research', 'year'), priceUsd('content', 'year'), priceUsd('all', 'year')]).toEqual([204, 276, 348]);
   });
   it('sells the Research Assistant, Content and the whole team, left to right — not the old sales-only or ads-only plans', () => {
     expect(PLAN_IDS).toEqual(['research', 'content', 'all']);
@@ -132,17 +136,31 @@ describe('priceUsd', () => {
     // The whole team carries the sales, calling and email agents the old Sales plan sold on their own.
     expect(PLANS.all.can).toEqual(expect.arrayContaining(['research', 'content', 'ads', 'sales']));
   });
-  it('takes exactly 3% off twelve months, never more, and nothing off a month', () => {
+  it('takes exactly $3 a month off a year, and nothing off a month', () => {
     for (const id of PLAN_IDS) {
-      expect(priceUsd(id, 'year')).toBeCloseTo(PLANS[id].usd * 12 * 0.97, 10);
+      expect(priceMonthUsd(id, 'month')).toBe(PLANS[id].usd);
+      expect(priceMonthUsd(id, 'year')).toBe(PLANS[id].usd - YEAR_SAVING_USD);
+      expect(priceUsd(id, 'year')).toBe((PLANS[id].usd - YEAR_SAVING_USD) * 12);
       expect(priceUsd(id, 'month')).toBe(PLANS[id].usd);
+      // The promise on the card: a year saves exactly twelve months of $3.
+      expect(priceUsd(id, 'month') * 12 - priceUsd(id, 'year')).toBe(YEAR_SAVING_USD * 12);
     }
   });
-  it('asks for whole rupees, rounded up so a year never saves more than 3%', () => {
-    expect(PLAN_IDS.map((id) => pricePkr(id, 'year'))).toEqual([65184, 84740, 104295]);
+  it('never discounts a plan below a dollar a month, however the ladder moves', () => {
+    // Not reachable from today's prices; the floor is there so a reprice that
+    // dropped a plan under $3 could never make a year free or negative.
+    expect(priceMonthUsd('research', 'year')).toBeGreaterThanOrEqual(1);
+  });
+  it('asks for whole rupees that match the dollar figure exactly', () => {
+    expect(PLAN_IDS.map((id) => pricePkr(id, 'year'))).toEqual([
+      17 * 12 * PKR_PER_USD,
+      23 * 12 * PKR_PER_USD,
+      29 * 12 * PKR_PER_USD,
+    ]);
     for (const id of PLAN_IDS) {
       expect(Number.isInteger(pricePkr(id, 'year'))).toBe(true);
-      expect(pricePkr(id, 'year')).toBeGreaterThanOrEqual(pricePkr(id, 'month') * 12 * 0.97);
+      // A year in rupees must never cost more than twelve months in rupees.
+      expect(pricePkr(id, 'year')).toBeLessThan(pricePkr(id, 'month') * 12);
       expect(pricePkr(id, 'month')).toBe(PLANS[id].usd * PKR_PER_USD);
     }
   });
