@@ -8,7 +8,13 @@
  */
 import { describe, it, expect } from 'vitest';
 
-import { adPrice, DEFAULT_BUSINESS_AD_SETTINGS as S } from '../config';
+import {
+  adPrice,
+  clampPlanDays,
+  DEFAULT_BUSINESS_AD_SETTINGS as S,
+  MAX_PLAN_DAYS,
+  MIN_PLAN_DAYS,
+} from '../config';
 
 describe('adPrice', () => {
   it('is Rs 300 for the kilometre the base price includes', () => {
@@ -49,5 +55,40 @@ describe('adPrice', () => {
     const cheap = { ...S, basePkr: 500, perKmPkr: 100, includedKm: 2 };
     expect(adPrice(cheap, 2)).toBe(500);
     expect(adPrice(cheap, 4)).toBe(700);
+  });
+
+  /**
+   * The buyer picks days (owner, 2026-11-17). The ladder above still prices the
+   * standard run exactly, and anything else is pro-rata from it — so these must
+   * agree to the rupee with the phone's own copy in
+   * apps/mobile/src/lib/__tests__/adPricing.test.ts.
+   */
+  it('leaves the standard run priced exactly as the ladder', () => {
+    expect(adPrice(S, 1, S.planDays)).toBe(adPrice(S, 1));
+    expect(adPrice(S, 50, S.planDays)).toBe(adPrice(S, 50));
+  });
+
+  it('charges by the day', () => {
+    expect(adPrice(S, 1, 15)).toBe(150);
+    expect(adPrice(S, 1, 60)).toBe(600);
+    expect(adPrice(S, 2, 15)).toBe(180);
+  });
+
+  it('cannot be talked below a day or past a year', () => {
+    expect(adPrice(S, 1, 0)).toBe(adPrice(S, 1, MIN_PLAN_DAYS));
+    expect(adPrice(S, 1, -5)).toBe(adPrice(S, 1, MIN_PLAN_DAYS));
+    expect(adPrice(S, 1, 10_000)).toBe(adPrice(S, 1, MAX_PLAN_DAYS));
+  });
+});
+
+describe('clampPlanDays', () => {
+  it('falls back when nothing usable was sent', () => {
+    expect(clampPlanDays(undefined, 30)).toBe(30);
+    expect(clampPlanDays(Number.NaN, 30)).toBe(30);
+  });
+
+  it('rounds to whole days', () => {
+    expect(clampPlanDays(7.4, 30)).toBe(7);
+    expect(clampPlanDays(7.6, 30)).toBe(8);
   });
 });

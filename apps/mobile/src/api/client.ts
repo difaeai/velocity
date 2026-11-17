@@ -2277,6 +2277,8 @@ export interface BusinessAdCreative {
 
 export interface BusinessAdApplicationInput {
   radiusKm: number;
+  /** How many days the ad runs from approval. The server clamps and re-prices. */
+  days: number;
   lat: number;
   lng: number;
   address?: string;

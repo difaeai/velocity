@@ -369,50 +369,63 @@ export default function PassengerHome() {
              this card. It governs shared seats only, so it now lives with them,
              below.)
 
-             "Where to?" takes every pixel the voice tile does not, because it
-             is the primary action; the voice side is a fixed-width mic with its
-             name under it, which is all it needs to be recognised and tapped.
-             When there is no speech recogniser (typically no-GMS handsets) it
-             is not rendered at all and "Where to?" fills the row on its own. ── */}
-        <View style={styles.heroRow}>
-          <Pressable
-            style={({ pressed }) => [styles.searchHero, pressed && { opacity: 0.8 }]}
-            onPress={() => router.push('/passenger/booking')}
-            accessibilityRole="button"
-            accessibilityLabel="Where to? Set your destination"
-          >
-            <GlassSheen radius={22} />
-            <View style={styles.searchHeroIcon}>
-              <SearchIcon size={22} color="#0b0d0c" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.searchHeroTitle}>Where to?</Text>
-              {/* "Ride sharing", never "pool": this line is read by someone who
-                  has not chosen yet, and "pool" is not the word they use. */}
-              <Text style={styles.searchHeroSub} numberOfLines={1}>
-                Solo or ride sharing
-              </Text>
-            </View>
-          </Pressable>
+             THE MIC LIVES INSIDE "WHERE TO?" (owner, 2026-11-17)
+             It used to be a tile of its own beside the card, which read as a
+             separate feature rather than as the other way to do the same thing.
+             Speaking a destination IS "where to?", so the mic now sits in the
+             card, directly after the words — the rider's eye reaches "Where
+             to?" and the two ways to answer it are both right there. Two
+             Pressables side by side in one card rather than one nested in the
+             other: nesting makes which one got the tap a matter of responder
+             order, and this is a 46px target next to a full-width one.
 
-          {voiceAvailable ? (
+             When there is no speech recogniser (typically no-GMS handsets) the
+             mic is not rendered at all and the words take the width back.
+
+             The tile the mic vacated is now My Routes — the rider's own saved
+             trips, which is the other thing they come to this sheet to do. ── */}
+        <View style={styles.heroRow}>
+          <View style={styles.searchHero}>
+            <GlassSheen radius={22} />
             <Pressable
-              style={({ pressed }) => [styles.voiceHero, pressed && { opacity: 0.8 }]}
-              onPress={() => router.push('/passenger/voice')}
+              style={({ pressed }) => [styles.searchHeroTap, pressed && { opacity: 0.8 }]}
+              onPress={() => router.push('/passenger/booking')}
               accessibilityRole="button"
-              accessibilityLabel="Book a ride by speaking"
+              accessibilityLabel="Where to? Set your destination"
             >
-              <GlassSheen radius={18} />
-              <View style={styles.voiceHeroIcon}>
-                <MicIcon size={20} color={colors.primary} />
+              <View style={styles.searchHeroIcon}>
+                <SearchIcon size={22} color="#0b0d0c" />
               </View>
-              {/* Two lines allowed: at this width the label wraps rather than
-                  ellipsing away the word that says what the button does. */}
-              <Text style={styles.voiceHeroTitle} numberOfLines={2}>
-                Bol kar book karein
-              </Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.searchHeroTitle}>Where to?</Text>
+                {/* "Ride sharing", never "pool": this line is read by someone who
+                    has not chosen yet, and "pool" is not the word they use. */}
+                <Text style={styles.searchHeroSub} numberOfLines={1}>
+                  Solo or ride sharing
+                </Text>
+              </View>
             </Pressable>
-          ) : null}
+
+            {voiceAvailable ? (
+              <Pressable
+                style={({ pressed }) => [styles.searchHeroMic, pressed && styles.searchHeroMicOn]}
+                onPress={() => router.push('/passenger/voice')}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Bol kar book karein — book a ride by speaking"
+              >
+                <MicIcon size={20} color={colors.primary} />
+                <Text style={styles.searchHeroMicTxt} numberOfLines={1}>
+                  Bol kar
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+
+          <MyRoutesTile
+            count={routes?.length ?? 0}
+            onPress={() => goSharing('/passenger/daily-travel?mode=mine')}
+          />
         </View>
 
         {/* ── The two ways to ride ──────────────────────────────
@@ -580,6 +593,99 @@ function Rise({
     >
       {children}
     </Animated.View>
+  );
+}
+
+/**
+ * My Routes — the rider's own saved trips, in the slot the voice tile had.
+ *
+ * Same 88px width as the mic tile it replaced (owner, 2026-11-17), so the row's
+ * proportions are untouched and "Where to?" keeps every pixel it had.
+ *
+ * The drawing is the point: a route is two ends and a line between them, so the
+ * tile draws exactly that — a pickup ring at the top, a destination square at
+ * the bottom, and a lime dot that travels down the line and starts again. That
+ * loop is the whole animation. One Animated.Value, native-driven, and the dot
+ * is the only thing that moves: a tile on the home sheet must cost nothing to
+ * leave running while someone reads the rest of the screen.
+ *
+ * The count is the badge. A rider with no routes saved still sees the tile —
+ * "My Routes" with "Save yours" under it is an invitation; hiding it until they
+ * already have one is how a feature stays undiscovered.
+ */
+function MyRoutesTile({ count, onPress }: { count: number; onPress: () => void }) {
+  const travel = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(travel, {
+          toValue: 1,
+          duration: 1500,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        // A beat at the destination, so it reads as arriving rather than as a
+        // dot sliding on a loop.
+        Animated.delay(550),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [travel]);
+
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.routesHero, pressed && { opacity: 0.8 }]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={
+        count > 0
+          ? `My Routes, ${count} saved — your daily trips`
+          : 'My Routes — save the trip you make every day'
+      }
+    >
+      <GlassSheen radius={18} />
+
+      <View style={styles.routesTrack}>
+        <View style={styles.routesPin} />
+        <View style={styles.routesLine} />
+        <View style={styles.routesEnd} />
+        <Animated.View
+          style={[
+            styles.routesDot,
+            {
+              opacity: travel.interpolate({
+                inputRange: [0, 0.12, 0.88, 1],
+                outputRange: [0, 1, 1, 0],
+              }),
+              transform: [
+                {
+                  // Pin to destination: both ends are 8px, so the dot covers
+                  // one and lands exactly on the other across the 34px track.
+                  translateY: travel.interpolate({ inputRange: [0, 1], outputRange: [0, 26] }),
+                },
+                // A touch bigger mid-journey, so the eye catches the motion on
+                // a tile this small without the dot ever being loud.
+                {
+                  scale: travel.interpolate({
+                    inputRange: [0, 0.5, 1],
+                    outputRange: [0.85, 1.15, 0.85],
+                  }),
+                },
+              ],
+            },
+          ]}
+        />
+      </View>
+
+      <Text style={styles.routesTitle} numberOfLines={2}>
+        My Routes
+      </Text>
+      <Text style={styles.routesSub} numberOfLines={1}>
+        {count > 0 ? `${count} saved` : 'Save yours'}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -878,7 +984,7 @@ const styles = themed(() => StyleSheet.create({
     marginTop: 1,
   },
 
-  /* ── "Where to?" + "Bol kar book karein", one row ──
+  /* ── "Where to?" (with the mic in it) + My Routes, one row ──
      `stretch` is the point of the row: the two sides have different content
      heights (one is icon-beside-text, the other icon-above-text) and without it
      the shorter one would float with a ragged bottom edge next to the taller. */
@@ -896,17 +1002,53 @@ const styles = themed(() => StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
     backgroundColor: 'rgba(255,255,255,0.07)',
     borderRadius: 22,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.14)',
     paddingHorizontal: 14,
     /* 15 + a 46px icon + 15 puts this card at 76px — deliberately just under
-       the voice tile's ~85px, so all of this extra size is slack the row was
-       already carrying. The row is as tall as its tallest child, so growing
+       the My Routes tile's ~85px, so all of this extra size is slack the row
+       was already carrying. The row is as tall as its tallest child, so growing
        this card costs the features below it nothing until it passes the tile. */
     paddingVertical: 15,
+  },
+  /* The destination half of the card: everything except the mic. It carries the
+     row layout the card itself used to, so the icon and the words are unmoved. */
+  searchHeroTap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  /* ── The mic, inside the card and after the words (owner, 2026-11-17) ──
+     A lime pill rather than a bare icon: at 46px it has to read as a button to
+     someone who has never pressed it, and the word under the mic is what tells
+     a rider who cannot comfortably read English that it listens. "Bol kar" on
+     one line — the full "Bol kar book karein" is the accessibility label and
+     the voice screen's own heading, which is where there is room for it. */
+  searchHeroMic: {
+    width: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    alignSelf: 'stretch',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(204,255,0,0.35)',
+    backgroundColor: 'rgba(204,255,0,0.10)',
+    paddingVertical: 6,
+  },
+  searchHeroMicOn: {
+    backgroundColor: 'rgba(204,255,0,0.22)',
+  },
+  searchHeroMicTxt: {
+    fontSize: 9.5,
+    lineHeight: 11,
+    fontWeight: '800',
+    color: colors.primary,
+    letterSpacing: 0.2,
   },
   searchHeroIcon: {
     width: 46,
@@ -922,23 +1064,21 @@ const styles = themed(() => StyleSheet.create({
     color: '#ffffff',
     letterSpacing: -0.2,
   },
-  /* ── "Bol kar book karein" — the voice route into the same booking flow ──
-     A mic with its name under it, and nothing else. Fixed width rather than a
-     flex share: this tile has one job — be recognisable and be tappable — and
-     it needs the same small amount of room to do it on every handset. Letting
-     it grow with the screen would only pad the space around the icon while
-     taking that width off "Where to?", which can use it.
+  /* ── My Routes — the rider's own saved trips ──
+     Fixed width rather than a flex share, exactly as the voice tile it replaced
+     was: this tile has one job — be recognisable and be tappable — and it needs
+     the same small amount of room to do it on every handset. Letting it grow
+     with the screen would only pad the space around the drawing while taking
+     that width off "Where to?", which can use it.
 
-     88 is the floor that keeps the label readable: the longest line it has to
-     hold is "book karein", which fits the 72px inside the padding at 11px. Go
-     much narrower and the label breaks to three lines and the tile gets TALLER
-     than the card beside it, which is what this row exists to avoid. */
-  voiceHero: {
+     88, unchanged (owner, 2026-11-17: "utna he banana jitna bol kr book krein
+     hai"). The row's proportions are the ones that were already tuned. */
+  routesHero: {
     width: 88,
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
+    gap: 4,
     backgroundColor: 'rgba(204,255,0,0.10)',
     borderRadius: 18,
     borderWidth: 1,
@@ -946,15 +1086,52 @@ const styles = themed(() => StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 10,
   },
-  voiceHeroIcon: {
-    width: 34,
+  /* The route itself: 34px of line with an end on each tip. `relative` because
+     the travelling dot is positioned against it. */
+  routesTrack: {
+    width: 14,
     height: 34,
-    borderRadius: 17,
-    backgroundColor: 'rgba(204,255,0,0.16)',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
+    position: 'relative',
   },
-  voiceHeroTitle: {
+  routesPin: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: colors.primary,
+  },
+  /* Sits behind both ends, so the line appears to run between them. */
+  routesLine: {
+    position: 'absolute',
+    top: 7,
+    bottom: 7,
+    width: 2,
+    borderRadius: 1,
+    backgroundColor: 'rgba(204,255,0,0.30)',
+  },
+  routesEnd: {
+    width: 8,
+    height: 8,
+    borderRadius: 2,
+    backgroundColor: colors.primary,
+  },
+  /* The dot that travels. Absolute so its translateY is measured from the top
+     of the track and nothing else in the tile moves with it. */
+  /* The dark rim is what separates it from the line it travels along — without
+     it a lime dot on a lime line is invisible for most of the journey. */
+  routesDot: {
+    position: 'absolute',
+    top: 0,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.primary,
+    borderWidth: 1.5,
+    borderColor: '#121212',
+  },
+  routesTitle: {
     fontSize: 11,
     /* Pinned, not left to the font: the label wraps to two lines and the
        default line height would make the tile taller than the card it sits
@@ -964,6 +1141,13 @@ const styles = themed(() => StyleSheet.create({
     color: '#ffffff',
     textAlign: 'center',
     letterSpacing: -0.2,
+  },
+  routesSub: {
+    fontSize: 9.5,
+    lineHeight: 11,
+    fontWeight: '700',
+    color: colors.primary,
+    textAlign: 'center',
   },
   searchHeroSub: {
     fontSize: 13,

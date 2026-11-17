@@ -17,7 +17,7 @@
  * ("Queries") — the one section that asks the owner to do something.
  */
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Alert, Image, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -26,7 +26,7 @@ import { api } from '../../../src/api/client';
 import type { BusinessAd, BusinessAdDashboard, BusinessAdPlans } from '../../../src/api/client';
 import { colors } from '../../../src/config';
 import { useBusinessAdDashboard, useBusinessAdQueries } from '../../../src/hooks/businessAds';
-import { adPrice, adPricing, RADIUS_PICKER_MAX_KM } from '../../../src/lib/adPricing';
+import { adPrice, adPricing } from '../../../src/lib/adPricing';
 import { useCachedResource } from '../../../src/lib/cachedResource';
 import { Glass } from '../../../src/ui/Glass';
 import {
@@ -44,11 +44,30 @@ export default function BusinessAdsHome() {
   const { data, loading, refreshing, error, reload } = useBusinessAdDashboard();
   const [busyAdId, setBusyAdId] = useState<string | null>(null);
 
+  // The header's "+". Only an advertiser with a plan that is actually running
+  // can publish anything, so it is absent entirely on the pitch and while a
+  // payment is being reviewed — a plus on a screen you cannot yet add to is
+  // just a dead button.
+  const advertiser = data?.advertiser ?? null;
+  const canAddAd = !!advertiser && data?.stage !== 'expired' && data?.stage !== 'suspended';
+  const slotsFull = !!advertiser && advertiser.liveAds >= advertiser.adSlots;
+
   // Coming back from the composer or the payment flow must not show stale
   // numbers — the whole screen is a status report. This is a revalidation
   // behind whatever is already on screen, not a reason to blank it.
+  //
+  // Not on the FIRST focus, though: useCachedResource already fetches when it
+  // mounts, so firing here too sent two identical callables off together on
+  // every first open. Against a cold function that is two cold starts racing,
+  // and the screen waits for the slower one — the single biggest reason this
+  // screen "loads late". Every later focus still revalidates.
+  const firstFocus = useRef(true);
   useFocusEffect(
     useCallback(() => {
+      if (firstFocus.current) {
+        firstFocus.current = false;
+        return;
+      }
       void reload();
     }, [reload]),
   );
@@ -98,7 +117,39 @@ export default function BusinessAdsHome() {
           <Text style={styles.back}>←</Text>
         </Pressable>
         <Text style={styles.headerTitle}>Find my Customers</Text>
-        <View style={styles.headerBtn} />
+        {/* ── "+", top right (owner, 2026-11-17) ──
+            A second offer used to be reachable only from a "+ New offer" link
+            halfway down the page, under the results — so an advertiser with a
+            3-slot plan had to scroll past their own numbers to find it. The
+            plus is where every app puts "one more", and it is shown only while
+            there is a slot free to put one in: a disabled plus that explains
+            itself in an alert is kinder than one that silently does nothing,
+            so when the slots are full it says so. */}
+        {canAddAd ? (
+          <Pressable
+            onPress={() =>
+              slotsFull
+                ? Alert.alert(
+                    'All your offer slots are running',
+                    `Your plan runs ${advertiser?.adSlots ?? 1} offer${
+                      (advertiser?.adSlots ?? 1) === 1 ? '' : 's'
+                    } at a time. Pause or delete one below, or widen your plan, to add another.`,
+                  )
+                : router.push('/passenger/business-ads/compose')
+            }
+            hitSlop={12}
+            style={[styles.headerBtn, styles.headerAdd, slotsFull && styles.headerAddOff]}
+            accessibilityRole="button"
+            accessibilityLabel="New offer"
+            accessibilityHint={
+              slotsFull ? 'Your offer slots are all in use' : 'Write and publish another offer'
+            }
+          >
+            <Text style={[styles.headerAddTxt, slotsFull && styles.headerAddTxtOff]}>+</Text>
+          </Pressable>
+        ) : (
+          <View style={styles.headerBtn} />
+        )}
       </View>
 
       <ScrollView
@@ -172,10 +223,22 @@ const FEATURES = [
   { icon: '💬', title: 'Queries', body: 'Customers ask about the offer and you reply from here.' },
 ];
 
+/**
+ * How to put an ad up, in the order the screens ask for it.
+ *
+ * Written as instructions rather than benefits (owner, 2026-11-17): a
+ * shopkeeper who has never advertised does not need another sentence about
+ * reach, they need to know that it is a picture, a line of text, a radius, a
+ * number of days and a bank transfer — and that a person checks it before it
+ * goes anywhere. Five steps, because hiding the payment and the review inside
+ * "publish your offer" is what makes the first one feel like a trapdoor.
+ */
 const STEPS = [
-  { title: 'Choose your reach', body: 'Drag the radius — the price moves with it. Rs 300 covers the first km.' },
-  { title: 'Publish your offer', body: 'Picture, business name and the deal — live after approval.' },
-  { title: 'Get seen and asked', body: 'Watch who opened it and answer their questions.' },
+  { title: 'Write your offer', body: 'One picture, your shop’s name and the deal — e.g. “30% off all pizzas this Sunday”.' },
+  { title: 'Pick how far', body: 'Drag the radius. Rs 300 covers the first km for 30 days; every km after adds Rs 60.' },
+  { title: 'Pick how many days', body: 'A weekend, a week, a month — you choose, and the price follows the days.' },
+  { title: 'Pay and send it in', body: 'One transfer to Velocity Rides, upload the screenshot, and a person checks your offer.' },
+  { title: 'It goes out, and you watch', body: 'Approved offers land on phones near your shop. See how many opened it, and answer what they ask.' },
 ];
 
 /**
@@ -214,8 +277,8 @@ function PriceLadder() {
         ))}
       </View>
       <Text style={styles.ladderNote}>
-        Runs {p.planDays} days from approval. Wider than {RADIUS_PICKER_MAX_KM} km? Type the
-        number on the next screen.
+        Those are {p.planDays}-day prices. You pick the days on the next screen — fewer
+        days cost less, and any radius up to {p.maxRadiusKm} km can be typed in.
       </Text>
     </Glass>
   );
@@ -261,10 +324,12 @@ function Pitch({ data, onStart }: { data: BusinessAdDashboard; onStart: () => vo
       <SectionTitle>What it costs</SectionTitle>
       <PriceLadder />
 
-      <PrimaryButton label="Get started" onPress={onStart} />
-
+      {/* How BEFORE the button, not under it (owner, 2026-11-17). Someone who
+          has never placed an ad will not press "Get started" on a screen that
+          has only told them what it costs; the five steps are what turn this
+          from a price list into something they know how to do. */}
+      <SectionTitle>How to put your offer up</SectionTitle>
       <View style={styles.stepsCard}>
-        <Text style={styles.stepsTitle}>How it works</Text>
         {STEPS.map((step, i) => (
           <View key={step.title} style={styles.stepRow}>
             <View style={styles.stepNum}>
@@ -276,7 +341,13 @@ function Pitch({ data, onStart }: { data: BusinessAdDashboard; onStart: () => vo
             </View>
           </View>
         ))}
+        <Text style={styles.stepsFoot}>
+          Takes about five minutes. Nothing goes out until we approve it, and your days
+          start on the day we do.
+        </Text>
       </View>
+
+      <PrimaryButton label="Get started" onPress={onStart} />
     </View>
   );
 }
@@ -608,9 +679,21 @@ function DemoNotificationCard() {
             yours. Only this phone is notified.
           </Text>
         </View>
-        <View style={styles.demoChip}>
-          <Text style={styles.demoChipTxt}>PREVIEW</Text>
-        </View>
+        {/* The chip used to be a plain View that said PREVIEW — so the one
+            word on this screen that looks most like a button was the only
+            thing on it that did nothing when pressed, and people pressed it
+            expecting a preview. It now opens the full offer screen: the page a
+            customer lands on when they tap the notification, which is the half
+            of the preview the tray mock below cannot show. */}
+        <Pressable
+          style={({ pressed }) => [styles.demoChip, pressed && { opacity: 0.7 }]}
+          onPress={() => router.push('/passenger/offer/demo')}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="Preview the offer page a customer opens"
+        >
+          <Text style={styles.demoChipTxt}>PREVIEW ›</Text>
+        </Pressable>
       </View>
 
       {needsPermission ? <PermissionAsk blocked={permission === 'blocked'} onAsk={ask} onOpenSettings={openSettings} /> : null}
@@ -756,6 +839,22 @@ const styles = themed(() => StyleSheet.create({
   headerBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   back: { fontSize: 22, color: colors.text },
   headerTitle: { fontSize: 17, fontWeight: '800', color: colors.text },
+  /** The "+": brand lime, because adding an offer is what this screen is for. */
+  headerAdd: {
+    backgroundColor: colors.primary,
+  },
+  headerAddOff: {
+    backgroundColor: colors.glassChip,
+  },
+  headerAddTxt: {
+    fontSize: 26,
+    lineHeight: 30,
+    fontWeight: '900',
+    color: colors.btnText,
+    // The glyph sits high in its box at this weight; this drops it onto centre.
+    marginTop: -2,
+  },
+  headerAddTxtOff: { color: colors.muted },
   body: { padding: 16, paddingBottom: 40, gap: 14 },
 
   // ── Pitch
@@ -820,7 +919,15 @@ const styles = themed(() => StyleSheet.create({
     padding: 16,
     gap: 12,
   },
-  stepsTitle: { fontSize: 15, fontWeight: '900', color: colors.text },
+  stepsFoot: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: colors.muted,
+    lineHeight: 17,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: 12,
+  },
   stepRow: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
   stepNum: {
     width: 26,

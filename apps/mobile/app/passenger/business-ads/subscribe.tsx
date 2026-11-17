@@ -60,10 +60,16 @@ import { useCurrentLocation } from '../../../src/hooks/location';
 import { useCachedResource } from '../../../src/lib/cachedResource';
 import {
   adPrice,
+  adPricePerDay,
   adPricing,
+  clampPlanDays,
+  DAY_STEPS,
+  MAX_PLAN_DAYS,
+  MIN_PLAN_DAYS,
   RADIUS_PICKER_MAX_KM,
   type AdPricing,
 } from '../../../src/lib/adPricing';
+import { OfferPreview } from '../../../src/ui/businessAds';
 import {
   uploadBusinessAdImage,
   uploadBusinessAdPaymentProof,
@@ -118,6 +124,13 @@ export default function BusinessAdSubscribe() {
   const address = addressEdit ?? location.address ?? '';
   const [contactPhone, setContactPhone] = useState('');
   const [radiusKm, setRadiusKm] = useState(1);
+  /**
+   * How long it runs. Null until they choose, so the screen shows the standard
+   * run (the ladder's own `planDays`) rather than a number we invented before
+   * the server's settings landed — and so a reprice of `planDays` moves the
+   * default instead of leaving it stuck on this build's 30.
+   */
+  const [daysPick, setDaysPick] = useState<number | null>(null);
 
   // Step 2 — the transfer.
   const [method, setMethod] = useState<BusinessAdPaymentMethod>('easypaisa');
@@ -125,7 +138,8 @@ export default function BusinessAdSubscribe() {
   const [proofUri, setProofUri] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const price = adPrice(pricing, radiusKm);
+  const days = daysPick ?? pricing.planDays;
+  const price = adPrice(pricing, radiusKm, days);
 
   // The step slides in rather than cutting: the screen is one flow, and a card
   // arriving from the right says "next" without a word.
@@ -169,6 +183,7 @@ export default function BusinessAdSubscribe() {
 
       await api.submitBusinessAdApplication({
         radiusKm,
+        days,
         lat: location.coords.lat,
         lng: location.coords.lng,
         address: address.trim() || undefined,
@@ -224,8 +239,22 @@ export default function BusinessAdSubscribe() {
             <>
               <Text style={styles.stepTitle}>Your offer</Text>
               <Text style={styles.stepSub}>
-                This is exactly what people near you will see in their notification.
+                Write it here and watch the notification above change as you type — that
+                card is exactly what lands on phones near your shop.
               </Text>
+
+              {/* The preview, live, at the top. It used to exist only on the
+                  composer — the screen AFTER approval — so the one place the
+                  offer is actually written showed nothing, and the word
+                  "PREVIEW" on this flow pointed at a sample someone else's
+                  business. This is theirs, from the first keystroke. */}
+              <Text style={styles.sectionLabel}>HOW PEOPLE WILL SEE IT</Text>
+              <OfferPreview
+                businessName={businessName}
+                title={title}
+                offerDetails={offerDetails}
+                imageUri={imageUri}
+              />
 
               <Pressable style={styles.photoPicker} onPress={() => pickPhoto(setImageUri)}>
                 {imageUri ? (
@@ -313,7 +342,17 @@ export default function BusinessAdSubscribe() {
               <ReachCard
                 pricing={pricing}
                 radiusKm={radiusKm}
+                days={days}
                 onRadius={setRadiusKm}
+                price={price}
+              />
+
+              <Text style={styles.sectionLabel}>HOW LONG TO RUN</Text>
+              <RunCard
+                pricing={pricing}
+                radiusKm={radiusKm}
+                days={days}
+                onDays={setDaysPick}
                 price={price}
               />
 
@@ -338,8 +377,8 @@ export default function BusinessAdSubscribe() {
             <>
               <Text style={styles.stepTitle}>Send {formatPKR(price)}</Text>
               <Text style={styles.stepSub}>
-                {radiusKm} km for {pricing.planDays} days. Transfer to one of the accounts
-                below, then upload the screenshot.
+                {radiusKm} km for {days} day{days === 1 ? '' : 's'}. Transfer to one of the
+                accounts below, then upload the screenshot.
               </Text>
 
               <View style={styles.methodRow}>
@@ -412,13 +451,16 @@ export default function BusinessAdSubscribe() {
 export function ReachCard({
   pricing,
   radiusKm,
+  days,
   onRadius,
   price,
 }: {
   pricing: AdPricing;
   radiusKm: number;
+  /** The chosen run, so the figure above the slider is the real total. */
+  days?: number;
   onRadius: (km: number) => void;
-  /** Whole rupees, for this radius. */
+  /** Whole rupees, for this radius and run. */
   price: number;
 }) {
   const [pop] = useState(() => new Animated.Value(1));
@@ -443,7 +485,9 @@ export function ReachCard({
               {formatPKR(price)}
             </Text>
           </Animated.View>
-          <Text style={styles.reachPkr}>for {pricing.planDays} days, one offer</Text>
+          <Text style={styles.reachPkr}>
+            for {days ?? pricing.planDays} days, one offer
+          </Text>
         </View>
         <View style={styles.reachKmBox}>
           <Text style={styles.reachKm}>{radiusKm}</Text>
@@ -478,30 +522,158 @@ export function ReachCard({
       </View>
 
       {/* Past the slider's end there is no screen left, so the number is typed
-          (owner, 2026-11-14) and priced as it is typed. */}
-      <View style={[styles.manual, over && styles.manualOn]}>
-        <Text style={styles.manualLabel}>Wider than {RADIUS_PICKER_MAX_KM} km? Type it</Text>
+          (owner, 2026-11-14) and priced as it is typed.
+
+          It used to clamp in silence: a shopkeeper who typed 80 saw the box
+          keep their 80, the price stop moving and the km read 50, with nothing
+          anywhere saying why — which is indistinguishable from the box being
+          broken. Now the ceiling is stated before they hit it, and hitting it
+          snaps the box to the number they are actually being sold. */}
+      <View style={[styles.manual, (over || !!typed) && styles.manualOn]}>
+        <Text style={styles.manualLabel}>Any radius up to {pricing.maxRadiusKm} km — type it</Text>
         <TextInput
           style={styles.manualField}
           value={typed ?? (over ? String(radiusKm) : '')}
           onChangeText={(t) => {
-            const clean = t.replace(/[^0-9.]/g, '').slice(0, 6);
-            setTyped(clean);
+            // One decimal point, and never a leading one: "1.2.3" and ".5" are
+            // both things a decimal-pad will happily produce.
+            const clean = t
+              .replace(/[^0-9.]/g, '')
+              .replace(/^\./, '0.')
+              .replace(/(\..*)\./g, '$1')
+              .slice(0, 6);
             const km = Number(clean);
-            if (Number.isFinite(km) && km >= 0.5) onRadius(Math.min(km, pricing.maxRadiusKm));
+            if (clean !== '' && Number.isFinite(km) && km >= 0.5) {
+              const sold = Math.min(km, pricing.maxRadiusKm);
+              // Show the capped figure rather than the typed one, so the box
+              // and the price can never disagree about what is being bought.
+              setTyped(sold === km ? clean : String(sold));
+              onRadius(sold);
+            } else {
+              setTyped(clean);
+            }
           }}
           keyboardType="decimal-pad"
-          placeholder={`${RADIUS_PICKER_MAX_KM + 1}–${pricing.maxRadiusKm}`}
+          placeholder={`e.g. ${RADIUS_PICKER_MAX_KM + 30}`}
           placeholderTextColor={colors.muted}
           maxLength={6}
+          accessibilityLabel={`Radius in kilometres, up to ${pricing.maxRadiusKm}`}
         />
         <Text style={styles.manualUnit}>km</Text>
       </View>
+      {radiusKm >= pricing.maxRadiusKm ? (
+        <Text style={styles.manualCap}>
+          {pricing.maxRadiusKm} km is the widest we sell — that is the whole city and
+          then some.
+        </Text>
+      ) : null}
 
       <Text style={styles.reachNote}>
-        {pricing.includedKm} km is in the {formatPKR(adPrice(pricing, pricing.includedKm))}; every
-        km after that adds {formatPKR(pricing.perKmPkr)}. Everyone inside your radius gets your
-        offer — again every {pricing.notifyCooldownHours} hours while it runs.
+        {pricing.includedKm} km is in the {formatPKR(adPrice(pricing, pricing.includedKm))} for{' '}
+        {pricing.planDays} days; every km after that adds {formatPKR(pricing.perKmPkr)}. Everyone
+        inside your radius gets your offer — again every {pricing.notifyCooldownHours} hours
+        while it runs.
+      </Text>
+    </Glass>
+  );
+}
+
+/**
+ * How many days it runs.
+ *
+ * The 3/6/12-month plans were dropped with the bands (2026-11-14) and nothing
+ * replaced them, which left the buy flow with no duration control at all: every
+ * ad was a flat 30 days whether the shopkeeper wanted a weekend or a quarter.
+ * Days, not months, because that is the unit a shop thinks in — "Sunday sale,
+ * run it three days" — and because a month is just 30 of them on the chips.
+ *
+ * Priced pro-rata from the ladder, so the per-day rate under the buttons is the
+ * number they can check against the total themselves.
+ */
+function RunCard({
+  pricing,
+  radiusKm,
+  days,
+  onDays,
+  price,
+}: {
+  pricing: AdPricing;
+  radiusKm: number;
+  days: number;
+  onDays: (days: number) => void;
+  price: number;
+}) {
+  const [typed, setTyped] = useState<string | null>(null);
+  const perDay = adPricePerDay(pricing, radiusKm);
+  const custom = !DAY_STEPS.includes(days as (typeof DAY_STEPS)[number]);
+
+  return (
+    <Glass radius={20} style={styles.reach}>
+      <View style={styles.reachTop}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.runDays}>
+            {days} day{days === 1 ? '' : 's'}
+          </Text>
+          <Text style={styles.reachPkr}>
+            {formatPKR(Math.round(perDay))} a day at {radiusKm} km
+          </Text>
+        </View>
+        <View style={styles.reachKmBox}>
+          <Text style={styles.reachKm} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5}>
+            {formatPKR(price)}
+          </Text>
+          <Text style={styles.reachKmUnit}>total</Text>
+        </View>
+      </View>
+
+      <View style={styles.chipRow}>
+        {DAY_STEPS.map((d) => (
+          <Pressable
+            key={d}
+            style={[styles.chip, days === d && styles.chipOn]}
+            onPress={() => {
+              setTyped(null);
+              onDays(d);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={`${d} days`}
+            accessibilityState={{ selected: days === d }}
+          >
+            <Text style={[styles.chipTxt, days === d && { color: colors.primary }]}>{d}</Text>
+          </Pressable>
+        ))}
+      </View>
+
+      <View style={[styles.manual, (custom || !!typed) && styles.manualOn]}>
+        <Text style={styles.manualLabel}>
+          Another number of days? Type it ({MIN_PLAN_DAYS}–{MAX_PLAN_DAYS})
+        </Text>
+        <TextInput
+          style={styles.manualField}
+          value={typed ?? (custom ? String(days) : '')}
+          onChangeText={(t) => {
+            const clean = t.replace(/[^0-9]/g, '').slice(0, 3);
+            const n = Number(clean);
+            if (clean !== '' && Number.isFinite(n) && n >= MIN_PLAN_DAYS) {
+              const sold = clampPlanDays(n, pricing.planDays);
+              setTyped(sold === n ? clean : String(sold));
+              onDays(sold);
+            } else {
+              setTyped(clean);
+            }
+          }}
+          keyboardType="number-pad"
+          placeholder="e.g. 45"
+          placeholderTextColor={colors.muted}
+          maxLength={3}
+          accessibilityLabel={`Days to run, ${MIN_PLAN_DAYS} to ${MAX_PLAN_DAYS}`}
+        />
+        <Text style={styles.manualUnit}>days</Text>
+      </View>
+
+      <Text style={styles.reachNote}>
+        The {days} days start the day we approve you, not the day you pay — the review
+        queue never costs you a day. Renew any time from Find my Customers.
       </Text>
     </Glass>
   );
@@ -729,6 +901,8 @@ const styles = themed(() => StyleSheet.create({
   reachKm: { fontSize: 22, fontWeight: '900', color: colors.text },
   reachKmUnit: { fontSize: 10, fontWeight: '800', color: colors.muted, letterSpacing: 0.8 },
   reachNote: { fontSize: 11, fontWeight: '600', color: colors.muted, lineHeight: 16 },
+  /** The run's headline figure. Days, where the radius card puts rupees. */
+  runDays: { fontSize: 34, fontWeight: '900', color: colors.primary, letterSpacing: -1 },
 
   /** The slider: a tall touch area so a thumb can find a 6 px line. */
   sliderHit: { height: 40, justifyContent: 'center' },
@@ -779,6 +953,8 @@ const styles = themed(() => StyleSheet.create({
     color: colors.text,
   },
   manualUnit: { fontSize: 11, fontWeight: '800', color: colors.muted },
+  /** Said only once the ceiling is actually reached — before that it is noise. */
+  manualCap: { fontSize: 11, fontWeight: '700', color: colors.primary, lineHeight: 16 },
 
   methodRow: { flexDirection: 'row', gap: 8 },
   methodChip: {

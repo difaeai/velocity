@@ -31,7 +31,13 @@ import { encodeGeohash } from '../lib/geohash';
 import { docId, invalid, requireAdmin, requireAuth } from '../lib/guards';
 import { notifyUser } from '../lib/fcm';
 import { rateLimit } from '../lib/ratelimit';
-import { adPrice, getBusinessAdSettings } from './config';
+import {
+  adPrice,
+  clampPlanDays,
+  getBusinessAdSettings,
+  MAX_PLAN_DAYS,
+  MIN_PLAN_DAYS,
+} from './config';
 import type { BusinessAdApplicationStatus, BusinessAdvertiserStatus } from './types';
 
 /** Documents must live in our own bucket — never a URL the client made up. */
@@ -56,6 +62,11 @@ const RADIUS_CEILING_KM = 2000;
 const submitSchema = z.object({
   /** Radius in km. The price follows from it — see businessAds/config. */
   radiusKm: z.number().min(0.5).max(RADIUS_CEILING_KM),
+  /**
+   * How many days the ad should run for. Optional so an older build, which has
+   * no day picker, still submits and still gets the standard run.
+   */
+  days: z.number().int().min(MIN_PLAN_DAYS).max(MAX_PLAN_DAYS).optional(),
   /** The shop's own coordinates: the centre of every radius check. */
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
@@ -160,7 +171,10 @@ export const submitBusinessAdApplication = onCall(async (req) => {
     invalid('Your advertising request is already awaiting approval.');
   }
 
-  const price = adPrice(settings, data.radiusKm);
+  // The buyer's days, clamped here rather than trusted: this is the figure the
+  // price is derived from and the one the plan's expiry is counted in.
+  const planDays = clampPlanDays(data.days, settings.planDays);
+  const price = adPrice(settings, data.radiusKm, planDays);
 
   await appRef.set({
     uid,
@@ -169,7 +183,7 @@ export const submitBusinessAdApplication = onCall(async (req) => {
     // settings, so a reprice mid-review cannot change what someone already paid.
     radiusKm: data.radiusKm,
     adSlots: settings.adSlots,
-    planDays: settings.planDays,
+    planDays,
     price,
 
     center: {
@@ -197,13 +211,18 @@ export const submitBusinessAdApplication = onCall(async (req) => {
     updatedAt: FieldValue.serverTimestamp(),
   });
 
-  logger.info('Business ad application submitted', { uid, radiusKm: data.radiusKm, price });
+  logger.info('Business ad application submitted', {
+    uid,
+    radiusKm: data.radiusKm,
+    planDays,
+    price,
+  });
 
   return {
     ok: true,
     status: 'pending' as BusinessAdApplicationStatus,
     price,
-    planDays: settings.planDays,
+    planDays,
     adSlots: settings.adSlots,
   };
 });
@@ -227,13 +246,18 @@ export const adminReviewBusinessAdApplication = onCall(async (req) => {
 
   const settings = await getBusinessAdSettings();
   const radiusKm = parsed.data.radiusKm ?? (snap.get('radiusKm') as number);
+  // The days the applicant bought. Re-pricing below is keyed off these, so an
+  // approval onto a narrower radius shortens the bill, never the run.
+  const planDays = clampPlanDays(
+    snap.get('planDays') as number | undefined,
+    settings.planDays,
+  );
   // An approval onto a narrower radius re-prices with it; otherwise the price
   // the applicant was quoted stands, whatever the list says today.
   const price =
     parsed.data.radiusKm !== undefined
-      ? adPrice(settings, radiusKm)
-      : ((snap.get('price') as number | undefined) ?? adPrice(settings, radiusKm));
-  const planDays = (snap.get('planDays') as number | undefined) ?? settings.planDays;
+      ? adPrice(settings, radiusKm, planDays)
+      : ((snap.get('price') as number | undefined) ?? adPrice(settings, radiusKm, planDays));
 
   // The clock starts at approval, not at payment: the advertiser should not lose
   // days to the review queue. A renewal extends from whichever is later — the
