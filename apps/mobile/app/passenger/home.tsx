@@ -45,9 +45,8 @@ import { TravelAreasPill, TravelAreasSheet } from '../../src/ui/TravelAreas';
 import { PassengerDrawer } from '../../src/ui/PassengerDrawer';
 import { TravelMateCard } from '../../src/ui/TravelMateCard';
 import { EarnCard } from '../../src/ui/EarnCard';
-import { ArrowIcon, MicIcon, SearchIcon } from '../../src/ui/ServiceIcons';
+import { ArrowIcon, SearchIcon } from '../../src/ui/ServiceIcons';
 import { MotoIcon, PoolIcon } from '../../src/ui/RideIcons';
-import { isRecognitionAvailable } from '../../src/voice/speech';
 
 /**
  * Which DEFAULT_SNAP_POINTS height the booking sheet opens at. Named here because
@@ -146,7 +145,6 @@ export default function PassengerHome() {
 
   // Checked once on mount rather than per render: the answer is a property of
   // the handset and cannot change while the app is open.
-  const [voiceAvailable] = useState(() => isRecognitionAvailable());
 
   // Register FCM push token on first load
   useEffect(() => {
@@ -369,20 +367,17 @@ export default function PassengerHome() {
              this card. It governs shared seats only, so it now lives with them,
              below.)
 
-             THE MIC LIVES INSIDE "WHERE TO?" (owner, 2026-11-17)
-             It used to be a tile of its own beside the card, which read as a
-             separate feature rather than as the other way to do the same thing.
-             Speaking a destination IS "where to?", so the mic now sits in the
-             card, directly after the words — the rider's eye reaches "Where
-             to?" and the two ways to answer it are both right there. Two
-             Pressables side by side in one card rather than one nested in the
-             other: nesting makes which one got the tap a matter of responder
-             order, and this is a 46px target next to a full-width one.
+             "Where to?" takes every pixel My Routes does not, because it is
+             the primary action.
 
-             When there is no speech recogniser (typically no-GMS handsets) the
-             mic is not rendered at all and the words take the width back.
+             THE MIC IS NOT HERE (owner, 2026-11-18)
+             It briefly sat inside this card. It belongs on the booking screen
+             instead, beside that screen's own "Where to?" heading — that is
+             where somebody is actually answering the question, and a mic on
+             the sheet only ever sent them there anyway. See
+             app/passenger/booking.tsx.
 
-             The tile the mic vacated is now My Routes — the rider's own saved
+             The tile beside this card is My Routes — the rider's own saved
              trips, which is the other thing they come to this sheet to do. ── */}
         <View style={styles.heroRow}>
           <View style={styles.searchHero}>
@@ -406,20 +401,6 @@ export default function PassengerHome() {
               </View>
             </Pressable>
 
-            {voiceAvailable ? (
-              <Pressable
-                style={({ pressed }) => [styles.searchHeroMic, pressed && styles.searchHeroMicOn]}
-                onPress={() => router.push('/passenger/voice')}
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityLabel="Bol kar book karein — book a ride by speaking"
-              >
-                <MicIcon size={20} color={colors.primary} />
-                <Text style={styles.searchHeroMicTxt} numberOfLines={1}>
-                  Bol kar
-                </Text>
-              </Pressable>
-            ) : null}
           </View>
 
           {/* My Routes is the WHOLE app's, not the corporate/students
@@ -1029,34 +1010,6 @@ const styles = themed(() => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-  },
-  /* ── The mic, inside the card and after the words (owner, 2026-11-17) ──
-     A lime pill rather than a bare icon: at 46px it has to read as a button to
-     someone who has never pressed it, and the word under the mic is what tells
-     a rider who cannot comfortably read English that it listens. "Bol kar" on
-     one line — the full "Bol kar book karein" is the accessibility label and
-     the voice screen's own heading, which is where there is room for it. */
-  searchHeroMic: {
-    width: 56,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 2,
-    alignSelf: 'stretch',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(204,255,0,0.35)',
-    backgroundColor: 'rgba(204,255,0,0.10)',
-    paddingVertical: 6,
-  },
-  searchHeroMicOn: {
-    backgroundColor: 'rgba(204,255,0,0.22)',
-  },
-  searchHeroMicTxt: {
-    fontSize: 9.5,
-    lineHeight: 11,
-    fontWeight: '800',
-    color: colors.primary,
-    letterSpacing: 0.2,
   },
   searchHeroIcon: {
     width: 46,

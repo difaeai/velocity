@@ -532,6 +532,9 @@ function Scene({ k }: { k: StepKey }) {
               ['🎬', 'Content', 'On schedule'],
               ['💸', 'Ads', 'Inside your limit'],
               ['💬', 'Comments', 'Answered'],
+              // The SEO agent earns a tile of its own (owner, 2026-11-17): it
+              // is the only one that works on the customer's own website.
+              ['🔍', 'SEO', '6 fixes for your dev'],
               ['🤝', 'Leads', '1 reply to send'],
             ].map(([icon, label, state], i) => (
               <div key={label} className={`${s.card} ${s.kpi} ${s.a}`} style={d(0.2 + i * 0.3)}>

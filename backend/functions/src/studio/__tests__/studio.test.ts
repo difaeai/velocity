@@ -421,13 +421,14 @@ describe('paying', () => {
     ).rejects.toThrow(/Already approved/);
   });
 
-  it('a yearly payment is priced 3% off and adds a year when approved', async () => {
+  it('a yearly payment is priced $3 a month off and adds a year when approved', async () => {
     const wid = await signUp('content');
     const res = (await studioSubmitPayment.run(
       asUser(paid(wid, 'research', 'EP-445566', { billing: 'year' }), OWNER, { ws: wid }),
     )) as { paymentId: string };
     const pay = (await db().doc(`studioPayments/${res.paymentId}`).get()).data()!;
-    expect(pay).toMatchObject({ billing: 'year', amountUsd: 232.8 });
+    // Research is $20 a month, $17 billed yearly (owner, 2026-11-18).
+    expect(pay).toMatchObject({ billing: 'year', amountUsd: 17 * 12 });
 
     const before = Date.now();
     await adminDecideStudioPayment.run(asUser({ paymentId: res.paymentId, approve: true }, ADMIN, { role: 'admin' }));

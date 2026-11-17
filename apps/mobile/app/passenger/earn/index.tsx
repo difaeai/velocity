@@ -180,18 +180,84 @@ export default function EarnLanding() {
 
         <View style={s.stepsCard}>
           <Text style={s.ruleTitle}>How it works</Text>
-          <Step n={1} text="Choose Starter or Pro, pay for your plan, and apply with your CNIC or any identity document." />
-          <Step n={2} text="Our team verifies you. Both your fleets are created automatically." />
+          <Step n={1} text="Pick your way in below and pay for it — we already have your name, so there is nothing to fill in." />
+          <Step n={2} text="Our team checks your payment. Both your fleets are created automatically." />
           <Step n={3} text="Share your 5-digit code — drivers and passengers both use the same one." />
           <Step n={4} text="Earn on every genuine completed ride — and withdraw." />
         </View>
 
-        <PrimaryButton
-          label="Apply for Partner Program"
-          onPress={() => router.push('/passenger/earn/apply')}
+        {/* ── THREE WAYS IN (owner, 2026-11-18) ───────────────────────────
+            In the owner's order: the lower share first, then the higher one,
+            then the Ambassador Program — the only one nobody buys. The two
+            paid ones go to the same form; the third goes to an application an
+            admin approves, with no payment anywhere in it. ── */}
+        <Text style={s.waysTitle}>Choose how you earn</Text>
+
+        <WayCard
+          kicker="STARTER"
+          title="Lower share, lowest price"
+          body="The smallest way in. You earn a share of Velocity Rides' commission on every genuine ride your drivers and passengers finish."
+          cta="Choose Starter"
+          onPress={() => router.push('/passenger/earn/apply?tier=free')}
+        />
+
+        <WayCard
+          best
+          kicker="PRO"
+          title="Our highest share"
+          body="The most we pay: four times the Starter rate on your driver fleet, and more on your passenger fleet. It also comes with your own fleet portal on the web."
+          cta="Choose Pro"
+          onPress={() => router.push('/passenger/earn/apply?tier=pro')}
+        />
+
+        <WayCard
+          kicker="NO PAYMENT"
+          title="Velocity Ambassador Program"
+          body="Buy nothing. Apply with your CV or your CNIC, and if we approve you, you work two targets for a monthly salary — people you bring onto the app, and people who join Earn with Velocity on your code."
+          cta="Apply to be an Ambassador"
+          onPress={() => router.push('/passenger/earn/ambassador')}
         />
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+/**
+ * One of the three ways into the program.
+ *
+ * Deliberately a card rather than a row of buttons: these are not three
+ * settings of one thing, they are three different deals, and the one a reader
+ * picks should be picked from what it says rather than from its price.
+ */
+function WayCard({
+  kicker,
+  title,
+  body,
+  cta,
+  onPress,
+  best,
+}: {
+  kicker: string;
+  title: string;
+  body: string;
+  cta: string;
+  onPress: () => void;
+  best?: boolean;
+}) {
+  return (
+    <Pressable
+      style={({ pressed }) => [s.wayCard, best && s.wayCardBest, pressed && { opacity: 0.85 }]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${title}. ${cta}`}
+    >
+      <View style={[s.wayKicker, best && s.wayKickerBest]}>
+        <Text style={[s.wayKickerTxt, best && s.wayKickerTxtBest]}>{kicker}</Text>
+      </View>
+      <Text style={s.wayTitle}>{title}</Text>
+      <Text style={s.wayBody}>{body}</Text>
+      <Text style={[s.wayCta, best && { color: colors.primary }]}>{cta} ›</Text>
+    </Pressable>
   );
 }
 
@@ -446,6 +512,32 @@ const s = themed(() => StyleSheet.create({
     padding: 18,
     gap: 12,
   },
+  /* ── The three ways in ── */
+  waysTitle: { fontSize: 17, fontWeight: '900', color: colors.text, marginTop: 4 },
+  wayCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 20,
+    padding: 18,
+    gap: 8,
+  },
+  /** Pro: the one we would rather sell, so it carries the brand edge. */
+  wayCardBest: { borderColor: colors.primary, borderWidth: 1.5 },
+  wayKicker: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: colors.glassChip,
+  },
+  wayKickerBest: { backgroundColor: colors.primary },
+  wayKickerTxt: { fontSize: 10, fontWeight: '900', color: colors.muted, letterSpacing: 0.8 },
+  wayKickerTxtBest: { color: colors.btnText },
+  wayTitle: { fontSize: 17, fontWeight: '900', color: colors.text },
+  wayBody: { fontSize: 13, fontWeight: '600', color: colors.muted, lineHeight: 19 },
+  wayCta: { fontSize: 13, fontWeight: '900', color: colors.text, marginTop: 2 },
+
   step: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   stepNum: {
     width: 26,

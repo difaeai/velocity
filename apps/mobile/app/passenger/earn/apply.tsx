@@ -28,7 +28,7 @@
  * application whose mobile is not already on the caller's Firebase Auth record,
  * and a number only lands there once Firebase verified an SMS code for it.
  */
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -56,7 +56,7 @@ import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
 import { fetchPartnerTiers, getCachedPartnerTiers } from '../../../src/lib/partnerTiers';
-import { uploadCnicDoc, uploadPartnerPaymentProof } from '../../../src/lib/uploadDoc';
+import { uploadPartnerPaymentProof } from '../../../src/lib/uploadDoc';
 import { PrimaryButton } from '../../../src/ui/components';
 import { pickPhoto } from '../../../src/ui/onboarding';
 import { formatPKR, Skeleton } from '../../../src/ui/partner';
@@ -117,12 +117,20 @@ export default function PartnerApply() {
   const router = useRouter();
   const { user } = useAuth();
 
-  const [step, setStep] = useState<'tier' | 'details'>('tier');
+  /**
+   * The landing page's three cards each name their tier, so arriving from one
+   * skips the tier step entirely (owner, 2026-11-18: the choice is made out
+   * there now). Read once as the initial value — a later param change must not
+   * move somebody off the tier they are part-way through buying.
+   */
+  const { tier: tierParam } = useLocalSearchParams<{ tier?: string }>();
+  const picked = tierParam === 'free' || tierParam === 'pro' ? (tierParam as PartnerTier) : null;
+  const [step, setStep] = useState<'tier' | 'details'>(picked ? 'details' : 'tier');
   // Seeded from the prefetch cache, so the plan chooser paints on the first
   // frame instead of making the user watch a skeleton while a callable warms up.
   const [tiers, setTiers] = useState<PartnerTiers | null>(getCachedPartnerTiers);
   const [tiersError, setTiersError] = useState(false);
-  const [tier, setTier] = useState<PartnerTier>('free');
+  const [tier, setTier] = useState<PartnerTier>(picked ?? 'free');
   const [proMonths, setProMonths] = useState<ProPlanMonths>(3);
 
   const [fullName, setFullName] = useState(user?.displayName ?? '');
@@ -186,15 +194,11 @@ export default function PartnerApply() {
   const valid = useMemo(
     () =>
       !!tiers &&
-      fullName.trim().length >= 2 &&
-      city.trim().length >= 2 &&
-      idNumberOk &&
-      photosOk &&
       !!phone &&
       terms &&
       // Both plans are paid, so a receipt is required of everyone.
       !!proof,
-    [tiers, fullName, city, idNumberOk, photosOk, phone, terms, proof],
+    [tiers, phone, terms, proof, proMonths],
   );
 
   function pickIdType(next: IdDocType) {
@@ -212,19 +216,12 @@ export default function PartnerApply() {
       // the admin queue with broken images and get rejected for no reason.
       // One at a time — reading several multi-MB photos into memory at once has
       // killed the app on low-RAM handsets at exactly this moment.
-      const frontUp = await uploadCnicDoc(user.uid, 'front', front!);
-      const backUp = back ? await uploadCnicDoc(user.uid, 'back', back) : null;
       const proofUp = proof ? await uploadPartnerPaymentProof(user.uid, proof) : null;
 
       await api.submitPartnerApplication({
         tier,
-        fullName: fullName.trim(),
-        mobile: phone,
-        idType,
-        cnicNumber: isCnic ? idNumber : idNumber.trim(),
-        cnicFrontUrl: frontUp.url,
-        ...(backUp ? { cnicBackUrl: backUp.url } : {}),
-        city: city.trim(),
+        // Name, number, city and ID are no longer sent: the backend takes the
+        // name off the profile and the number off the verified auth record.
         ...(proofUp
           ? {
               proMonths,
@@ -344,97 +341,29 @@ export default function PartnerApply() {
           </Pressable>
         </View>
 
-        <Text style={s.label}>Full name</Text>
-        <TextInput
-          style={s.input}
-          value={fullName}
-          onChangeText={setFullName}
-          placeholder="As printed on your ID"
-          placeholderTextColor={colors.muted}
-        />
+        {/* ── WHAT WE NO LONGER ASK FOR (owner, 2026-11-18) ────────────────
+             A full name, a city, an identity document, its number and
+             photographs of both of its sides — all of it, gone. "first two
+             options k liye hamne kafi information li hui hai usay limited kr
+             k": the name comes off the profile the app already built, the
+             number off the account's verified phone, and the rest was never
+             needed to sell a commission plan. What is left is the plan and the
+             payment, which is what this screen is actually for.
 
-        <Text style={s.label}>Mobile number</Text>
-        {phone ? (
-          <View style={s.verifiedRow}>
-            <Text style={s.verifiedText}>✅ {phone}</Text>
-            <Text style={s.verifiedHint}>Verified</Text>
-          </View>
-        ) : (
-          <View style={s.verifiedRow}>
-            <Text style={s.verifiedText}>No verified number on this account</Text>
-            <Text style={s.verifiedHint}>Sign in again</Text>
-          </View>
-        )}
-
-        <Text style={s.label}>City</Text>
-        <Pressable style={s.cityField} onPress={() => setCityPickerOpen(true)}>
-          <Text style={city && !cityIsOther ? s.cityValue : s.cityPlaceholder}>
-            {cityIsOther ? 'Other — type it below' : city || 'Select your city'}
+             The verified number stays on screen because it is the one piece of
+             identity that DOES still matter — the backend refuses an
+             application whose number is not the one that passed the OTP. ── */}
+        <View style={s.youCard}>
+          <Text style={s.youLabel}>APPLYING AS</Text>
+          <Text style={s.youName}>{fullName || 'Your Velocity Rides account'}</Text>
+          {phone ? (
+            <Text style={s.youPhone}>✅ {phone} · verified</Text>
+          ) : (
+            <Text style={s.youPhoneBad}>No verified number on this account — sign in again</Text>
+          )}
+          <Text style={s.youHint}>
+            Taken from your profile. Nothing else to fill in — just pick a plan and pay.
           </Text>
-          <Text style={s.cityChevron}>▾</Text>
-        </Pressable>
-        {cityIsOther ? (
-          <TextInput
-            style={[s.input, { marginTop: 8 }]}
-            value={city}
-            onChangeText={setCity}
-            placeholder="Type your city or town"
-            placeholderTextColor={colors.muted}
-            autoFocus
-          />
-        ) : null}
-        <CityPicker
-          visible={cityPickerOpen}
-          onClose={() => setCityPickerOpen(false)}
-          onPick={(name) => {
-            setCityPickerOpen(false);
-            if (name === null) {
-              // "Other": clear the old choice so validation waits for typing.
-              setCityIsOther(true);
-              setCity('');
-            } else {
-              setCityIsOther(false);
-              setCity(name);
-            }
-          }}
-        />
-
-        <Text style={s.label}>Identity document</Text>
-        <Text style={s.idHint}>
-          Any document that proves your identity — CNIC, university card, driving licence or
-          passport.
-        </Text>
-        <View style={s.idTypes}>
-          {ID_TYPES.map((t) => (
-            <Pressable
-              key={t.key}
-              style={[s.idType, idType === t.key && s.idTypeOn]}
-              onPress={() => pickIdType(t.key)}
-            >
-              <Text style={[s.idTypeLabel, idType === t.key && s.idTypeLabelOn]}>{t.label}</Text>
-            </Pressable>
-          ))}
-        </View>
-
-        <Text style={s.label}>{isCnic ? 'CNIC number' : 'ID number'}</Text>
-        <TextInput
-          style={s.input}
-          value={idNumber}
-          onChangeText={(t) => setIdNumber(isCnic ? formatCnic(t) : t)}
-          placeholder={isCnic ? '12345-1234567-1' : 'Number printed on your ID'}
-          placeholderTextColor={colors.muted}
-          keyboardType={isCnic ? 'number-pad' : 'default'}
-          autoCapitalize="characters"
-        />
-
-        <Text style={s.label}>{isCnic ? 'CNIC photos' : 'ID photos'}</Text>
-        <View style={s.uploadRow}>
-          <UploadTile label="Front side" uri={front} onPick={() => pickPhoto(setFront)} />
-          <UploadTile
-            label={isCnic ? 'Back side' : 'Back side (optional)'}
-            uri={back}
-            onPick={() => pickPhoto(setBack)}
-          />
         </View>
 
         {/* ── Both plans: pick a length, pay the bill, then prove it ── */}
@@ -537,8 +466,8 @@ export default function PartnerApply() {
           disabled={!valid}
         />
         {!phone ? <Text style={s.blocker}>Verify your mobile number to submit.</Text> : null}
-        {!photosOk ? (
-          <Text style={s.blocker}>Upload your ID {isCnic ? 'photos' : 'photo'} to submit.</Text>
+        {false ? (
+          <Text style={s.blocker} />
         ) : null}
         {!proof ? (
           <Text style={s.blocker}>Upload your payment screenshot to submit.</Text>
@@ -963,6 +892,22 @@ const s = themed(() => StyleSheet.create({
   termsText: { flex: 1, color: colors.muted, fontSize: 12, lineHeight: 18 },
 
   blocker: { color: colors.muted, fontSize: 12, textAlign: 'center', marginTop: 10 },
+
+  /* ── "Applying as" — what replaced the identity form (owner, 2026-11-18) ── */
+  youCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 16,
+    gap: 4,
+    marginBottom: 6,
+  },
+  youLabel: { fontSize: 10, fontWeight: '900', color: colors.muted, letterSpacing: 0.8 },
+  youName: { fontSize: 17, fontWeight: '900', color: colors.text },
+  youPhone: { fontSize: 13, fontWeight: '700', color: colors.primary },
+  youPhoneBad: { fontSize: 13, fontWeight: '700', color: colors.danger },
+  youHint: { fontSize: 11.5, fontWeight: '600', color: colors.muted, lineHeight: 17, marginTop: 2 },
 
   cityField: {
     flexDirection: 'row',

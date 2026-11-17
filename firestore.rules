@@ -1601,6 +1601,37 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ----- ambassadorApplications/{uid} -------------------------------------
+    // The Velocity Ambassador review queue. It carries a CV or a photo of a
+    // CNIC, so it is readable by its owner and by admins and by nobody else —
+    // and written only by `applyAmbassador`, which is what decides whether the
+    // application exists at all.
+    match /ambassadorApplications/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if false;
+    }
+
+    // ----- ambassadors/{uid} ------------------------------------------------
+    // The approved ambassador: their code, their two counters and the account
+    // they are paid into. Every number here decides whether a person is owed
+    // PKR 50,000, so all of it is server-written — `usersOnboarded` is
+    // incremented by the referral claim and `partnersSold` by the partner
+    // approval, each inside the transaction that makes it true. A client that
+    // could touch these could award itself a salary.
+    match /ambassadors/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if false;
+    }
+
+    // ----- ambassador_referrals/{uid} ---------------------------------------
+    // One recruit's edge to the ambassador whose code they used. The recruit
+    // may read their own (it is how the app knows a code is already bound);
+    // nobody writes it but the server.
+    match /ambassador_referrals/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if false;
+    }
+
     // ----- partner_fleets/{fleetId} -----------------------------------------
     // Readable by any signed-in user: a recruit scanning a QR needs to resolve
     // the code to a fleet before they have any relationship to it. Nothing

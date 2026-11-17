@@ -76,6 +76,20 @@ export async function uploadPartnerPaymentProof(uid: string, uri: string): Promi
 }
 
 /**
+ * A Velocity Ambassador applicant's CV or CNIC photo. Lives under
+ * `partners/{uid}/` with the fee receipts — owner and admin only, since it is
+ * either an identity document or a document carrying their address and history.
+ */
+export async function uploadAmbassadorDoc(
+  uid: string,
+  kind: 'cv' | 'cnic',
+  uri: string,
+): Promise<UploadResult> {
+  const path = `partners/${uid}/ambassador-${kind}-${Date.now()}`;
+  return upload(path, uri);
+}
+
+/**
  * The offer picture that goes out with a business-ad push. Lives under
  * `businessAdMedia/{uid}/` — readable by any signed-in user, because whoever gets
  * the notification has to be able to see the picture.

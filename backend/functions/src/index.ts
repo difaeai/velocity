@@ -474,6 +474,16 @@ export { submitCnicVerification, adminReviewCnicVerification } from './users/cni
 // Freight / business delivery
 export { createFreightRequest, cancelFreightRequest, acceptFreightQuote, adminUpdateFreightStatus } from './freight';
 
+// Velocity Ambassador Program — the third way into Earn with Velocity, and the
+// only one nobody buys: apply, get approved, work two targets for a salary.
+export {
+  applyAmbassador,
+  adminReviewAmbassador,
+  setAmbassadorPayout,
+  getMyAmbassador,
+  adminListAmbassadors,
+} from './ambassadors';
+
 // Find your Customers — business proximity advertising (paid radius + push offers)
 export {
   getBusinessAdPlans,
@@ -634,6 +644,9 @@ export {
   storeSyncNow,
   storeDisconnect,
   storeSalesSync,
+  setSeoSite,
+  runSeoAudit,
+  getSeoReport,
 } from './social';
 
 // Velocity Studio — the desk sold to other businesses: sign-up, manual payments, approvals

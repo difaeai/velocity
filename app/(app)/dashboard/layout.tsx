@@ -103,6 +103,7 @@ const APP_NAV: NavGroup[] = [
     title: 'Growth',
     items: [
       { href: '/dashboard/partners', label: 'Partner Program', icon: 'people' },
+      { href: '/dashboard/ambassadors', label: 'Ambassadors', icon: 'people' },
       { href: '/dashboard/fleet-submissions', label: 'Fleet submissions', icon: 'content' },
       { href: '/dashboard/advertise', label: 'Advertise', icon: 'ads' },
     ],
@@ -165,7 +166,11 @@ const SOCIAL_NAV: NavGroup[] = [
     title: 'Research',
     caption: 'What your market and your competitors are doing.',
     tint: TINT.research,
-    items: [{ href: '/dashboard/social/research', label: 'Research Assistant', icon: 'research' }],
+    items: [
+      { href: '/dashboard/social/research', label: 'Research Assistant', icon: 'research' },
+      // Reads the customer's own site and tells their developer what to add.
+      { href: '/dashboard/social/seo', label: 'SEO', icon: 'seo' },
+    ],
   },
   {
     title: 'Set up once',

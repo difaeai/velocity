@@ -24,6 +24,7 @@ export type NavIconName =
   | 'comments'
   | 'analytics'
   | 'research'
+  | 'seo'
   | 'ads'
   | 'whatsapp'
   | 'funnel'
@@ -94,6 +95,17 @@ const ART: Record<NavIconName, React.ReactNode> = {
       <circle className="ni-lens" cx="11" cy="11" r="6" />
       <path d="m15.4 15.4 4.1 4.1" />
       <path className="ni-sweep" d="M8.4 11a2.6 2.6 0 0 1 2.6-2.6" />
+    </>
+  ),
+  /* SEO: a rising rank, with the magnifier that found it. */
+  seo: (
+    <>
+      <path d="M4 19h16" />
+      <path d="M6.5 19v-4" />
+      <path d="M11 19v-7" />
+      <path className="ni-sweep" d="M15.5 19v-3.2" />
+      <circle className="ni-lens" cx="16.6" cy="7.4" r="3.4" />
+      <path d="m19.2 10 1.9 1.9" />
     </>
   ),
   ads: (
