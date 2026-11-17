@@ -61,7 +61,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { FirebaseError } from 'firebase/app';
 import { doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -297,7 +297,16 @@ export default function DailyTravelScreen() {
   // Only the newest search may paint: an older answer landing late is a different route.
   const searchSeq = useRef(0);
   // The row over the boxes. All and Favourites both need every ride in the city.
-  const [mode, setModeState] = useState<Mode>('pickup');
+  //
+  // `?mode=` opens straight onto one of them — the home sheet's My Routes tile
+  // sends `mine`, because a tile named My Routes that lands on "Leaving from
+  // your pickup" and makes the rider find the chip themselves is a tile that
+  // did not do what it said. Read once, as the initial value: a later param
+  // change must never yank the chip out from under someone mid-browse.
+  const { mode: modeParam } = useLocalSearchParams<{ mode?: string }>();
+  const [mode, setModeState] = useState<Mode>(() =>
+    MODES.some(([m]) => m === modeParam) ? (modeParam as Mode) : 'pickup',
+  );
   const all = mode === 'all' || mode === 'favs';
   // GO (owner, 2026-11-11): the route the rider pressed GO on. Nothing is
   // searched while they are still typing, and nothing at all when the screen

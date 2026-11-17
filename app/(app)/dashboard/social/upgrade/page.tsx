@@ -17,7 +17,7 @@ import {
   STUDIO_CREDIT_PACKS,
   STUDIO_PLAN_IDS,
   STUDIO_PLANS,
-  STUDIO_YEAR_DISCOUNT_PCT,
+  STUDIO_YEAR_SAVING_USD,
   studioPriceUsd,
   studioUsd,
   type StudioBilling,
@@ -56,7 +56,7 @@ export default function UpgradePage() {
           {(['month', 'year'] as const).map((b) => (
             <button key={b} type="button" role="radio" aria-checked={billing === b} onClick={() => setBilling(b)}>
               {b === 'month' ? 'Monthly' : 'Yearly'}
-              {b === 'year' ? <span className={a.save}>Save {STUDIO_YEAR_DISCOUNT_PCT}%</span> : null}
+              {b === 'year' ? <span className={a.save}>Save ${STUDIO_YEAR_SAVING_USD}/mo</span> : null}
             </button>
           ))}
         </div>

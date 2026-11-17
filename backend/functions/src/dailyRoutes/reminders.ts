@@ -19,6 +19,13 @@
  * already running their way, because "3 rides are going your way" is a reason
  * to tap and "it is 8:40" is not.
  *
+ * EVERY SAVED ROUTE, NOT THE SHARING SCREEN'S TWO (owner, 2026-11-17)
+ * It reads the `dailyRoutes` collection GROUP, so it has always covered both
+ * the two legs the ride-sharing screen saves (`sharingGo` / `sharingBack`) and
+ * the routes a rider adds from the Routes tab, whatever kind of ride they book.
+ * What did NOT follow was the wording and the tap: both assumed a shared seat.
+ * They now follow the facts of the minute — see the push below.
+ *
  * WHAT IT IS CAREFUL ABOUT
  *  - A schedule, never a document trigger: one onDocument* in this codebase
  *    blocks every deploy (see the Eventarc note in CLAUDE.md / index.ts).
@@ -151,13 +158,38 @@ export const runRouteReminders = onSchedule(
       const to = place(r.dropoff);
       const trip = from && to ? `${from} to ${to}` : 'your usual trip';
       const title = homeward ? '🏠 Time to book your ride home' : '🚗 Time to book your ride';
+      /**
+       * Where the tap lands, and what the words promise (owner, 2026-11-17:
+       * My Routes is the whole app's, not the corporate/students section's).
+       *
+       * This reminder goes to every saved route — one added from the Routes tab
+       * by a rider who only ever travels alone as much as one saved on the
+       * ride-sharing screen — because the job reads the `dailyRoutes` group,
+       * not one screen's two documents. But both halves of it used to assume
+       * sharing: the words offered a seat in someone else's car, and the tap
+       * opened the ride-sharing screen. For a rider who books solo that is an
+       * answer to a question they never asked.
+       *
+       * So the offer follows what is actually true at that minute. Shared rides
+       * on their route → say so, and land on the screen where a seat is taken.
+       * None → just book their ride, with the destination already filled in.
+       */
+      const data: Record<string, string> =
+        going > 0
+          ? { screen: 'daily-travel' }
+          : {
+              screen: 'daily-route',
+              dropoff: r.dropoff.address ?? to ?? '',
+              dropoffLat: String(r.dropoff.lat),
+              dropoffLng: String(r.dropoff.lng),
+            };
       const body =
         going > 0
           ? `${going} shared ${going === 1 ? 'ride is' : 'rides are'} going your way — ${trip}. ` +
             'Tap to take a seat before they fill.'
-          : `${trip} is about ${LEAD_MIN} minutes away. Tap to book — anyone going your way can share it.`;
+          : `${trip} is about ${LEAD_MIN} minutes away. Tap to book it.`;
       try {
-        await notifyUser(uid, title, body, 'ride', { screen: 'daily-travel' });
+        await notifyUser(uid, title, body, 'ride', data);
         // Stamped only after the push: a failure here must be retried, not swallowed.
         await doc.ref.set({ remindedOn: today }, { merge: true });
         sent++;

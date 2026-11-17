@@ -2,8 +2,14 @@
 
 /**
  * Velocity Studio's three plans as cards, each topped with a short looping film
- * of that team at work, under a Monthly / Yearly switch. Yearly is twelve months
- * less 3% (`studioPriceUsd`) — the same figure the Billing page asks for.
+ * of that team at work, under a Monthly / Yearly switch.
+ *
+ * Both sides of the switch quote a MONTHLY rate (owner, 2026-11-18): $32 a
+ * month, or $29 a month billed yearly — a flat $3 a month saved
+ * (`studioPriceMonthUsd`), with the amount actually charged on the line beneath
+ * (`studioPriceUsd`, the figure the Billing page asks for). It used to put the
+ * whole year's $372 in the big number on the yearly side, which made the
+ * cheaper choice read as the dearer one.
  *
  * Each card rises in the first time it is seen, and its film plays only while
  * the card is on screen. With reduced motion or Data Saver the films show their
@@ -22,7 +28,8 @@ import { useEffect, useRef, useState } from 'react';
 import {
   STUDIO_PLANS,
   STUDIO_TRIAL_USD,
-  STUDIO_YEAR_DISCOUNT_PCT,
+  STUDIO_YEAR_SAVING_USD,
+  studioPriceMonthUsd,
   studioPriceUsd,
   studioUsd,
   type StudioBilling,
@@ -150,7 +157,7 @@ export function StudioPlans() {
         {(['month', 'year'] as const).map((b) => (
           <button key={b} type="button" role="radio" aria-checked={billing === b} onClick={() => setBilling(b)}>
             {b === 'month' ? 'Monthly' : 'Yearly'}
-            {b === 'year' ? <em>Save {STUDIO_YEAR_DISCOUNT_PCT}%</em> : null}
+            {b === 'year' ? <em>Save ${STUDIO_YEAR_SAVING_USD}/mo</em> : null}
           </button>
         ))}
       </div>
@@ -161,6 +168,8 @@ export function StudioPlans() {
           const best = id === 'all';
           const month = studioPriceUsd(id, 'month', raised);
           const year = studioPriceUsd(id, 'year', raised);
+          /** The yearly plan's per-MONTH rate — the figure the card leads with. */
+          const yearMonth = studioPriceMonthUsd(id, 'year', raised);
           const twelve = month * 12;
           return (
             <div
@@ -214,23 +223,30 @@ export function StudioPlans() {
                   <div className={styles.priceBox}>
                     {/* Keyed on billing so the sweep, the unit and the line under it replay when the switch flips. */}
                     <span key={`sheen-${billing}`} className={styles.sheen} aria-hidden />
+                    {/* A MONTHLY rate on both sides of the switch (owner,
+                        2026-11-18: price it the way Claude does). The yearly
+                        side used to put the whole $372 in the big number, which
+                        made the cheaper choice look like the dearer one at a
+                        glance. Now the figure falls — $32 to $29 — and the line
+                        under it says what is actually charged. */}
                     <div className={styles.price}>
                       <strong>
-                        <Count to={studioPriceUsd(id, billing, raised)} />
+                        <Count to={billing === 'year' ? yearMonth : month} />
                       </strong>
-                      <small key={billing}>/{billing}</small>
+                      <small key={billing}>/month</small>
                     </div>
                     <p key={`save-${billing}`} className={styles.save}>
                       {billing === 'year' ? (
                         <>
-                          <s>${twelve}</s> <Count from={month} to={year / 12} /> a month ·{' '}
+                          <s>${month}</s> billed yearly at {studioUsd(year)} ·{' '}
                           <mark>
-                            you save <Count from={0} to={twelve - year} />
+                            you save <Count from={0} to={twelve - year} /> a year
                           </mark>
                         </>
                       ) : (
                         <>
-                          or {studioUsd(year)} a year — save {studioUsd(twelve - year)}
+                          or {studioUsd(yearMonth)} a month billed yearly — save{' '}
+                          {studioUsd(month - yearMonth)} every month
                         </>
                       )}
                     </p>

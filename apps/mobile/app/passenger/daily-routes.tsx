@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { Text, TextInput } from '../../src/ui/Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   addDoc,
   collection,
@@ -133,8 +133,15 @@ export default function DailyRoutesScreen() {
     Date.now(),
   );
 
-  // The screen is "Ride History" now, so it opens on the rides.
-  const [tab, setTab] = useState<Tab>('history');
+  // The screen is "Ride History" now, so it opens on the rides — unless the
+  // caller named a tab. Home's My Routes tile sends `?tab=routes`, because a
+  // tile called My Routes that lands on ride history has not done what it said.
+  // Read once as the initial value: a later param change must never move the
+  // tab under someone who has since picked another.
+  const { tab: tabParam } = useLocalSearchParams<{ tab?: string }>();
+  const [tab, setTab] = useState<Tab>(() =>
+    TABS.some(([t]) => t === tabParam) ? (tabParam as Tab) : 'history',
+  );
   const [routes, setRoutes] = useState<DailyRoute[]>([]);
   const [places, setPlaces] = useState<SavedPlace[]>([]);
   const [loading, setLoading] = useState(true);

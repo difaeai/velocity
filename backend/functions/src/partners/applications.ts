@@ -53,18 +53,43 @@ const CNIC_RE = /^\d{5}-\d{7}-\d$/;
  */
 const ID_TYPES = ['cnic', 'university_card', 'driving_license', 'passport', 'other'] as const;
 
+/**
+ * WHAT WE STOPPED ASKING FOR (owner, 2026-11-18)
+ * ----------------------------------------------
+ * "first two options k liye hamne kafi information li hui hai usay limited kr
+ * k" — the two paid tiers used to demand a full name, a mobile number, a city,
+ * an ID type, an ID number and photographs of both sides of a card, all before
+ * anyone could pay. Every one of those is now OPTIONAL: the name and the number
+ * come off the account the applicant is already signed in with, and the rest is
+ * not asked for at all. What is left is the thing the tier actually is — a plan
+ * length and proof the fee was paid.
+ *
+ * The fields stay in the schema rather than being deleted because an older
+ * build of the app still posts them, and a submission that still carries a CNIC
+ * is fine to store. The refinements below are what changed: none of them is
+ * required any more.
+ *
+ * ONE GUARD LOST A LEG, DELIBERATELY. The duplicate-account check in
+ * referrals.ts compares a recruit's CNIC and phone against the fleet owner's.
+ * With no CNIC collected it has only the phone left — which is why `mobile` is
+ * now filled from `users/{uid}.phoneNumber` server-side rather than left empty:
+ * a verified phone number from the account is better evidence than a typed one
+ * ever was, so the guard is narrower but not weaker on the leg that remains.
+ */
 const submitSchema = z
   .object({
     tier: z.enum(['free', 'pro']),
-    fullName: z.string().trim().min(2).max(100),
-    mobile: z.string().trim().min(10).max(20),
+    /** Optional: taken from the signed-in account when absent. */
+    fullName: z.string().trim().min(2).max(100).optional(),
+    mobile: z.string().trim().min(10).max(20).optional(),
     /** Which document the photos show. Older clients never send it → CNIC. */
     idType: z.enum(ID_TYPES).default('cnic'),
-    cnicNumber: z.string().trim().min(4).max(40),
-    cnicFrontUrl: z.string().url().max(2048),
+    /** No longer asked for. Still accepted from an older build. */
+    cnicNumber: z.string().trim().min(4).max(40).optional(),
+    cnicFrontUrl: z.string().url().max(2048).optional(),
     /** The back side only exists to read on a CNIC; optional for other IDs. */
     cnicBackUrl: z.string().url().max(2048).optional(),
-    city: z.string().trim().min(2).max(80),
+    city: z.string().trim().min(2).max(80).optional(),
     /** How many months of the plan they are buying. Both tiers. */
     proMonths: z.union([z.literal(3), z.literal(6), z.literal(12)]).optional(),
     /** Screenshot of the fee transfer. Both tiers. */
@@ -92,13 +117,11 @@ const submitSchema = z
     message: 'Tell us which account you paid into.',
     path: ['paymentMethod'],
   })
-  .refine((d) => d.idType !== 'cnic' || CNIC_RE.test(d.cnicNumber), {
+  // An ID is no longer asked for, but one that IS sent must still be the right
+  // shape — a half-typed CNIC stored as fact is worse than no CNIC at all.
+  .refine((d) => !d.cnicNumber || d.idType !== 'cnic' || CNIC_RE.test(d.cnicNumber), {
     message: 'CNIC must look like 12345-1234567-1',
     path: ['cnicNumber'],
-  })
-  .refine((d) => d.idType !== 'cnic' || !!d.cnicBackUrl, {
-    message: 'Upload both sides of your CNIC.',
-    path: ['cnicBackUrl'],
   });
 
 const reviewSchema = z.object({
@@ -168,9 +191,9 @@ export const submitPartnerApplication = onCall(async (req) => {
   if (!input.success) invalid(input.error.issues[0]?.message ?? 'Invalid application.');
   const data = input.data;
 
-  const docs = [data.cnicFrontUrl];
-  if (data.cnicBackUrl) docs.push(data.cnicBackUrl);
-  if (data.paymentProofUrl) docs.push(data.paymentProofUrl);
+  const docs = [data.cnicFrontUrl, data.cnicBackUrl, data.paymentProofUrl].filter(
+    (u): u is string => !!u,
+  );
   for (const url of docs) {
     if (!isOwnStorageUrl(url)) invalid('Documents must be uploaded to Velocity Rides storage.');
   }
@@ -185,15 +208,23 @@ export const submitPartnerApplication = onCall(async (req) => {
   if (prevStatus === 'pending') invalid('Your application is already awaiting review.');
   if (prevStatus === 'approved') invalid('Your application was already approved.');
 
-  // The OTP proof. Firebase only writes a phone number onto the auth record
-  // after it verified an SMS code for it, so this check IS the OTP check —
-  // there is no way to satisfy it without having passed the OTP screen.
+  /**
+   * The OTP proof. Firebase only writes a phone number onto the auth record
+   * after it verified an SMS code for it, so this check IS the OTP check —
+   * there is no way to satisfy it without having passed the OTP screen.
+   *
+   * The number is now TAKEN from that record rather than typed (owner,
+   * 2026-11-18: stop asking for details we already have). A build that still
+   * sends one must still send the right one — silently accepting a different
+   * number from an old client would let somebody file under a number they never
+   * verified, which is the one thing this check exists to stop.
+   */
   const authUser = await auth.getUser(uid);
-  const claimed = normalizePhone(data.mobile);
   if (!authUser.phoneNumber) {
     invalid('Verify your mobile number with an OTP before submitting your application.');
   }
-  if (normalizePhone(authUser.phoneNumber) !== claimed) {
+  const claimed = normalizePhone(authUser.phoneNumber);
+  if (data.mobile && normalizePhone(data.mobile) !== claimed) {
     invalid('Submit the same mobile number you verified with the OTP.');
   }
 
@@ -203,32 +234,54 @@ export const submitPartnerApplication = onCall(async (req) => {
   // type: a passport and a university card that happen to share a number are
   // different documents, not one document twice. Applications written before
   // idType existed are all CNICs.
-  const idClash = await db
-    .collection('partner_applications')
-    .where('cnicNumber', '==', data.cnicNumber)
-    .where('status', 'in', ['pending', 'approved'])
-    .limit(10)
-    .get();
-  const clashing = idClash.docs.find(
-    (d) => d.id !== uid && ((d.get('idType') as string | undefined) ?? 'cnic') === data.idType,
-  );
-  if (clashing) {
-    invalid('This ID number is already used by another partner application.');
+  // Only when one was sent at all — an ID is no longer asked for.
+  if (data.cnicNumber) {
+    const idClash = await db
+      .collection('partner_applications')
+      .where('cnicNumber', '==', data.cnicNumber)
+      .where('status', 'in', ['pending', 'approved'])
+      .limit(10)
+      .get();
+    const clashing = idClash.docs.find(
+      (d) => d.id !== uid && ((d.get('idType') as string | undefined) ?? 'cnic') === data.idType,
+    );
+    if (clashing) {
+      invalid('This ID number is already used by another partner application.');
+    }
   }
 
   const settings = await getPartnerSettings();
   const userSnap = await db.doc(`users/${uid}`).get();
 
+  /**
+   * The name, off the profile the app already built (owner, 2026-11-18).
+   *
+   * `onUserCreate` seeds displayName as the placeholder 'New User', which the
+   * rider side already treats as "no name", so it is not accepted as one here
+   * either. A client that still sends a name wins, so an older build is
+   * unaffected.
+   */
+  const profileName =
+    (typeof userSnap.get('name') === 'string' && (userSnap.get('name') as string).trim()) || '';
+  const displayName = (userSnap.get('displayName') as string | undefined) ?? '';
+  const fullName =
+    data.fullName?.trim() ||
+    profileName ||
+    (displayName && displayName !== 'New User' ? displayName.trim() : '');
+  if (!fullName) {
+    invalid('Add your name to your Velocity Rides profile first, then apply.');
+  }
+
   await appRef.set({
     uid,
     tier: data.tier as PartnerTier,
-    fullName: data.fullName,
+    fullName,
     mobile: claimed,
     idType: data.idType,
-    cnicNumber: data.cnicNumber,
-    cnicFrontUrl: data.cnicFrontUrl,
+    cnicNumber: data.cnicNumber ?? null,
+    cnicFrontUrl: data.cnicFrontUrl ?? null,
     cnicBackUrl: data.cnicBackUrl ?? null,
-    city: data.city,
+    city: data.city ?? null,
     photoURL: userSnap.get('photoURL') ?? null,
     // The bill is snapshotted as it stood when they paid — months × that
     // tier's monthly fee — so an admin reviewing next week compares the
@@ -279,6 +332,27 @@ export const adminReviewPartnerApplication = onCall(async (req) => {
     parsed.data.tier ?? ((snap.get('tier') as PartnerTier | undefined) ?? 'free');
   const code = decision === 'approve' ? await mintPartnerCode() : null;
 
+  /**
+   * Did an ambassador bring this partner in? (owner, 2026-11-18)
+   *
+   * This is the ambassador's SECOND target — "15 users signed up on Earn with
+   * Velocity on the same code" — and it is counted here because here is the
+   * moment it becomes true. A sale is not a sale when the application is filed;
+   * it is a sale when an admin approves it.
+   *
+   * Read before the transaction, because Firestore forbids reading after
+   * writing inside one. `boughtPartnerPlan` on the edge makes the increment
+   * idempotent: an application approved, un-approved and approved again must
+   * not count twice toward a salary.
+   */
+  const ambassadorEdgeRef = db.doc(`ambassador_referrals/${uid}`);
+  const ambassadorEdge = decision === 'approve' ? await ambassadorEdgeRef.get() : null;
+  const creditAmbassador =
+    !!ambassadorEdge?.exists && ambassadorEdge.get('boughtPartnerPlan') !== true;
+  const ambassadorId = creditAmbassador
+    ? (ambassadorEdge!.get('ambassadorId') as string | undefined)
+    : undefined;
+
   // Pro buys a private web portal for running a fleet. Minted here for the same
   // reason the code is — it queries for collisions, and a partner who has to ask
   // support for their link is a partner who never opens it.
@@ -328,9 +402,15 @@ export const adminReviewPartnerApplication = onCall(async (req) => {
         portalId,
         portalIssuedAt: portalId ? now : null,
         fullName,
-        mobile: snap.get('mobile'),
-        city: snap.get('city'),
-        cnicNumber: snap.get('cnicNumber'),
+        // ?? null on every one of these, not just the new ones: now that the
+        // two paid tiers no longer ask for a city or an ID (owner, 2026-11-18),
+        // `snap.get` returns undefined for them — and Firestore refuses a
+        // document containing undefined, which would have made APPROVING such
+        // an applicant throw instead of approving them. Caught by
+        // ambassadors/__tests__/flow.test.ts.
+        mobile: snap.get('mobile') ?? null,
+        city: snap.get('city') ?? null,
+        cnicNumber: snap.get('cnicNumber') ?? null,
         photoURL: snap.get('photoURL') ?? null,
         status: 'active',
         level: 'bronze',
@@ -360,11 +440,22 @@ export const adminReviewPartnerApplication = onCall(async (req) => {
       });
     }
 
+    // The ambassador who recruited this partner gets their sale — once.
+    if (decision === 'approve' && ambassadorId) {
+      tx.set(
+        db.doc(`ambassadors/${ambassadorId}`),
+        { partnersSold: FieldValue.increment(1), updatedAt: now },
+        { merge: true },
+      );
+      tx.set(ambassadorEdgeRef, { boughtPartnerPlan: true, soldAt: now }, { merge: true });
+    }
+
     tx.set(db.collection('auditLogs').doc(), {
       type: `partner.application.${status}`,
       actor: admin.uid,
       targetUid: uid,
       tier: decision === 'approve' ? tier : null,
+      ambassadorId: ambassadorId ?? null,
       reason: reason ?? null,
       createdAt: now,
     });

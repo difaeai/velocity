@@ -189,7 +189,7 @@ export function DriverDrawer({
                 the alerts bounce off. */}
             <NavItem icon="💬" label="WhatsApp ride alerts"   onPress={() => go('/driver/whatsapp-alerts')} />
             {/* Where a driver recruited by a Velocity partner enters their code. */}
-            <NavItem icon="🎁" label="Referral code"          onPress={() => go('/referral-code')} />
+            <NavItem icon="🎁" label="Referral code"          onPress={() => go('/referral-code?from=/driver/home')} />
           </View>
 
           <View style={styles.divider} />

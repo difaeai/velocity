@@ -10,7 +10,13 @@
  */
 import { describe, it, expect } from 'vitest';
 
-import { adPrice, adPricing, AD_PRICE_DEFAULTS as P } from '../adPricing';
+import {
+  adPrice,
+  adPricing,
+  clampPlanDays,
+  MAX_PLAN_DAYS,
+  AD_PRICE_DEFAULTS as P,
+} from '../adPricing';
 
 describe('adPrice', () => {
   it('is the owner’s ladder: Rs 300 for the first km, Rs 60 after it', () => {
@@ -26,6 +32,35 @@ describe('adPrice', () => {
 
   it('never quotes paisa', () => {
     expect(Number.isInteger(adPrice(P, 2.5))).toBe(true);
+  });
+
+  it('leaves the standard run priced exactly as the ladder', () => {
+    expect(adPrice(P, 1, P.planDays)).toBe(adPrice(P, 1));
+    expect(adPrice(P, 50, P.planDays)).toBe(adPrice(P, 50));
+  });
+
+  it('charges by the day: half the days, half the money', () => {
+    expect(adPrice(P, 1, 15)).toBe(150);
+    expect(adPrice(P, 1, 60)).toBe(600);
+    expect(adPrice(P, 2, 15)).toBe(180);
+  });
+
+  it('cannot be talked below a day or past a year', () => {
+    expect(adPrice(P, 1, 0)).toBe(adPrice(P, 1, 1));
+    expect(adPrice(P, 1, -5)).toBe(adPrice(P, 1, 1));
+    expect(adPrice(P, 1, 10_000)).toBe(adPrice(P, 1, MAX_PLAN_DAYS));
+  });
+});
+
+describe('clampPlanDays', () => {
+  it('falls back when the number is missing or not a number', () => {
+    expect(clampPlanDays(undefined, 30)).toBe(30);
+    expect(clampPlanDays(Number.NaN, 30)).toBe(30);
+  });
+
+  it('rounds to whole days', () => {
+    expect(clampPlanDays(7.4, 30)).toBe(7);
+    expect(clampPlanDays(7.6, 30)).toBe(8);
   });
 });
 

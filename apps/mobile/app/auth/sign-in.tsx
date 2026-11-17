@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
 import { Text, TextInput } from '../../src/ui/Text';
@@ -55,6 +56,50 @@ function ClockIcon({ size = 20 }: { size?: number }) {
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Circle cx={12} cy={12} r={9} fill="none" stroke={LIME} strokeWidth={2} />
       <Path d="M12 7 L12 12 L15.5 14" fill="none" stroke={LIME} strokeWidth={2} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+/**
+ * The driver on the "Become Driver" row: a capped head over a steering wheel.
+ *
+ * Drawn rather than set in an emoji, because the only emoji that come close
+ * (🧑‍✈️, 🚕) render as something else entirely on the handsets this app is
+ * actually used on, and this one has to read as "a driver" at 34px.
+ */
+function DriverIcon({ size = 34 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 48 48">
+      {/* The cap, solid — at 34px an outlined dome and an outlined head read as
+          two rings stacked on each other. Filling the cap is what makes the
+          head below it a head. */}
+      <Path d="M15 12 a9 9 0 0 1 18 0 Z" fill={LIME} />
+      <Path d="M10 12.6 H38" stroke={LIME} strokeWidth={3} strokeLinecap="round" />
+      {/* Head, tucked under the brim. */}
+      <Path
+        d="M18.8 15 a5.2 5.2 0 0 0 10.4 0"
+        fill="none"
+        stroke={LIME}
+        strokeWidth={2.6}
+        strokeLinecap="round"
+      />
+      {/* Shoulders, so the head belongs to someone. */}
+      <Path
+        d="M16 25.5 a8 8 0 0 1 16 0"
+        fill="none"
+        stroke={LIME}
+        strokeWidth={2.6}
+        strokeLinecap="round"
+      />
+      {/* The wheel they are holding: rim, hub, three spokes. */}
+      <Circle cx={24} cy={37.5} r={8} fill="none" stroke={LIME} strokeWidth={2.6} />
+      <Circle cx={24} cy={37.5} r={2.3} fill={LIME} />
+      <Path
+        d="M24 29.5 V35.2 M16.4 39.6 L21.8 38.4 M31.6 39.6 L26.2 38.4"
+        stroke={LIME}
+        strokeWidth={2.4}
+        strokeLinecap="round"
+      />
     </Svg>
   );
 }
@@ -141,6 +186,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 }
 
 export default function SignIn() {
+  const router       = useRouter();
   const otpRef       = useRef<TextInput>(null);
   const scrollRef    = useRef<ScrollView>(null);
 
@@ -426,16 +472,43 @@ export default function SignIn() {
         >
           Velocity Rides
         </Text>
+        {/* The terms sit here, under the name, because that is where the
+            sentence is true: "by continuing" refers to the button below it, and
+            at the foot of the screen it was read after the thing it governs —
+            when it was read at all. */}
         {kbVisible ? null : (
-          <Text style={styles.brandSub}>
-            Experience the next generation of urban mobility in Pakistan.
+          <Text style={styles.terms}>
+            By continuing, you agree to Velocity Rides&apos;{' '}
+            <Text
+              style={styles.termsLink}
+              accessibilityRole="link"
+              onPress={() => Linking.openURL(TERMS_URL).catch(() => {})}
+            >
+              Terms of Service
+            </Text>{' '}
+            and{' '}
+            <Text
+              style={styles.termsLink}
+              accessibilityRole="link"
+              onPress={() => Linking.openURL(PRIVACY_URL).catch(() => {})}
+            >
+              Privacy Policy
+            </Text>
+            .
           </Text>
         )}
       </View>
 
       {/* Welcome card */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Welcome Back</Text>
+        {/* "Hello Passenger", not "Welcome Back": this screen is the front door
+            for someone who has never been here as much as for someone
+            returning, and naming the side they are signing in on is what makes
+            "Become Driver" below it mean something. */}
+        <Text style={styles.cardTitle}>
+          <Text style={styles.cardWave}>👋 </Text>Hello <Text style={styles.cardTitleOn}>Passenger</Text>
+        </Text>
+        <Text style={styles.cardSub}>Enter your mobile number to continue</Text>
         {sessionEnded ? (
           <Text style={styles.sessionEnded} accessibilityRole="alert">
             Your session ended, so you were signed out — not something you did. Sign in again with your number; your
@@ -443,7 +516,8 @@ export default function SignIn() {
           </Text>
         ) : null}
 
-        <Text style={styles.label}>Mobile Number</Text>
+        {/* No "Mobile Number" label: the line above the field already says to
+            enter one, and the field's own +92 and placeholder say which. */}
         <View style={styles.phoneRow}>
           <View style={styles.prefix}>
             <Text style={styles.prefixFlag}>🇵🇰</Text>
@@ -482,32 +556,75 @@ export default function SignIn() {
           {sending ? (
             <ActivityIndicator color="#000" />
           ) : (
-            <Text style={styles.primaryBtnText}>Continue</Text>
+            <>
+              {/* The dark disc with the arrow in it, to the left of the word.
+                  It is what makes the button read as "go" at a glance rather
+                  than as a lime bar with a word on it. */}
+              <View style={styles.primaryBtnGo}>
+                <Svg width={18} height={18} viewBox="0 0 24 24">
+                  <Path
+                    d="M4 12 H18 M12.5 6 L19 12 L12.5 18"
+                    fill="none"
+                    stroke={LIME}
+                    strokeWidth={2.6}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </Svg>
+              </View>
+              <Text style={styles.primaryBtnText}>Continue</Text>
+            </>
           )}
         </Pressable>
       </View>
 
       <View style={styles.flexSpacer} />
 
-      <Text style={styles.terms}>
-        By continuing, you agree to Velocity Rides&apos;{' '}
-        <Text
-          style={styles.termsLink}
-          accessibilityRole="link"
-          onPress={() => Linking.openURL(TERMS_URL).catch(() => {})}
+      {/* ── Become Driver (owner, 2026-11-17) ───────────────────────────────
+          A driver's own door, at the foot of the login screen.
+
+          Until now the only way in was to sign up as a passenger and then find
+          "Become a driver" somewhere inside the rider app — so every driver's
+          first five minutes with Velocity were spent being told they were a
+          passenger. Someone who came to drive should be able to say so on the
+          first screen.
+
+          It is not a second account or a second sign-in: the driver route
+          verifies the same phone number by OTP and goes on to the documents, so
+          a passenger who later wants to drive still has exactly the flow they
+          have today, and nobody ends up with two of anything. Hidden while the
+          keyboard is up — at that point they have chosen the phone box, and the
+          row would only crowd the number they are typing. ── */}
+      {kbVisible ? null : (
+        <Pressable
+          style={({ pressed }) => [styles.driverCard, pressed && styles.driverCardOn]}
+          onPress={() => router.push('/passenger/become-driver/login')}
+          accessibilityRole="button"
+          accessibilityLabel="Become Driver"
+          accessibilityHint="Sign up to drive with Velocity Rides and start earning"
         >
-          Terms of Service
-        </Text>{' '}
-        and{' '}
-        <Text
-          style={styles.termsLink}
-          accessibilityRole="link"
-          onPress={() => Linking.openURL(PRIVACY_URL).catch(() => {})}
-        >
-          Privacy Policy
-        </Text>
-        .
-      </Text>
+          <DriverIcon size={34} />
+          <View style={styles.driverDivider} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.driverTitle}>
+              Become <Text style={styles.driverTitleOn}>Driver</Text>
+            </Text>
+            <Text style={styles.driverSub}>Tap to become a driver and start earning</Text>
+          </View>
+          {/* A chevron, not "›" in a Text: the arrow glyphs render as the wrong
+              character on some handsets here (see src/ui/ArrowIcon). */}
+          <Svg width={18} height={18} viewBox="0 0 24 24">
+            <Path
+              d="M9 5 L16 12 L9 19"
+              fill="none"
+              stroke="rgba(255,255,255,0.75)"
+              strokeWidth={2.4}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </Svg>
+        </Pressable>
+      )}
     </ScrollView>
   );
 
@@ -702,7 +819,18 @@ const styles = themed(() => StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
     elevation: 6,
   },
-  cardTitle: { fontSize: 26, fontWeight: '900', color: '#ffffff', marginBottom: 4 },
+  cardTitle: { fontSize: 26, fontWeight: '900', color: '#ffffff' },
+  /** The lime half of "Hello Passenger" — the side of the app they are entering. */
+  cardTitleOn: { color: LIME },
+  /** Nudged up: the emoji's own baseline sits low next to a 900-weight cap. */
+  cardWave: { fontSize: 24 },
+  cardSub: {
+    fontSize: 15,
+    lineHeight: 21,
+    color: 'rgba(255,255,255,0.62)',
+    fontWeight: '600',
+    marginBottom: 4,
+  },
   sessionEnded: {
     fontSize: 13,
     lineHeight: 18,
@@ -712,7 +840,6 @@ const styles = themed(() => StyleSheet.create({
     padding: 10,
     marginVertical: 8,
   },
-  label: { fontSize: 15, color: 'rgba(255,255,255,0.75)' },
 
   phoneRow: {
     flexDirection: 'row',
@@ -737,6 +864,17 @@ const styles = themed(() => StyleSheet.create({
     height: 60,
     borderRadius: 30,
     backgroundColor: LIME,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  /** The dark disc the arrow sits in, on the left of "Continue". */
+  primaryBtnGo: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#0a0d08',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -751,9 +889,42 @@ const styles = themed(() => StyleSheet.create({
 
   terms: {
     fontSize: 14, lineHeight: 21, color: 'rgba(255,255,255,0.6)',
-    textAlign: 'center', marginTop: 22, fontWeight: '600',
+    textAlign: 'center', fontWeight: '600', paddingHorizontal: 4,
   },
   termsLink: { color: LIME, fontWeight: '800', textDecorationLine: 'underline' },
+
+  /* ── "Become Driver", the foot of the screen ──
+     Outlined in lime rather than filled: "Continue" is the primary action on
+     this screen and must stay the only solid lime block on it, but a driver
+     scanning for their own way in has to find this without reading. */
+  driverCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    marginTop: 22,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: 'rgba(204,255,0,0.45)',
+    backgroundColor: 'rgba(204,255,0,0.06)',
+  },
+  driverCardOn: { backgroundColor: 'rgba(204,255,0,0.16)' },
+  driverDivider: {
+    width: 1,
+    alignSelf: 'stretch',
+    marginVertical: 2,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+  },
+  driverTitle: { fontSize: 17, fontWeight: '900', color: '#ffffff' },
+  driverTitleOn: { color: LIME },
+  driverSub: {
+    fontSize: 11.5,
+    lineHeight: 16,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.58)',
+    marginTop: 1,
+  },
 
   /* ── OTP step ── */
   otpContainer: { flexGrow: 1, paddingHorizontal: 24, paddingVertical: 16 },

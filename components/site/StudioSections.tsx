@@ -1,4 +1,4 @@
-import { STUDIO_TRIAL_USD, STUDIO_YEAR_DISCOUNT_PCT, studioUsd } from '@/lib/studio';
+import { STUDIO_TRIAL_USD, STUDIO_YEAR_SAVING_USD, studioUsd } from '@/lib/studio';
 import s from '@/app/studio/studio.module.css';
 import site from './site.module.css';
 import { PriceCountdown } from './PriceCountdown';
@@ -37,7 +37,7 @@ export const STUDIO_FAQ = [
   },
   {
     q: 'How do I pay?',
-    a: `By debit or credit card, or by bank transfer — for a month, for a year at ${STUDIO_YEAR_DISCOUNT_PCT}% less, or one day for $${STUDIO_TRIAL_USD} to see it work first. A card starts it at once; with a transfer you send the payment and upload the screenshot, and it starts as soon as that is checked.`,
+    a: `By debit or credit card, or by bank transfer — for a month, for a year at $${STUDIO_YEAR_SAVING_USD} a month less, or one day for $${STUDIO_TRIAL_USD} to see it work first. A card starts it at once; with a transfer you send the payment and upload the screenshot, and it starts as soon as that is checked.`,
   },
   {
     q: 'Can I stop?',
@@ -54,7 +54,7 @@ export function StudioPricing({ heading = 'Pay for what you use. Nothing else.' 
           <h2 className={site.h2}>{heading}</h2>
           <p className={`${site.lead} ${site.center}`}>
             Every plan can start with one day for {studioUsd(STUDIO_TRIAL_USD)}. Pay monthly and stop any time, or pay
-            for a year and save {STUDIO_YEAR_DISCOUNT_PCT}%.
+            for a year and save ${STUDIO_YEAR_SAVING_USD} every month.
           </p>
         </div>
         <PriceCountdown />

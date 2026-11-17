@@ -61,22 +61,49 @@ export const PLAN_IDS: PlanId[] = ['research', 'content', 'all'];
 
 /** Paid a month at a time, or a year up front for less. */
 export type Billing = 'month' | 'year';
-export const YEAR_DISCOUNT_PCT = 3;
+
+/**
+ * What a year saves, PER MONTH, in dollars (owner, 2026-11-18: price it the way
+ * Claude does).
+ *
+ * The year used to be 3% off the twelve months, which is 96 cents on the whole
+ * of a $32 plan — true, and worth nothing to anybody reading it. A flat three
+ * dollars a month is a figure a customer can hold: $32 a month, or $29 a month
+ * paid yearly. That is the same shape as the plan this is modelled on, and it
+ * is why the pricing page now quotes a MONTHLY rate on both sides of the toggle
+ * and names the saving rather than a percentage.
+ *
+ * It is a saving per month, not off the year, so it scales with the plan's
+ * length rather than its price: the same three dollars whichever plan.
+ */
+export const YEAR_SAVING_USD = 3;
 
 /** What a month of any plan costs more once a customer's own 3 days are over (`priceClock.ts`). Mirrors lib/studio.ts. */
 export const PRICE_RISE_USD = 2;
 
-/** A year is twelve months less exactly 3%, to the cent — never more (owner); a month is never discounted. Mirrors lib/studio.ts. */
-export const priceUsd = (plan: PlanId, billing: Billing, raised = false): number => {
+/**
+ * What a month of this plan costs on this billing cycle — the per-MONTH figure
+ * both sides of the toggle quote. Mirrors lib/studio.ts.
+ *
+ * Floored at a dollar: a plan can never be discounted to nothing, however the
+ * ladder moves.
+ */
+export const priceMonthUsd = (plan: PlanId, billing: Billing, raised = false): number => {
   const month = PLANS[plan].usd + (raised ? PRICE_RISE_USD : 0);
-  return billing === 'year' ? Math.round(month * 12 * (100 - YEAR_DISCOUNT_PCT)) / 100 : month;
+  return billing === 'year' ? Math.max(1, month - YEAR_SAVING_USD) : month;
+};
+
+/** What is actually charged: one month, or twelve of the yearly rate. Mirrors lib/studio.ts. */
+export const priceUsd = (plan: PlanId, billing: Billing, raised = false): number => {
+  const month = priceMonthUsd(plan, billing, raised);
+  return billing === 'year' ? Math.round(month * 12 * 100) / 100 : month;
 };
 
 // shortcut: one fixed rate for the PKR a customer is asked to send; mirrored in lib/studio.ts. Read it from config when the rupee moves.
 export const PKR_PER_USD = 280;
 
 /** What this plan costs in rupees, the figure the Billing page asks for. */
-/** Whole rupees, rounded up so a year's saving never passes 3%. Mirrors lib/studio.ts studioPkr. */
+/** Whole rupees, rounded up so the saving quoted is never exceeded. Mirrors lib/studio.ts studioPkr. */
 export const pricePkr = (plan: PlanId, billing: Billing, raised = false): number =>
   Math.ceil((Math.round(priceUsd(plan, billing, raised) * 100) * PKR_PER_USD) / 100);
 

@@ -152,6 +152,8 @@ export function ringNodes(p: {
   adsPaid: boolean;
   salesPaid: boolean;
   contentPaid: boolean;
+  /** The website the SEO agent reads, when one has been added. */
+  seoUrl?: string | null;
   nowMs: number;
 }): RingNode[] {
   const social = (platform: 'instagram' | 'facebook' | 'youtube' | 'tiktok'): RingNode => {
@@ -227,6 +229,24 @@ export function ringNodes(p: {
           },
         ]
       : []),
+    /**
+     * The customer's own website (owner, 2026-11-17: "brain mai connected seo
+     * link"). It sits on the ring with the networks because it is the same kind
+     * of fact — something Vexa is plugged into — even though it is an address
+     * rather than an account. It is the only node whose work lands on the
+     * customer's own property instead of somebody else's platform.
+     */
+    {
+      key: 'seo',
+      name: 'SEO',
+      glyph: '🔍',
+      brand: '#ccff00',
+      state: (p.seoUrl ? 'live' : 'off') as Link4,
+      title: p.seoUrl
+        ? `Website: ${p.seoUrl} — Vexa reads it and says what to add`
+        : 'Website: not added — add it and Vexa will do your SEO',
+      href: '/dashboard/social/seo',
+    },
   ];
 }
 
@@ -338,6 +358,12 @@ export function Brain({
   const ys = agentYs(order.length);
   const examples = EXAMPLES.filter((e) => order.includes(readIntent(e).agent));
   const router = useRouter();
+  // The website the SEO agent reads, for the ring. A failure just leaves the
+  // node unlit, which is also what "not added yet" looks like.
+  const [seoUrl, setSeoUrl] = useState<string | null>(null);
+  useEffect(() => {
+    socialApi.getSeoReport({}).then((r) => setSeoUrl(r.url ?? null)).catch(() => setSeoUrl(null));
+  }, []);
   const [agent, setAgent] = useState<Agent>('team');
   const [refFile, setRefFile] = useState<File | null>(null);
   const [refAsked, setRefAsked] = useState(false);
@@ -825,7 +851,7 @@ export function Brain({
             </svg>
             <div className="bn-brainbox ringed">
               <ConnectionRing
-                nodes={ringNodes({ accounts, ads, sales, adsPaid, salesPaid, contentPaid: includes('content'), nowMs })}
+                nodes={ringNodes({ accounts, ads, sales, adsPaid, salesPaid, contentPaid: includes('content'), seoUrl, nowMs })}
               />
               <BrainArt />
           </div>

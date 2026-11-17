@@ -62,7 +62,7 @@ import {
   STUDIO_PLANS,
   STUDIO_TRIAL_HOURS,
   STUDIO_TRIAL_USD,
-  STUDIO_YEAR_DISCOUNT_PCT,
+  STUDIO_YEAR_SAVING_USD,
   studioPriceUsd,
   studioUsd,
   type StudioBilling,
@@ -721,7 +721,7 @@ function PayCard({
                     onClick={() => onBilling(b)}
                   >
                     {b === 'month' ? 'Monthly' : 'Yearly'}
-                    {b === 'year' ? <i className={s.billSave}>save {STUDIO_YEAR_DISCOUNT_PCT}%</i> : null}
+                    {b === 'year' ? <i className={s.billSave}>save ${STUDIO_YEAR_SAVING_USD}/mo</i> : null}
                   </button>
                 ))}
               </div>

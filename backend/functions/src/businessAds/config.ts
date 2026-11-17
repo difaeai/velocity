@@ -97,16 +97,42 @@ export const DEFAULT_BUSINESS_AD_SETTINGS: BusinessAdSettings = {
   },
 };
 
+/** The shortest and longest run we sell. A day is the unit the buyer picks in. */
+export const MIN_PLAN_DAYS = 1;
+export const MAX_PLAN_DAYS = 365;
+
+/** `days` clamped to what we sell, as a whole number of days. */
+export function clampPlanDays(days: number | undefined, fallback: number): number {
+  if (typeof days !== 'number' || !Number.isFinite(days)) return fallback;
+  return Math.min(MAX_PLAN_DAYS, Math.max(MIN_PLAN_DAYS, Math.round(days)));
+}
+
 /**
- * What one ad at this radius costs, in whole rupees. The radius is clamped to
- * what we sell: a client asking for 10,000 km is answered with the ceiling's
- * price, and the caller refuses the radius separately — silently over-charging
- * is worse than quoting the cap. Rounded, because nobody transfers paisa.
+ * What one ad at this radius costs for this many days, in whole rupees.
+ *
+ * `basePkr`/`perKmPkr` are the ladder for `planDays` days (30, today), and the
+ * run is priced pro-rata by the day from it — so the owner's list is untouched
+ * at 30 days (1 km is still Rs 300) and a fortnight is half of it. Days are
+ * what a shopkeeper actually asks for ("chalao ek hafta"), and a per-day rate
+ * is the only one they can check in their head.
+ *
+ * The radius is clamped to what we sell: a client asking for 10,000 km is
+ * answered with the ceiling's price, and the caller refuses the radius
+ * separately — silently over-charging is worse than quoting the cap. Rounded,
+ * because nobody transfers paisa.
  */
-export function adPrice(settings: BusinessAdSettings, radiusKm: number): number {
+export function adPrice(
+  settings: BusinessAdSettings,
+  radiusKm: number,
+  days?: number,
+): number {
   const km = Math.min(Math.max(radiusKm, 0.5), settings.maxRadiusKm);
   const extra = Math.max(0, km - settings.includedKm);
-  return Math.max(0, Math.round(settings.basePkr + settings.perKmPkr * extra));
+  const forPlan = settings.basePkr + settings.perKmPkr * extra;
+  const ran = clampPlanDays(days, settings.planDays);
+  // planDays is admin-set and floored at 1 by getBusinessAdSettings, so this
+  // cannot divide by zero.
+  return Math.max(0, Math.round((forPlan * ran) / settings.planDays));
 }
 
 function str(value: unknown): string | null {

@@ -91,6 +91,7 @@ export const getBusinessAdDashboard = onCall(async (req) => {
   const expired = expiresAtMs !== null && expiresAtMs <= Date.now();
   const status = advertiserSnap.get('status') as string;
   const radiusKm = (advertiserSnap.get('radiusKm') as number) ?? 0;
+  const advertiserPlanDays = (advertiserSnap.get('planDays') as number) ?? settings.planDays;
 
   const ads = adsSnap.docs
     .filter((d) => d.get('status') !== 'removed')
@@ -174,8 +175,10 @@ export const getBusinessAdDashboard = onCall(async (req) => {
       radiusKm,
       adSlots: (advertiserSnap.get('adSlots') as number) ?? settings.adSlots,
       liveAds: ads.filter((a) => a.status === 'active').length,
-      planDays: (advertiserSnap.get('planDays') as number) ?? settings.planDays,
-      price: (advertiserSnap.get('price') as number | undefined) ?? adPrice(settings, radiusKm),
+      planDays: advertiserPlanDays,
+      price:
+        (advertiserSnap.get('price') as number | undefined) ??
+        adPrice(settings, radiusKm, advertiserPlanDays),
       expiresAtMs,
       daysLeft:
         expiresAtMs === null ? null : Math.max(0, Math.ceil((expiresAtMs - Date.now()) / 86_400_000)),

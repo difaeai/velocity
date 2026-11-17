@@ -90,6 +90,8 @@ import { ShareGenderSheet, useNeedsShareGender } from '../../src/ui/ShareGenderS
 import { PriceNotice } from '../../src/ui/PriceNotice';
 import { TrafficStrip } from '../../src/ui/TrafficStrip';
 import { EdgeFade } from '../../src/ui/components';
+import { MicIcon } from '../../src/ui/ServiceIcons';
+import { isRecognitionAvailable } from '../../src/voice/speech';
 
 /** A booking dictated on the voice screen, ready to seed this screen's state. */
 interface VoicePrefill {
@@ -102,18 +104,25 @@ interface VoicePrefill {
 }
 
 /**
- * Read the voice screen's route params, or null for a normal typed booking.
+ * Read a destination handed to this screen, or null for a normal typed booking.
+ *
+ * Two senders, one shape. The voice screen fills the `voice*` params; a saved
+ * route's reminder notification fills the plain ones (`dropoff`,
+ * `dropoffLat`, `dropoffLng` — see src/lib/notificationRoute.ts), because a
+ * route reminder is not a spoken booking and should not have to pretend to be
+ * one to get its destination across.
  *
  * Everything is validated rather than trusted: the params survive a round trip
  * through the URL, so a ride type is checked against the real list and the seat
  * count is clamped to what a vehicle actually holds.
  */
 function readVoicePrefill(params: Record<string, string | string[] | undefined>): VoicePrefill | null {
-  const dropoff = typeof params.voiceDropoff === 'string' ? params.voiceDropoff.trim() : '';
+  const text = (v: string | string[] | undefined) => (typeof v === 'string' ? v.trim() : '');
+  const dropoff = text(params.voiceDropoff) || text(params.dropoff);
   if (!dropoff) return null;
 
-  const lat = Number(params.voiceDropoffLat);
-  const lng = Number(params.voiceDropoffLng);
+  const lat = Number(params.voiceDropoffLat ?? params.dropoffLat);
+  const lng = Number(params.voiceDropoffLng ?? params.dropoffLng);
   const coords =
     Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
 
@@ -251,6 +260,10 @@ export default function Booking() {
     mode?: string;
     /** 'bike' from home's Bike screen: Moto picked, solo. */
     rideType?: string;
+    /** A saved route's reminder, carrying where that route goes. */
+    dropoff?: string;
+    dropoffLat?: string;
+    dropoffLng?: string;
   }>();
   const { user, role } = useAuth();
   // Woken while the rider is choosing, so Book does not wait on a cold start.
@@ -304,6 +317,8 @@ export default function Booking() {
    * something the rider can see and change rather than a wrong charge.
    */
   const voicePrefill = useMemo(() => readVoicePrefill(params), []);
+  // Whether this handset can listen at all — read once, it cannot change.
+  const [voiceAvailable] = useState(() => isRecognitionAvailable());
 
   // Two steps, and only two: say where you're going, then book. Pool-or-Solo
   // used to be a screen of its own between them; it is a pair of cards on the
@@ -1077,8 +1092,32 @@ export default function Booking() {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.header}>
-          <View>
-            <Text style={styles.headerTitle}>Where to?</Text>
+          <View style={{ flex: 1 }}>
+            <View style={styles.titleRow}>
+              <Text style={styles.headerTitle}>Where to?</Text>
+              {/* ── "Bol kar book karein", beside the words (owner, 2026-11-18) ──
+                  It belongs on THIS screen, not on home: this is where somebody
+                  is actually answering "where to?", and speaking it is the same
+                  job as typing it into the box below. Right next to the
+                  question, so the two ways to answer it sit together.
+
+                  Absent where there is no speech recogniser (typically no-GMS
+                  handsets) rather than present and dead. ── */}
+              {voiceAvailable ? (
+                <Pressable
+                  style={({ pressed }) => [styles.titleMic, pressed && styles.titleMicOn]}
+                  onPress={() => router.push('/passenger/voice')}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel="Bol kar book karein — say where you are going"
+                >
+                  <MicIcon size={16} color={colors.primary} />
+                  <Text style={styles.titleMicTxt} numberOfLines={1}>
+                    Bol kar book karein
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
             <Text style={styles.headerSub}>Set your destination — you name the fare</Text>
           </View>
           <Pressable
@@ -2222,6 +2261,21 @@ const styles = themed(() => StyleSheet.create({
     color: colors.text,
     letterSpacing: -0.3,
   },
+  /** "Where to?" and the mic, on one line. */
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
+  titleMic: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(204,255,0,0.35)',
+    backgroundColor: 'rgba(204,255,0,0.10)',
+  },
+  titleMicOn: { backgroundColor: 'rgba(204,255,0,0.22)' },
+  titleMicTxt: { fontSize: 11, fontWeight: '800', color: colors.primary },
   headerSub: {
     fontSize: 12,
     color: colors.muted,

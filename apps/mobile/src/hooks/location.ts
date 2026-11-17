@@ -46,11 +46,12 @@ export interface CurrentLocation {
  * Keeping the fix in module scope, the same way theme.ts and i18n/index.ts keep
  * theirs, lets it survive the remount; the live watch then refines it.
  *
- * This is NOT the stale-cache problem that `getLastKnownPositionAsync` has (see
- * the note in `request`). These values are only ever written from a fix this
- * running process received, so they are the user's real position from moments
- * ago — never a leftover from an earlier session in a different city. Nothing is
- * persisted to disk, so a cold start still waits for real GPS.
+ * These values are only ever written from a fix this running process received or
+ * accepted, so they are the user's real position from moments ago — never a
+ * leftover from an earlier session in a different city. Nothing is persisted to
+ * disk: a cold start's head start comes from the OS's own recent fix, bounded by
+ * age and accuracy (see `request`), which is fresher than anything we could keep
+ * ourselves and carries the uncertainty figure that makes it safe to trust.
  */
 let lastCoords: Coords | null = null;
 let lastAddress: string | null = null;
@@ -110,9 +111,39 @@ export function useCurrentLocation(auto = true): CurrentLocation {
           return;
         }
 
+        /**
+         * The fix the phone already has, if it is recent and tight enough to
+         * be true (owner, 2026-11-17: "locations load slow").
+         *
+         * `getCurrentPositionAsync` at High accuracy is a GPS lock, and under a
+         * roof that is anywhere from two to thirty seconds — during which the
+         * map sat on a default city centre and the pickup box said nothing. The
+         * phone has usually had a fix in the last minute from some other app,
+         * and showing that instantly is the difference between "the app is
+         * slow" and "the app knows where I am".
+         *
+         * This is NOT the stale-position problem the old comment here warned
+         * about. That warning was about calling it bare: unbounded, it will
+         * hand back a fix from another city days ago. Bounded, it cannot —
+         * nobody covers a city in 90 seconds, and anything looser than 1 km of
+         * uncertainty is refused outright. Whatever it gives us is overwritten
+         * seconds later by the real fix below and then by the live watch, so at
+         * worst the map starts a street off and corrects itself.
+         */
+        void Location!.getLastKnownPositionAsync({ maxAge: 90_000, requiredAccuracy: 1000 })
+          .then((last) => {
+            // Only as a head start: if the real fix already landed, leave it.
+            if (!mounted.current || !last || lastCoords) return;
+            const seed = { lat: last.coords.latitude, lng: last.coords.longitude };
+            lastCoords = seed;
+            setCoords(seed);
+            setStatus('granted');
+          })
+          .catch(() => {
+            // No cached fix. The real one below is on its way regardless.
+          });
+
         // Start live GPS watch — updates the map as the user moves.
-        // NOTE: getLastKnownPositionAsync is intentionally skipped — it can
-        // return a stale cached position from a completely different city.
         watchSub.current?.remove();
         watchSub.current = await Location!.watchPositionAsync(
           { accuracy: Location!.Accuracy.Balanced, distanceInterval: 10, timeInterval: 5000 },

@@ -37,7 +37,7 @@ import {
   STUDIO_CREDIT_PACKS,
   STUDIO_PLAN_IDS,
   STUDIO_PLANS,
-  STUDIO_YEAR_DISCOUNT_PCT,
+  STUDIO_YEAR_SAVING_USD,
   planIncludes,
   studioPaidAfter,
   studioPkr,
@@ -264,7 +264,7 @@ function Checkout() {
               <div className={a.options} role="radiogroup" aria-label="Billing">
                 {(['month', 'year'] as const).map((b) => (
                   <button key={b} type="button" role="radio" aria-checked={billing === b} className={a.option} onClick={() => setBilling(b)}>
-                    {b === 'year' ? <em>Save {STUDIO_YEAR_DISCOUNT_PCT}%</em> : null}
+                    {b === 'year' ? <em>Save ${STUDIO_YEAR_SAVING_USD}/mo</em> : null}
                     <b>{b === 'month' ? 'Monthly' : 'Yearly'}</b>
                     <span>
                       {studioUsd(studioPriceUsd(chosen, b, raised))} · billed {b === 'month' ? 'every 30 days' : 'once for 365 days'}

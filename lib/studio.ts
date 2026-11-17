@@ -116,17 +116,43 @@ export const STUDIO_BANK_TITLE = 'Berreto';
 
 /** Paid a month at a time, or a year up front for less. */
 export type StudioBilling = 'month' | 'year';
-export const STUDIO_YEAR_DISCOUNT_PCT = 3;
+
+/**
+ * What a year saves, PER MONTH, in dollars (owner, 2026-11-18: price it the way
+ * Claude does). Mirrors backend studio/plans.ts YEAR_SAVING_USD.
+ *
+ * The year used to be 3% off the twelve months — 96 cents on a $32 plan, which
+ * is true and persuades nobody. Three dollars a month is a figure a customer
+ * can hold, which is why both sides of the toggle now quote a MONTHLY rate and
+ * the page names the saving instead of a percentage.
+ */
+export const STUDIO_YEAR_SAVING_USD = 3;
 
 /** What a month of any plan costs more once a customer's own 3 days are over (backend studio/priceClock.ts). Mirrors the backend. */
 export const STUDIO_PRICE_RISE_USD = 2;
 /** How long each visitor keeps today's price. Mirrors the backend. */
 export const STUDIO_PRICE_WINDOW_MS = 3 * 86_400_000;
 
-/** A year is twelve months less exactly 3%, to the cent — never more (owner); a month is never discounted. Mirrors backend priceUsd. */
-export const studioPriceUsd = (plan: StudioPlanId, billing: StudioBilling, raised = false): number => {
+/**
+ * What a month of this plan costs on this billing cycle — the per-MONTH figure
+ * both sides of the toggle quote. Mirrors backend priceMonthUsd.
+ *
+ * Floored at a dollar: a plan can never be discounted to nothing, however the
+ * ladder moves.
+ */
+export const studioPriceMonthUsd = (
+  plan: StudioPlanId,
+  billing: StudioBilling,
+  raised = false,
+): number => {
   const month = STUDIO_PLANS[plan].usd + (raised ? STUDIO_PRICE_RISE_USD : 0);
-  return billing === 'year' ? Math.round(month * 12 * (100 - STUDIO_YEAR_DISCOUNT_PCT)) / 100 : month;
+  return billing === 'year' ? Math.max(1, month - STUDIO_YEAR_SAVING_USD) : month;
+};
+
+/** What is actually charged: one month, or twelve of the yearly rate. Mirrors backend priceUsd. */
+export const studioPriceUsd = (plan: StudioPlanId, billing: StudioBilling, raised = false): number => {
+  const month = studioPriceMonthUsd(plan, billing, raised);
+  return billing === 'year' ? Math.round(month * 12 * 100) / 100 : month;
 };
 
 /** The rupees to send for `usd`: whole rupees, rounded up so a year's saving never passes 3%. Mirrors backend pricePkr. */

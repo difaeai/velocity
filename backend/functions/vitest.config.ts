@@ -34,6 +34,7 @@ export default defineConfig({
       // The example rides a cold area is shown, and the five-and-stop rule.
       'src/demand/__tests__/**/*.test.ts',
       'src/businessAds/__tests__/**/*.test.ts',
+      'src/ambassadors/__tests__/**/*.test.ts',
       'src/analytics/__tests__/**/*.test.ts',
       'src/locations/__tests__/**/*.test.ts',
       'src/maps/__tests__/**/*.test.ts',

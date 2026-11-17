@@ -591,6 +591,48 @@ export const adminApi = {
     { ok: boolean }
   >('adminReassignReferral'),
 
+  // ── Velocity Ambassador Program ────────────────────────────────────────────
+  // The third way into Earn with Velocity, and the only one nobody buys: a
+  // campus ambassador applies with one document, an admin approves them here,
+  // and they then work two targets for a salary (backend ambassadors/config.ts).
+  adminListAmbassadors: callable<
+    Record<string, never>,
+    {
+      ok: boolean;
+      settings: {
+        userTarget: number;
+        partnerTarget: number;
+        salaryPkr: number;
+        commissionPerPartnerPkr: number;
+        currency: string;
+      };
+      ambassadors: {
+        uid: string;
+        fullName: string;
+        mobile: string | null;
+        referralCode: string;
+        status: string;
+        payoutAccount: { accountTitle?: string; accountNumber?: string; bankName?: string } | null;
+        progress: {
+          usersOnboarded: number;
+          partnersSold: number;
+          usersRemaining: number;
+          partnersRemaining: number;
+          userTargetMet: boolean;
+          partnerTargetMet: boolean;
+          salaryUnlocked: boolean;
+          payPkr: number;
+          payKind: 'salary' | 'commission';
+          rateUnset: boolean;
+        };
+      }[];
+    }
+  >('adminListAmbassadors'),
+  adminReviewAmbassador: callable<
+    { uid: string; decision: 'approve' | 'reject' | 'resubmit'; reason?: string },
+    { ok: boolean; status: string; code: string | null }
+  >('adminReviewAmbassador'),
+
   // ── Advertise — "Find your Customers" business proximity ads ───────────────
   adminReviewBusinessAdApplication: callable<
     {
@@ -2599,8 +2641,32 @@ export const studioApi = {
   >('adminSetStudioMailer'),
 };
 
+/** One thing the SEO agent found, and exactly what to do about it. */
+export interface SeoFinding {
+  id: string;
+  severity: 'critical' | 'important' | 'polish';
+  title: string;
+  why: string;
+  where: string;
+  fix: string;
+}
+
+export interface SeoReport {
+  ok: boolean;
+  url: string | null;
+  findings: SeoFinding[];
+  counts: { critical: number; important: number; polish: number };
+  ranAtMs?: number | null;
+}
+
 export const socialApi = {
   connectSchema: callable<Record<string, never>, ConnectSchema>('adminGetSocialConnectSchema'),
+
+  // ── The SEO agent — backend social/seoAgent.ts ───────────────────────────
+  // It reads the customer's own site and says where to add what. No key.
+  setSeoSite: callable<{ url: string }, { ok: boolean; url: string }>('setSeoSite'),
+  runSeoAudit: callable<{ url?: string }, SeoReport>('runSeoAudit'),
+  getSeoReport: callable<Record<string, never>, SeoReport>('getSeoReport'),
 
   /** The one-click Instagram connect — see backend/functions/src/social/meta.ts. */
   metaState: callable<Record<string, never>, MetaConnectState>('adminGetMetaConnectState'),

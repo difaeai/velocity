@@ -11,7 +11,7 @@
  * joining costs you nothing, and it stops working once you have completed a
  * ride — so if you have a code, use it now.
  */
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -29,12 +29,19 @@ import { api } from '../src/api/client';
 import type { MyReferral } from '../src/api/client';
 import { colors } from '../src/config';
 import { themed } from '../src/theme';
+import { useAuth } from '../src/auth/AuthContext';
 import { deviceFingerprint } from '../src/hooks/partner';
 import { PrimaryButton } from '../src/ui/components';
 import { Skeleton } from '../src/ui/partner';
 
+/** The two screens that open this one — the only paths `from` may name. */
+const PROFILE = '/passenger/profile' as const;
+const DRIVER_HOME = '/driver/home' as const;
+
 export default function ReferralCodeScreen() {
   const router = useRouter();
+  const { role } = useAuth();
+  const { from } = useLocalSearchParams<{ from?: string }>();
   const [existing, setExisting] = useState<MyReferral | null>(null);
   const [code, setCode] = useState('');
   const [preview, setPreview] = useState<{ partnerName: string } | null>(null);
@@ -68,6 +75,43 @@ export default function ReferralCodeScreen() {
     };
   }, [code]);
 
+  /**
+   * Back, for both audiences (owner, 2026-11-17: leaving this screen dropped
+   * riders into Bikes).
+   *
+   * This screen sits at the ROOT of the route tree, while the two places that
+   * open it — the passenger's profile and the driver's drawer — live inside
+   * their own groups. The root layout is a bare `<Slot />`, so popping back out
+   * of here does not return to the screen underneath; it re-enters the group,
+   * which then renders its ANCHOR rather than the screen the user left. With no
+   * anchor declared that was whatever sorted first in the directory, which is
+   * how backing out of the referral code showed somebody bike booking.
+   *
+   * Two fixes, because they answer two different halves of it:
+   *   • the groups now declare an anchor (app/passenger/_layout,
+   *     app/driver/_layout), so NOTHING in the app can fall through to an
+   *     arbitrary screen again — that is the app-wide half;
+   *   • and the caller says where it came from, so this screen returns to the
+   *     exact screen that opened it rather than merely to a sensible one.
+   *
+   * `from` is only ever a path this app wrote into its own link, but it is
+   * still checked against the two screens that open this one — a route param
+   * is the kind of thing a deep link can set, and `replace` to an arbitrary
+   * path is not something to hand out.
+   */
+  function goBack() {
+    const back = typeof from === 'string' ? from : '';
+    if (back === PROFILE || back === DRIVER_HOME) {
+      router.replace(back);
+      return;
+    }
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace(role === 'driver' ? DRIVER_HOME : PROFILE);
+  }
+
   async function redeem() {
     setBusy(true);
     try {
@@ -75,7 +119,7 @@ export default function ReferralCodeScreen() {
       Alert.alert(
         'Code applied 🎉',
         `You're now part of ${res.partnerName ?? 'your partner'}'s Velocity Rides fleet. Your fares don't change — they earn from Velocity Rides' side, never from yours.`,
-        [{ text: 'Done', onPress: () => router.back() }],
+        [{ text: 'Done', onPress: goBack }],
       );
       setExisting(await api.getMyReferral({}));
       setCode('');
@@ -90,7 +134,7 @@ export default function ReferralCodeScreen() {
   // every screen draws its own way back.
   const header = (
     <View style={s.header}>
-      <Pressable onPress={() => router.back()} hitSlop={12}>
+      <Pressable onPress={goBack} hitSlop={12}>
         <Text style={s.back}>←</Text>
       </Pressable>
       <Text style={s.headerTitle}>Referral code</Text>

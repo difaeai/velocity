@@ -94,6 +94,65 @@ export const claimPartnerReferral = onCall(async (req) => {
   // rider and the driver — they are paid for both.
   const type: FleetType = role === 'driver' ? 'driver' : 'passenger';
 
+  /**
+   * An ambassador's code, redeemed in the same box (owner, 2026-11-18).
+   *
+   * One field in the profile takes one code, and a student handed a code by a
+   * campus ambassador must never have to know whether the person who gave it to
+   * them was a fleet owner or an ambassador. So this is tried first, and if it
+   * resolves the claim ends here.
+   *
+   * An ambassador edge is deliberately NOT a fleet edge: it carries no fleetId
+   * and earns nothing per ride, because an ambassador is paid on their targets
+   * (ambassadors/config.ts), not on their recruits' fares. That is also why the
+   * fleet guards below are not run for it — there is no commission to protect.
+   * The guards that DO matter here are kept: self-referral, and binding once.
+   */
+  const ambassadorQuery = await db
+    .collection('ambassadors')
+    .where('referralCode', '==', code)
+    .limit(1)
+    .get();
+  if (!ambassadorQuery.empty) {
+    const ambassadorSnap = ambassadorQuery.docs[0];
+    const ambassadorId = ambassadorSnap.id;
+    if (ambassadorSnap.get('status') !== 'approved') {
+      invalid('That referral code is no longer active.');
+    }
+    if (ambassadorId === uid) invalid('You cannot use your own referral code.');
+
+    const edgeRef = db.doc(`ambassador_referrals/${uid}`);
+    await db.runTransaction(async (tx) => {
+      const existing = await tx.get(edgeRef);
+      // One account counts for one ambassador, once and for ever: this number
+      // is what unlocks a salary.
+      if (existing.exists) invalid('Your account is already linked to a referral code.');
+      const now = FieldValue.serverTimestamp();
+      tx.set(edgeRef, {
+        uid,
+        ambassadorId,
+        code,
+        deviceId,
+        /** Set by the partner approval if this recruit later buys a plan. */
+        boughtPartnerPlan: false,
+        boundAt: now,
+      });
+      tx.set(
+        db.doc(`ambassadors/${ambassadorId}`),
+        { usersOnboarded: FieldValue.increment(1), updatedAt: now },
+        { merge: true },
+      );
+    });
+
+    logger.info('Ambassador referral bound', { uid, ambassadorId });
+    return {
+      ok: true,
+      type,
+      fleetId: null,
+      partnerName: (ambassadorSnap.get('fullName') as string) ?? null,
+    };
+  }
+
   const partnerQuery = await db
     .collection('partners')
     .where('referralCode', '==', code)

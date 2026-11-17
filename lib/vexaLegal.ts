@@ -6,7 +6,7 @@ import {
   STUDIO_PLAN_IDS,
   STUDIO_TRIAL_HOURS,
   STUDIO_TRIAL_USD,
-  STUDIO_YEAR_DISCOUNT_PCT,
+  STUDIO_YEAR_SAVING_USD,
   studioUsd,
 } from './studio';
 
@@ -153,7 +153,7 @@ export const VEXA_TERMS: Clause[] = [
   },
   {
     t: 'Plans and prices',
-    d: `Vexa is sold by the month or by the year, in US dollars: ${PLAN_LIST} a month. A year is the same price less ${STUDIO_YEAR_DISCOUNT_PCT}%. Any plan can start with ${STUDIO_TRIAL_HOURS} hours for ${studioUsd(STUDIO_TRIAL_USD)}, so you can see it work first. Prices on the site may change; the price you paid is the price for the period you paid for.`,
+    d: `Vexa is sold by the month or by the year, in US dollars: ${PLAN_LIST} a month. Paid by the year it is $${STUDIO_YEAR_SAVING_USD} a month less, charged once for the twelve months. Any plan can start with ${STUDIO_TRIAL_HOURS} hours for ${studioUsd(STUDIO_TRIAL_USD)}, so you can see it work first. Prices on the site may change; the price you paid is the price for the period you paid for.`,
   },
   {
     t: 'Paying',
@@ -239,7 +239,7 @@ export const VEXA_SUPPORT: Clause[] = [
   },
   {
     t: 'What it costs',
-    d: `Sold by the month or by the year, in US dollars: ${PLAN_LIST} a month. A year is the same price less ${STUDIO_YEAR_DISCOUNT_PCT}%. Any plan can start with ${STUDIO_TRIAL_HOURS} hours for ${studioUsd(STUDIO_TRIAL_USD)}, so you can see it work before you pay for a month. Each payment buys exactly that one period — nothing renews on its own and no card is kept on file to be charged again.`,
+    d: `Sold by the month or by the year, in US dollars: ${PLAN_LIST} a month. Paid by the year it is $${STUDIO_YEAR_SAVING_USD} a month less, charged once for the twelve months. Any plan can start with ${STUDIO_TRIAL_HOURS} hours for ${studioUsd(STUDIO_TRIAL_USD)}, so you can see it work before you pay for a month. Each payment buys exactly that one period — nothing renews on its own and no card is kept on file to be charged again.`,
   },
   {
     t: 'How you pay',

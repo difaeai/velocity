@@ -46,26 +46,66 @@ export default function Index() {
     setProfileChecked(false);
 
     async function check() {
-      // Driver application status — routes a pending applicant to the submitted
-      // screen. Read failures fall back to null (treated as "not an applicant").
-      try {
-        const dsnap = await getDoc(doc(db, 'drivers', user!.uid));
-        setDriverStatus(dsnap.exists() ? ((dsnap.get('verificationStatus') as string) ?? null) : null);
-      } catch {
-        setDriverStatus(null);
-      }
-
       const key = `onboarding_done_${user!.uid}`;
       const unameKey = usernameDoneKey(user!.uid);
 
-      // Fast path: once the user completed onboarding AND claimed a username
-      // on this device we cache a local flag each, so Firestore read failures
-      // can never re-trap them. Both have to be cached to skip the read —
-      // every existing account predates usernames and needs asking once.
-      const [local, localUname] = await Promise.all([
+      /**
+       * Everything this route needs, asked for at once.
+       *
+       * These used to run one after another — the driver document, then the two
+       * local flags, then (usually) the user document — so a cold launch spent
+       * two serial Firestore round trips behind a blank splash-coloured screen
+       * before it could decide which route to send anyone to. They do not
+       * depend on each other, so they go together and the launch costs one
+       * round trip instead of two (owner, 2026-11-17: the app loads slowly).
+       *
+       * Each read swallows its own failure, so one of them being refused or
+       * timing out can never reject the whole thing and strand the user on the
+       * blank screen.
+       */
+      const [dsnap, usnap, local, localUname] = await Promise.all([
+        getDoc(doc(db, 'drivers', user!.uid)).catch(() => null),
+        getDoc(doc(db, 'users', user!.uid)).catch(() => null),
         AsyncStorage.getItem(key).catch(() => null),
         AsyncStorage.getItem(unameKey).catch(() => null),
       ]);
+
+      // Driver application status — routes a pending applicant to the submitted
+      // screen. A failed read falls back to null (treated as "not an applicant").
+      const isDriverAccount = !!dsnap?.exists();
+      setDriverStatus(
+        dsnap?.exists() ? ((dsnap.get('verificationStatus') as string) ?? null) : null,
+      );
+
+      /**
+       * A driver is never sent through passenger onboarding (owner, 2026-11-17).
+       *
+       * Somebody who signed up on "Become Driver" has already given us their
+       * name, their date of birth, their photograph and their CNIC — asking for
+       * all of it again on a rider form, under a heading welcoming them to the
+       * app, is the loop the owner called confusing. It bit hardest on the
+       * applicant waiting for approval: with no passenger profile yet, every
+       * app launch landed them on the rider onboarding form instead of on their
+       * own application status.
+       *
+       * Having a driver document at all is the test, not being approved — the
+       * details arrive with the application, long before the verdict. The
+       * passenger side asks for what it actually needs at the point it needs it
+       * (the shared-ride flow asks about riding with other genders when a
+       * shared seat is first booked), which is a better place to ask than a
+       * form in front of someone who came here to drive.
+       */
+      if (isDriverAccount) {
+        setProfileComplete(true);
+        setHasUsername(true);
+        setProfileChecked(true);
+        return;
+      }
+
+      // Once the user completed onboarding AND claimed a username on this
+      // device we cache a local flag each, so Firestore read failures can never
+      // re-trap them. Both have to be cached to trust them — every existing
+      // account predates usernames and needs asking once.
       if (local === '1' && localUname === '1') {
         setProfileComplete(true);
         setHasUsername(true);
@@ -73,31 +113,33 @@ export default function Index() {
         return;
       }
 
-      // Slow path: ask Firestore. One read answers both questions.
-      try {
-        const snap = await getDoc(doc(db, 'users', user!.uid));
-        const data = snap.data();
-        const named = !!data?.username;
-        setHasUsername(named);
-        if (named) AsyncStorage.setItem(unameKey, '1').catch(() => {});
-        // Accept as complete if any field written by the onboarding form exists.
-        // profileComplete is the canonical flag. name / dob / gender (not the
-        // trigger default 'unspecified') are fallbacks for older accounts.
-        const done = snap.exists() && (
-          data?.profileComplete === true ||
-          !!data?.name ||
-          !!data?.dob ||
-          (!!data?.gender && data.gender !== 'unspecified')
-        );
-        setProfileComplete(done);
-        // Persist locally so a future Firestore failure doesn't re-trigger this.
-        if (done) AsyncStorage.setItem(key, '1').catch(() => {});
-      } catch {
-        // On any read failure don't trap the user in onboarding — or on the
-        // username screen, which would be the same trap one step earlier.
+      // The user document, already in hand. A read that failed outright must
+      // not trap anyone in onboarding — or on the username screen, which would
+      // be the same trap one step earlier — so it is treated as "nothing left
+      // to ask".
+      if (!usnap) {
         setProfileComplete(true);
         setHasUsername(true);
+        setProfileChecked(true);
+        return;
       }
+
+      const data = usnap.data();
+      const named = !!data?.username;
+      setHasUsername(named);
+      if (named) AsyncStorage.setItem(unameKey, '1').catch(() => {});
+      // Accept as complete if any field written by the onboarding form exists.
+      // profileComplete is the canonical flag. name / dob / gender (not the
+      // trigger default 'unspecified') are fallbacks for older accounts.
+      const done = usnap.exists() && (
+        data?.profileComplete === true ||
+        !!data?.name ||
+        !!data?.dob ||
+        (!!data?.gender && data.gender !== 'unspecified')
+      );
+      setProfileComplete(done);
+      // Persist locally so a future Firestore failure doesn't re-trigger this.
+      if (done) AsyncStorage.setItem(key, '1').catch(() => {});
       setProfileChecked(true);
     }
 

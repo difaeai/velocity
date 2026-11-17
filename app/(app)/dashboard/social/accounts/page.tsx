@@ -183,6 +183,13 @@ export default function AccountsPage() {
 
       {error ? <p style={{ color: colors.danger, marginBottom: 14 }}>{error}</p> : null}
 
+      {/* The one thing plugged in here that is not a social network (owner,
+          2026-11-17): the customer's own website, which is what the SEO agent
+          reads. It lives at the top because it needs no sign-in and no token —
+          it is an address — so it is the fastest thing on the page to finish. */}
+      <WebsiteCard />
+
+
       {schema && !schema.vaultReady ? (
         <Card style={{ marginBottom: 16, borderColor: '#fab219', background: '#fab2190f' }}>
           <strong style={{ fontSize: 14 }}>The token vault is not configured</strong>
@@ -824,6 +831,95 @@ const inputStyle: React.CSSProperties = {
   fontSize: 14,
   fontFamily: 'inherit',
 };
+
+/**
+ * Your website — what the SEO agent reads.
+ *
+ * Not a network, so there is no sign-in and no token: it is an address, typed
+ * once. Saved straight away so the SEO page finds it already there, and the
+ * link goes to the report rather than running an audit from here — this page
+ * connects things, it does not do the work.
+ */
+function WebsiteCard() {
+  const [url, setUrl] = useState('');
+  const [saved, setSaved] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    socialApi
+      .getSeoReport({})
+      .then((r) => {
+        setSaved(r.url ?? null);
+        setUrl((u) => u || r.url || '');
+      })
+      .catch(() => {
+        /* Never connected one. The empty box IS the answer. */
+      });
+  }, []);
+
+  async function save() {
+    const next = url.trim();
+    if (!next) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await socialApi.setSeoSite({ url: next });
+      setSaved(r.url);
+      setUrl(r.url);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'That address did not look right.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="ac-card" style={{ marginBottom: 18 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center' }}>
+        <span style={{ fontSize: 26 }} aria-hidden>
+          🔍
+        </span>
+        <div style={{ flex: 1, minWidth: 240 }}>
+          <b>Your website</b>
+          <p style={{ margin: '2px 0 0', opacity: 0.7, fontSize: 13 }}>
+            {saved
+              ? 'Connected. Vexa reads it and tells your developer what to add.'
+              : 'Add it and Vexa will read it for SEO — no sign-in needed.'}
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <input
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void save();
+            }}
+            placeholder="https://yourbusiness.com"
+            style={{
+              minWidth: 220,
+              borderRadius: 10,
+              border: '1px solid rgba(255,255,255,.14)',
+              background: 'rgba(0,0,0,.25)',
+              color: 'inherit',
+              padding: '9px 12px',
+            }}
+          />
+          <button type="button" className="ac-guide" disabled={busy} onClick={save}>
+            {busy ? 'Saving…' : saved ? 'Update' : 'Connect'}
+          </button>
+          {saved ? (
+            <Link className="ac-guide" href="/dashboard/social/seo">
+              Open SEO
+            </Link>
+          ) : null}
+        </div>
+      </div>
+      {err ? <p style={{ color: colors.danger, marginTop: 10, fontSize: 13 }}>{err}</p> : null}
+    </section>
+  );
+}
+
 
 const ACC_CSS = `
 /* the band on top: the one number that answers "am I set up?" */

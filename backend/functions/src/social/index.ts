@@ -8,6 +8,12 @@
  * all know and the standup), pipeline.ts (a working day), then engagement.ts
  * (what happens after a piece is live).
  */
+/**
+ * The SEO agent: reads the customer's own website and tells their developer
+ * exactly what to add, and where. No key, no crawler — see ./seo.ts.
+ */
+export { setSeoSite, runSeoAudit, getSeoReport } from './seoAgent';
+
 export {
   adminConnectSocialAccount,
   adminDisconnectSocialAccount,

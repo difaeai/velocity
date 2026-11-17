@@ -9,8 +9,9 @@
  *   QueriesSection The newest questions customers sent, with what still needs
  *                  an answer called out.
  *   QueryRow       One conversation in a list.
+ *   OfferPreview   The offer drawn as the notification it will arrive as.
  */
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Image, Pressable, StyleSheet, View } from 'react-native';
 
 import type {
   BusinessAd,
@@ -276,7 +277,116 @@ export function QueryRow({
   );
 }
 
+// ── The offer, as the notification it will arrive as ─────────────────────────
+
+/**
+ * The only form in which anyone will ever see this offer, drawn while it is
+ * being written.
+ *
+ * It lives here rather than in the composer because the advertiser writes their
+ * offer twice — once to get approved (subscribe, step 1) and once to publish it
+ * (compose) — and showing them the real thing on one screen and nothing on the
+ * other is what made "preview" feel broken. Same mock, both screens.
+ *
+ * Every field is optional and every field has a placeholder: this is rendered
+ * from the first keystroke, so it has to read as a notification before it has
+ * any content in it.
+ */
+export function OfferPreview({
+  businessName,
+  title,
+  offerDetails,
+  imageUri,
+}: {
+  businessName?: string;
+  title?: string;
+  offerDetails?: string;
+  /** A local pick or a stored URL — both are `uri` sources. */
+  imageUri?: string | null;
+}) {
+  const biz = businessName?.trim() || 'Your business';
+  const head = title?.trim() || 'Your offer title';
+  return (
+    <View style={s.shade}>
+      <View style={s.shadeBar}>
+        <View style={s.shadeNotch} />
+      </View>
+      <View style={s.tray}>
+        <View style={s.trayHead}>
+          <View style={s.trayIcon}>
+            <Text style={s.trayIconTxt}>V</Text>
+          </View>
+          <Text style={s.trayApp}>Velocity Rides</Text>
+          <Text style={s.trayNow}>· now</Text>
+        </View>
+        <Text style={s.trayTitle} numberOfLines={2}>{`${biz}: ${head}`}</Text>
+        <Text style={s.trayBody} numberOfLines={3}>
+          {offerDetails?.trim() || 'Your offer details appear here.'}
+        </Text>
+        {imageUri ? (
+          <Image source={{ uri: imageUri }} style={s.trayImage} resizeMode="cover" />
+        ) : (
+          <View style={[s.trayImage, s.trayImageEmpty]}>
+            <Text style={s.trayImageEmptyTxt}>Your picture</Text>
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
+
 const s = themed(() => StyleSheet.create({
+  /* ── The notification mock ──
+     A strip styled like the top of a phone, so the card inside it reads as the
+     shade rather than as another card on the screen. */
+  shade: {
+    backgroundColor: colors.background,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 10,
+    gap: 8,
+  },
+  shadeBar: { alignItems: 'center' },
+  shadeNotch: {
+    width: 54,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: colors.border,
+  },
+  tray: {
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 12,
+    gap: 5,
+  },
+  trayHead: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  trayIcon: {
+    width: 18,
+    height: 18,
+    borderRadius: 5,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  trayIconTxt: { fontSize: 11, fontWeight: '900', color: colors.btnText },
+  trayApp: { fontSize: 10, fontWeight: '800', color: colors.muted },
+  trayNow: { fontSize: 10, fontWeight: '600', color: colors.muted },
+  trayTitle: { fontSize: 14, fontWeight: '900', color: colors.text },
+  trayBody: { fontSize: 12, fontWeight: '600', color: colors.muted, lineHeight: 17 },
+  trayImage: { width: '100%', height: 130, borderRadius: 10, marginTop: 4 },
+  trayImageEmpty: {
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  trayImageEmptyTxt: { fontSize: 11, fontWeight: '700', color: colors.muted },
+
   card: {
     backgroundColor: colors.surface,
     borderRadius: 20,

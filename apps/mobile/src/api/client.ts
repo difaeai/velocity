@@ -2084,6 +2084,17 @@ export const api = {
   >('requestPartnerWithdrawal'),
 
   // ── Find your Customers — business proximity advertising ──────────────────
+  // ── Velocity Ambassador Program ──
+  applyAmbassador: callable<
+    { cvUrl?: string; cnicUrl?: string; about?: string; acceptedTerms: true },
+    { ok: boolean; status: 'pending' }
+  >('applyAmbassador'),
+  getMyAmbassador: callable<Record<string, never>, MyAmbassador>('getMyAmbassador'),
+  setAmbassadorPayout: callable<
+    { accountTitle: string; accountNumber: string; bankName: string },
+    { ok: boolean }
+  >('setAmbassadorPayout'),
+
   getBusinessAdPlans: callable<Record<string, never>, BusinessAdPlans>('getBusinessAdPlans'),
   submitBusinessAdApplication: callable<
     BusinessAdApplicationInput,
@@ -2275,8 +2286,45 @@ export interface BusinessAdCreative {
   imageUrl: string;
 }
 
+/** What the Velocity Ambassador board shows — backend ambassadors/index.ts. */
+export interface MyAmbassador {
+  ok: boolean;
+  /** `none` is the normal first answer: the screen that asks is the one that applies. */
+  stage: 'none' | 'pending' | 'rejected' | 'resubmit' | 'active' | 'suspended';
+  settings: {
+    userTarget: number;
+    partnerTarget: number;
+    salaryPkr: number;
+    commissionPerPartnerPkr: number;
+    currency: string;
+  };
+  referralCode?: string | null;
+  fullName?: string | null;
+  rejectionReason?: string | null;
+  payoutAccount?: {
+    accountTitle?: string;
+    accountNumber?: string;
+    bankName?: string;
+  } | null;
+  progress?: {
+    usersOnboarded: number;
+    partnersSold: number;
+    usersRemaining: number;
+    partnersRemaining: number;
+    userTargetMet: boolean;
+    partnerTargetMet: boolean;
+    salaryUnlocked: boolean;
+    payPkr: number;
+    payKind: 'salary' | 'commission';
+    /** The admin has not set a commission rate yet — show "to be confirmed". */
+    rateUnset: boolean;
+  };
+}
+
 export interface BusinessAdApplicationInput {
   radiusKm: number;
+  /** How many days the ad runs from approval. The server clamps and re-prices. */
+  days: number;
   lat: number;
   lng: number;
   address?: string;
@@ -2468,15 +2516,21 @@ export type IdDocType = 'cnic' | 'university_card' | 'driving_license' | 'passpo
 
 export interface PartnerApplicationInput {
   tier: PartnerTier;
-  fullName: string;
-  mobile: string;
-  idType: IdDocType;
+  /**
+   * Everything down to `city` is OPTIONAL since 2026-11-18 (owner: stop asking
+   * for details we already have). The server takes the name off the user's
+   * profile and the number off the verified auth record; the ID is not asked
+   * for at all. They stay in the type because an older build still sends them.
+   */
+  fullName?: string;
+  mobile?: string;
+  idType?: IdDocType;
   /** The number printed on the ID — hyphenated 13 digits when it is a CNIC. */
-  cnicNumber: string;
-  cnicFrontUrl: string;
+  cnicNumber?: string;
+  cnicFrontUrl?: string;
   /** Required for a CNIC; other documents may not have a meaningful back. */
   cnicBackUrl?: string;
-  city: string;
+  city?: string;
   /** Pro only — a screenshot of the registration-fee transfer. */
   paymentProofUrl?: string;
   paymentMethod?: WithdrawalMethod;

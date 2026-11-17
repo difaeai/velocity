@@ -27,6 +27,7 @@ import { useBusinessAdDashboard } from '../../../src/hooks/businessAds';
 import { uploadBusinessAdImage } from '../../../src/lib/uploadDoc';
 import { themed } from '../../../src/theme';
 import { Text, TextInput } from '../../../src/ui/Text';
+import { OfferPreview } from '../../../src/ui/businessAds';
 import { PrimaryButton } from '../../../src/ui/components';
 import { pickPhoto } from '../../../src/ui/onboarding';
 import { Skeleton } from '../../../src/ui/partner';
@@ -126,29 +127,16 @@ export default function BusinessAdCompose() {
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
-          {/* What the notification will look like on someone's phone. */}
+          {/* What the notification will look like on someone's phone. The same
+              component the buy flow draws, so the offer an advertiser approves
+              of on one screen is the offer they see on the other. */}
           <Text style={styles.sectionLabel}>HOW PEOPLE WILL SEE IT</Text>
-          <View style={styles.notifCard}>
-            <View style={styles.notifTop}>
-              <View style={styles.notifAppIcon}>
-                <Text style={styles.notifAppIconTxt}>V</Text>
-              </View>
-              <Text style={styles.notifApp}>Velocity Rides · now</Text>
-            </View>
-            <Text style={styles.notifTitle} numberOfLines={1}>
-              {(businessName.trim() || 'Your business') + ': ' + (title.trim() || 'Your offer title')}
-            </Text>
-            <Text style={styles.notifBody} numberOfLines={3}>
-              {offerDetails.trim() || 'Your offer details appear here.'}
-            </Text>
-            {shownImage ? (
-              <Image source={{ uri: shownImage }} style={styles.notifImage} />
-            ) : (
-              <View style={[styles.notifImage, styles.notifImageEmpty]}>
-                <Text style={styles.notifImageEmptyTxt}>Your picture</Text>
-              </View>
-            )}
-          </View>
+          <OfferPreview
+            businessName={businessName}
+            title={title}
+            offerDetails={offerDetails}
+            imageUri={shownImage}
+          />
 
           <Text style={styles.sectionLabel}>OFFER PICTURE</Text>
           <Pressable style={styles.photoPicker} onPress={() => pickPhoto(setNewImageUri)}>
@@ -244,38 +232,6 @@ const styles = themed(() => StyleSheet.create({
     letterSpacing: 0.6,
     marginTop: 6,
   },
-
-  notifCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 12,
-    gap: 6,
-  },
-  notifTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  notifAppIcon: {
-    width: 18,
-    height: 18,
-    borderRadius: 5,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  notifAppIconTxt: { fontSize: 11, fontWeight: '900', color: '#000' },
-  notifApp: { fontSize: 10, fontWeight: '700', color: colors.muted },
-  notifTitle: { fontSize: 14, fontWeight: '900', color: colors.text },
-  notifBody: { fontSize: 12, fontWeight: '600', color: colors.muted, lineHeight: 17 },
-  notifImage: { width: '100%', height: 130, borderRadius: 10, marginTop: 4 },
-  notifImageEmpty: {
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  notifImageEmptyTxt: { fontSize: 11, fontWeight: '700', color: colors.muted },
 
   photoPicker: {
     borderRadius: 16,

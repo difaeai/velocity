@@ -152,6 +152,55 @@ export const submitDriverOnboarding = onCall(async (req) => {
     { merge: true },
   );
 
+  /**
+   * The rider half of the same person (owner, 2026-11-17).
+   *
+   * Every driver is also a passenger — the driver drawer's "Ride as Passenger"
+   * is the second thing in it — and until now a driver who crossed over arrived
+   * with an empty rider profile: no name in the drawer, and a launch that could
+   * drop them onto the rider onboarding form to type in details this
+   * application already carries.
+   *
+   * So the application fills it in. Deliberately narrow:
+   *
+   *   • merge, and only fields the rider side has no better source for. A
+   *     passenger who later becomes a driver keeps the name THEY chose; this
+   *     only ever writes over the `onUserCreate` placeholder.
+   *   • no gender. The driver form does not ask, and the shared-ride flow asks
+   *     for itself at the point it matters. Writing 'unspecified' here would
+   *     look like an answer.
+   *   • NO PHOTOGRAPH. `photoDocUrl` points into
+   *     `drivers/{uid}/documents/`, which storage.rules keeps to the owner and
+   *     admins — never world-readable, because it is KYC. `users/{uid}.photoURL`
+   *     is the opposite: other riders read it to draw an avatar. Copying the
+   *     one into the other would both leak a KYC URL into a broadly-readable
+   *     document and draw a broken image for everybody but its owner. A driver
+   *     who wants an avatar sets one from their profile, which uploads to the
+   *     avatar path that is meant to be read.
+   *   • best-effort. A driver application must not fail because the rider
+   *     profile could not be touched.
+   */
+  try {
+    const userRef = db.doc(`users/${ctx.uid}`);
+    const me = (await userRef.get()).data() ?? {};
+    const named = typeof me.name === 'string' && me.name.trim().length > 0;
+    await userRef.set(
+      {
+        // `onUserCreate` seeds displayName as the placeholder 'New User', which
+        // the rider side already treats as "no name"; both are filled only when
+        // the rider has not named themselves.
+        ...(named ? {} : { name: data.fullName, displayName: data.fullName }),
+        ...(me.dob || !data.dob ? {} : { dob: data.dob }),
+        profileComplete: true,
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+  } catch (err) {
+    // `error:`, never `message:` — the logger overwrites that key.
+    logger.warn('Driver rider-profile seed failed', { uid: ctx.uid, error: err });
+  }
+
   // Hand off to the verification engine and return. The vision pass over six
   // documents takes tens of seconds — far too long to hold a callable open on
   // a phone — so the verdict arrives on the driver doc, which the app streams.
