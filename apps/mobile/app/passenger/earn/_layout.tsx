@@ -14,7 +14,13 @@ import { AdBanner } from '../../../src/ads';
  * revenue, analytics, fleet, referral) is browsing, which is where a banner
  * belongs.
  */
-const AD_FREE = ['/passenger/earn/apply', '/passenger/earn/withdraw'];
+const AD_FREE = [
+  '/passenger/earn/apply',
+  '/passenger/earn/withdraw',
+  // The ambassador application uploads an identity document and, once
+  // approved, holds a bank account — the same reason `apply` is ad-free.
+  '/passenger/earn/ambassador',
+];
 
 /**
  * Earn with Velocity — the Partner Program.
@@ -56,6 +62,8 @@ function EarnStack() {
     >
       <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="apply" options={{ title: 'Partner application' }} />
+      {/* Draws its own header, like the landing and the dashboard. */}
+      <Stack.Screen name="ambassador" options={{ headerShown: false }} />
       <Stack.Screen name="dashboard" options={{ headerShown: false }} />
       <Stack.Screen name="fleet" options={{ title: 'Fleet' }} />
       <Stack.Screen name="member/[uid]" options={{ title: 'Member' }} />
