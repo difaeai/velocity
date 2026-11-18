@@ -11,8 +11,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   canFreeForm,
+  chatIdFor,
+  chatIdOf,
   cleanStage,
   findNumber,
+  igsidOf,
   isQuiet,
   isStop,
   languageOf,
@@ -254,5 +257,40 @@ describe('a lead comment may carry our own number, and only ours', () => {
 
   it('still holds a link, whatever number is connected', () => {
     expect(holdReason('See example.com for prices', '923175812623')).toBe('it carries a link');
+  });
+});
+
+/**
+ * Both inboxes land in one conversation list, so the id is the only thing that
+ * says which transport a reply goes back down. An Instagram-scoped id is
+ * digits, exactly like a phone number — if these ever collide, a reply meant
+ * for an Instagram lead is sent to whoever owns that number on WhatsApp.
+ */
+describe('which inbox a chat belongs to', () => {
+  const IGSID = '17841400000000001';
+
+  it('marks an Instagram lead, and reads the id back out', () => {
+    const id = chatIdFor('instagram', IGSID);
+    expect(id).toBe(`ig_${IGSID}`);
+    expect(igsidOf(id)).toBe(IGSID);
+  });
+
+  it('never mistakes a WhatsApp lead for an Instagram one', () => {
+    expect(igsidOf(chatIdFor('whatsapp', '0300 123 4567'))).toBeNull();
+    expect(igsidOf(chatIdFor('whatsapp', IGSID))).toBeNull();
+  });
+
+  it('leaves an Instagram id alone when the console hands it back', () => {
+    // toNumber() would read those digits as a phone number and rewrite them.
+    expect(chatIdOf(`ig_${IGSID}`)).toBe(`ig_${IGSID}`);
+  });
+
+  it('still normalises a phone number the console hands back', () => {
+    expect(chatIdOf('0300 123 4567')).toBe(toNumber('0300 123 4567'));
+  });
+
+  it('asks an Instagram lead for their number, and a WhatsApp one never', () => {
+    expect(needsNumber({ source: 'instagram' })).toBe(true);
+    expect(needsNumber({ source: 'whatsapp' })).toBe(false);
   });
 });

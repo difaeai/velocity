@@ -65,10 +65,12 @@ import { db, FieldValue, SCHEDULE_REGION } from '../lib/firebase';
 import { requireAuth } from '../lib/guards';
 import { classifySendError, postMessage, type SendResult } from '../whatsapp/client';
 import { pktDayKey, pktHour, readInboundIntent } from '../whatsapp/policy';
+import { loadCredentials } from './accounts';
 import { brandName, systemFor } from './crew';
 import { activeTeam, assign, creditWork } from './employees';
 import { activeEngine, generateJson, modelReady } from './engine';
 import { looksRomanUrdu } from './local';
+import { listThreads, sendDm } from './platforms';
 import { open, seal, tokenVaultReady, type SealedSecret } from './secrets';
 import { getSocialSettings } from './settings';
 import type { Employee } from './types';
@@ -82,6 +84,23 @@ const SECRET_PATH = 'system/whatsapp/secret/credentials';
 export const numberRef = (phoneNumberId: string) => db.doc(`vexaNumbers/${phoneNumberId}`);
 /** One lead's whole conversation, keyed by their WhatsApp id. */
 export const chatRef = (waId: string) => sdb.doc(`salesChats/${waId}`);
+
+/**
+ * Instagram leads live in `salesChats` beside the WhatsApp ones — one funnel,
+ * two doors — so the id has to say which inbox a reply goes back down. An
+ * Instagram-scoped id is digits, exactly like a phone number, and a reply sent
+ * down the wrong transport reaches a stranger or nobody at all.
+ */
+export const IG_PREFIX = 'ig_';
+export const igsidOf = (waId: string): string | null =>
+  waId.startsWith(IG_PREFIX) ? waId.slice(IG_PREFIX.length) : null;
+
+/** The chat id for an inbound on either transport. */
+export const chatIdFor = (channel: Channel, from: string): string =>
+  channel === 'instagram' ? IG_PREFIX + from : (toNumber(from) ?? from);
+
+/** A chat id as the console hands it back: already prefixed, or a phone number. */
+export const chatIdOf = (raw: string): string => (raw.startsWith(IG_PREFIX) ? raw : (toNumber(raw) ?? raw));
 
 /** Meta's service window: a free-form reply is only allowed this long after their last message. */
 export const SERVICE_WINDOW_MS = 24 * 3600_000;
@@ -101,6 +120,9 @@ export const KEEP_MESSAGES = 24;
 // ── the shapes ──────────────────────────────────────────────────────────────
 
 export type Lang = 'english' | 'roman-urdu' | 'urdu-script';
+
+/** The two inboxes Vexa answers. Both land in the same conversation list. */
+export type Channel = 'whatsapp' | 'instagram';
 
 export const STAGES = ['new', 'talking', 'qualified', 'pitched', 'won', 'lost', 'needs_you', 'queued', 'stopped'] as const;
 export type Stage = (typeof STAGES)[number];
@@ -144,6 +166,13 @@ export interface SalesChat {
   blockedReason: string | null;
   /** For a sheet row: what the client said about them. */
   note?: string;
+  /**
+   * Instagram only — the timestamp of the last DM of theirs this desk has read,
+   * in Meta's clock rather than ours. The inbox is polled, so the watermark
+   * cannot be "when we last looked": a message that arrives while a sync is
+   * running would then be older than the mark and never answered.
+   */
+  igSyncedUpToMs?: number;
   createdAtMs: number;
   updatedAtMs: number;
 }
@@ -416,6 +445,36 @@ async function send(to: string, body: string, cfg: CloserConfig, token: string):
   );
 }
 
+/**
+ * How a reply reaches this lead, or null when that inbox is not connected.
+ *
+ * The chat's own id decides it, never the caller: WhatsApp and Instagram are
+ * two transports onto one conversation list, and a message put down the wrong
+ * one is delivered to a stranger or to nobody at all.
+ */
+async function transportFor(waId: string): Promise<((text: string) => Promise<SendResult>) | null> {
+  const igsid = igsidOf(waId);
+  if (igsid) {
+    const creds = await loadCredentials('instagram');
+    if (!creds) return null;
+    return async (text) => {
+      try {
+        const messageId = await sendDm('instagram', creds, igsid, text);
+        return { ok: true, messageId: messageId || null };
+      } catch (e) {
+        // Meta's own words. "Outside the allowed window" and "this person
+        // blocked you" need different answers from the console, and only the
+        // message it sends back tells them apart.
+        return { ok: false, code: null, action: 'ignore', detail: (e as Error).message.slice(0, 300) };
+      }
+    };
+  }
+  const cfg = await closerConfig();
+  const token = await closerToken();
+  if (!cfg.phoneNumberId || !token) return null;
+  return (text) => send(waId, text, cfg, token);
+}
+
 /** Open a conversation with the client's approved template. Never throws. */
 async function sendTemplate(to: string, cfg: CloserConfig, token: string, params: string[]): Promise<SendResult> {
   return postMessage(
@@ -593,15 +652,21 @@ export async function handleInbound(params: {
  * the second read happens before the first write lands. Every append here is an
  * `arrayUnion`, which is atomic, so nothing a customer says is ever lost.
  */
-async function receive(from: string, name: string | null, text: string, live = true): Promise<void> {
+async function receive(
+  from: string,
+  name: string | null,
+  text: string,
+  live = true,
+  channel: Channel = 'whatsapp',
+): Promise<void> {
   const nowMs = Date.now();
-  const waId = toNumber(from) ?? from;
+  const waId = chatIdFor(channel, from);
   const said = text.trim().slice(0, 2000);
   if (!said) return;
 
   const ref = chatRef(waId);
   const existing = (await ref.get()).data() as SalesChat | undefined;
-  const chat: SalesChat = existing ?? newChat({ waId, name, source: 'whatsapp', nowMs });
+  const chat: SalesChat = existing ?? newChat({ waId, name, source: channel, nowMs });
   const theirs: ChatMessage = { from: 'them', text: said, atMs: nowMs };
 
   chat.name = chat.name ?? name;
@@ -616,7 +681,7 @@ async function receive(from: string, name: string | null, text: string, live = t
     await ref.set(
       {
         // Everything but the array, which is appended to rather than replaced.
-        ...(existing ? {} : newChat({ waId, name, source: 'whatsapp', nowMs })),
+        ...(existing ? {} : newChat({ waId, name, source: channel, nowMs })),
         name: chat.name,
         language: chat.language,
         lastInboundAtMs: nowMs,
@@ -677,19 +742,67 @@ async function receive(from: string, name: string | null, text: string, live = t
     handover: written.handover,
   };
 
-  const token = await closerToken();
-  if (cfg.sendMode === 'approve' || written.handover || !token || !cfg.phoneNumberId) {
+  const outbound = await transportFor(waId);
+  if (cfg.sendMode === 'approve' || written.handover || !outbound) {
     await keep(moved, { from: 'us', text: written.reply, atMs: Date.now(), draft: true });
     return;
   }
 
-  const result = await send(waId, written.reply, cfg, token);
+  const result = await outbound(written.reply);
   if (result.ok) {
     await keep({ ...moved, lastOutboundAtMs: Date.now(), followUps: 0 }, { from: 'us', text: written.reply, atMs: Date.now() });
   } else {
     await keep(moved);
     await afterFailure(chat, result);
   }
+}
+
+/**
+ * Read the Instagram inbox and hand anything new to the engine that already
+ * answers WhatsApp.
+ *
+ * Polled rather than pushed, deliberately. An Instagram messages webhook needs
+ * the Page subscribed to it, which is one more permission to justify at app
+ * review, and a sales inbox read every fifteen minutes is not a worse product
+ * than one read instantly.
+ *
+ * Nothing is answered outside Meta's 24-hour window. That is not manners: the
+ * send would be refused anyway, and without the check, connecting an inbox with
+ * months of old threads in it would try to answer every one of them at once.
+ */
+export async function syncInstagramDms(live = true): Promise<{ threads: number; answered: number }> {
+  const creds = await loadCredentials('instagram');
+  if (!creds) return { threads: 0, answered: 0 };
+
+  const threads = await listThreads('instagram', creds, 25);
+  const nowMs = Date.now();
+  let answered = 0;
+
+  for (const thread of threads) {
+    const ref = chatRef(IG_PREFIX + thread.participantId);
+    const existing = (await ref.get()).data() as SalesChat | undefined;
+    const since = existing?.igSyncedUpToMs ?? 0;
+    const fresh = thread.messages.filter((m) => !m.fromUs && m.atMs > since);
+    if (!fresh.length) continue;
+
+    const latest = fresh[fresh.length - 1];
+    if (!canFreeForm(latest.atMs, nowMs)) continue;
+
+    // "salam", then "rate?" seconds later is one turn of a conversation.
+    // Answering each separately is two model bills and two replies to somebody
+    // who asked one question.
+    const said = fresh
+      .slice(-5)
+      .map((m) => m.text)
+      .join('\n');
+    await receive(thread.participantId, thread.participantName, said, live, 'instagram');
+    // Written after the turn, so a crash mid-reply re-reads the message rather
+    // than losing it.
+    await ref.set({ igSyncedUpToMs: latest.atMs }, { merge: true });
+    answered += 1;
+  }
+
+  return { threads: threads.length, answered };
 }
 
 /** A failed delivery reported later by Meta's webhook. */
@@ -950,28 +1063,37 @@ export const vexaUploadSheet = deskCall('sales', async (req) => {
 /** Send a draft the client approved, or their own words, into a live chat. */
 export const vexaSendMessage = deskCall('sales', async (req) => {
   requireAuth(req);
-  const parsed = z.object({ waId: z.string().trim().min(6).max(20), text: z.string().trim().min(1).max(1000) }).safeParse(req.data ?? {});
+  const parsed = z.object({ waId: z.string().trim().min(6).max(64), text: z.string().trim().min(1).max(1000) }).safeParse(req.data ?? {});
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Say what to send.');
-  const cfg = await closerConfig();
-  const token = await closerToken();
-  if (!cfg.phoneNumberId || !token) throw new HttpsError('failed-precondition', 'Connect your WhatsApp number first.');
 
-  const waId = toNumber(parsed.data.waId) ?? parsed.data.waId;
+  const waId = chatIdOf(parsed.data.waId);
   const chat = (await chatRef(waId).get()).data() as SalesChat | undefined;
   if (!chat) throw new HttpsError('not-found', 'No such conversation.');
-  if (chat.blocked) throw new HttpsError('failed-precondition', 'This number asked us to stop, or cannot receive messages.');
+  if (chat.blocked) throw new HttpsError('failed-precondition', 'This person asked us to stop, or cannot receive messages.');
+
+  const onInstagram = Boolean(igsidOf(waId));
+  const network = onInstagram ? 'Instagram' : 'WhatsApp';
+  const outbound = await transportFor(waId);
+  if (!outbound) {
+    throw new HttpsError(
+      'failed-precondition',
+      onInstagram ? 'Connect your Instagram account first.' : 'Connect your WhatsApp number first.',
+    );
+  }
 
   const nowMs = Date.now();
   if (!canFreeForm(chat.lastInboundAtMs, nowMs)) {
     throw new HttpsError(
       'failed-precondition',
-      'WhatsApp only allows a free message within 24 hours of their last one. This conversation has to be opened with your approved template.',
+      onInstagram
+        ? 'Instagram only allows a message within 24 hours of their last one, and it has no template to reopen a conversation with.'
+        : 'WhatsApp only allows a free message within 24 hours of their last one. This conversation has to be opened with your approved template.',
     );
   }
   // The owner's own words go as typed; only Vexa's are cut to two sentences.
   const text = parsed.data.text.trim().slice(0, 1000);
-  const result = await send(waId, text, cfg, token);
-  if (!result.ok) throw new HttpsError('unavailable', `WhatsApp refused it: ${result.detail}`.slice(0, 300));
+  const result = await outbound(text);
+  if (!result.ok) throw new HttpsError('unavailable', `${network} refused it: ${result.detail}`.slice(0, 300));
   await chatRef(waId).set(
     {
       messages: FieldValue.arrayUnion({ from: 'us', text, atMs: nowMs }),
@@ -988,10 +1110,10 @@ export const vexaSendMessage = deskCall('sales', async (req) => {
 export const vexaChatAction = deskCall('sales', async (req) => {
   requireAuth(req);
   const parsed = z
-    .object({ waId: z.string().trim().min(6).max(20), action: z.enum(['take-over', 'give-back', 'won', 'lost', 'block']) })
+    .object({ waId: z.string().trim().min(6).max(64), action: z.enum(['take-over', 'give-back', 'won', 'lost', 'block']) })
     .safeParse(req.data ?? {});
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Unknown action.');
-  const waId = toNumber(parsed.data.waId) ?? parsed.data.waId;
+  const waId = chatIdOf(parsed.data.waId);
   const ref = chatRef(waId);
   if (!(await ref.get()).exists) throw new HttpsError('not-found', 'No such conversation.');
 
@@ -1000,7 +1122,7 @@ export const vexaChatAction = deskCall('sales', async (req) => {
   if (parsed.data.action === 'give-back') Object.assign(patch, { handover: false, stage: 'talking' as Stage });
   if (parsed.data.action === 'won') Object.assign(patch, { stage: 'won' as Stage, handover: false });
   if (parsed.data.action === 'lost') Object.assign(patch, { stage: 'lost' as Stage, handover: false });
-  if (parsed.data.action === 'block') Object.assign(patch, { blocked: true, blockedReason: 'You blocked this number.', stage: 'stopped' as Stage });
+  if (parsed.data.action === 'block') Object.assign(patch, { blocked: true, blockedReason: 'You blocked this lead.', stage: 'stopped' as Stage });
   await ref.set(patch, { merge: true });
   return { ok: true };
 });
@@ -1027,6 +1149,12 @@ export const vexaCloserState = deskCall('sales', async () => {
 /** "Reply to them now" / "send the sheet now" from the console. */
 export const vexaRunOutreach = deskCall('sales', { timeoutSeconds: 540 }, async () => ({ ok: true, status: await runOutreach() }));
 
+/** "Check Instagram now" — the same read the sweep does, on demand. */
+export const vexaSyncInstagramDms = deskCall('sales', { timeoutSeconds: 540 }, async () => ({
+  ok: true,
+  ...(await syncInstagramDms()),
+}));
+
 /**
  * Every fifteen minutes: open what is queued, nudge who went quiet.
  *
@@ -1037,9 +1165,19 @@ export const vexaCloserSweep = onSchedule(
   { schedule: 'every 15 minutes', timeZone: 'Asia/Karachi', region: SCHEDULE_REGION, timeoutSeconds: 540, memory: '512MiB' },
   () =>
     forEachWorkspace('sales', async () => {
+      // Instagram is read whether or not a WhatsApp number is connected: they
+      // are two doors onto one funnel, and a desk that only sells on Instagram
+      // still has leads waiting.
+      const instagram = await syncInstagramDms().catch((e) => {
+        logger.warn('closer: the Instagram inbox could not be read', {
+          wid: currentWorkspace(),
+          error: (e as Error).message,
+        });
+        return null;
+      });
       const cfg = await closerConfig();
       if (!cfg.phoneNumberId) return;
       const status = await runOutreach();
-      logger.info('closer: swept', { wid: currentWorkspace(), status });
+      logger.info('closer: swept', { wid: currentWorkspace(), status, instagram });
     }),
 );
