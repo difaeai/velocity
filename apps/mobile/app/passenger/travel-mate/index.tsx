@@ -378,11 +378,15 @@ export default function TravelMateHome() {
           <Text style={s.backBtnText}>← Book Ride</Text>
         </Pressable>
         <Text style={s.screenTitle}>Travel Partner</Text>
-        <Pressable onPress={() => router.push('/passenger/travel-mate/setup')} style={s.gearBtn}>
-          <Text style={s.gearText}>⚙️</Text>
-        </Pressable>
+        {/* Status, then settings — the pill sits immediately left of the gear
+            on every Travel Partner screen (owner, 2026-11-18). */}
+        <View style={s.topRight}>
+          <InboxModeBar />
+          <Pressable onPress={() => router.push('/passenger/travel-mate/setup')} style={s.gearBtn}>
+            <Text style={s.gearText}>⚙️</Text>
+          </Pressable>
+        </View>
       </View>
-      <InboxModeBar />
     </>
   );
 
@@ -525,6 +529,8 @@ const s = themed(() => StyleSheet.create({
   backBtn:     { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 99, backgroundColor: `${colors.primary}18`, borderWidth: 1.5, borderColor: `${colors.primary}40` },
   backBtnText: { fontSize: 12, fontWeight: '800', color: colors.primary },
   screenTitle: { fontSize: 18, fontWeight: '900', color: colors.text },
+  /** Status pill + settings, as one group on the right of the header. */
+  topRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   gearBtn:     { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
   gearText:    { fontSize: 16 },
 

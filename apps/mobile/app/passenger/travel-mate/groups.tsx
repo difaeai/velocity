@@ -97,9 +97,8 @@ export default function TravelMateGroups() {
           <Text style={s.backBtnText}>← Book Ride</Text>
         </Pressable>
         <Text style={s.screenTitle}>Groups</Text>
-        <View style={{ width: 80 }} />
+        <InboxModeBar />
       </View>
-      <InboxModeBar />
 
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
         <View style={s.grid}>

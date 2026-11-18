@@ -493,6 +493,7 @@ export default function TravelMateFeed() {
       <View style={s.topBar}>
         <Text style={s.screenTitle}>Feed</Text>
         <View style={s.topActions}>
+          <InboxModeBar />
           <Pressable
             onPress={() => router.push('/passenger/travel-mate/feed-search' as Parameters<typeof router.push>[0])}
             style={s.topIconBtn}
@@ -511,7 +512,6 @@ export default function TravelMateFeed() {
           </Pressable>
         </View>
       </View>
-      <InboxModeBar />
 
       {/* Filter chips */}
       <View style={s.chipsRow}>
