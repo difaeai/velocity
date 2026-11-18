@@ -90,8 +90,15 @@ export default function AmbassadorsPage() {
         where('status', 'in', ['pending', 'resubmit']),
         orderBy('submittedAt', 'desc'),
       ),
-      (snap) => setApps(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Application)),
-      () => setApps([]),
+      (snap) => {
+        setApps(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Application));
+        setError(null);
+      },
+      // Never swallowed into an empty list. This query needs a composite index
+      // on (status, submittedAt), and while one was missing the queue read
+      // "Nothing waiting." — which is not an error anybody investigates, so
+      // applications sat unapproved and nobody could see why.
+      (e) => setError(`The application queue could not be read: ${e.message}`),
     );
   }, []);
 
