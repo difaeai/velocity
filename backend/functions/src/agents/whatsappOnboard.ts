@@ -69,6 +69,80 @@ async function graph<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 /** What the console needs to decide whether it can draw the button. */
+/** The connected line's WhatsApp account, and a token that can act on it. */
+async function wabaFor(): Promise<{ wabaId: string; token: string }> {
+  const line = (await sdb.doc(WA_LINE).get()).data() as WaLine | undefined;
+  const sealed = (await sdb.doc(WA_SECRET).get()).data()?.token as SealedSecret | undefined;
+  if (!line?.wabaId || !sealed) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Connect a WhatsApp number first — a template belongs to its WhatsApp Business account, not to Vexa.',
+    );
+  }
+  return { wabaId: line.wabaId, token: open(sealed) };
+}
+
+/**
+ * Submit a message template for Meta's review.
+ *
+ * A template is the only way to write to somebody more than 24 hours after
+ * their last message, which is what `sendTemplate` in the closer needs and
+ * what every outreach batch waits on. Meta reviews each one, and nothing here
+ * can hurry it: it comes back PENDING and stays that way until it does not.
+ */
+export const agentSubmitWhatsAppTemplate = deskCall('sales', { timeoutSeconds: 60 }, async (req) => {
+  requireAuth(req);
+  const parsed = z
+    .object({
+      // Meta's own rule, not ours: lower case, digits and underscores only.
+      name: z
+        .string()
+        .trim()
+        .regex(/^[a-z0-9_]{1,512}$/),
+      language: z.string().trim().max(10).default('en'),
+      category: z.enum(['MARKETING', 'UTILITY']).default('UTILITY'),
+      body: z.string().trim().min(1).max(1024),
+    })
+    .safeParse(req.data ?? {});
+  if (!parsed.success) {
+    throw new HttpsError('invalid-argument', 'A template needs a lower-case name with no spaces in it, and some text.');
+  }
+  const { wabaId, token } = await wabaFor();
+
+  const made = await graph<{ id?: string; status?: string }>(`${GRAPH}/${encodeURIComponent(wabaId)}/message_templates`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      name: parsed.data.name,
+      language: parsed.data.language || 'en',
+      category: parsed.data.category,
+      components: JSON.stringify([{ type: 'BODY', text: parsed.data.body }]),
+    }).toString(),
+  });
+
+  // The desk can only open a conversation with a template it knows the name
+  // of, so the first approved one becomes the line's template.
+  const line = (await sdb.doc(WA_LINE).get()).data() as WaLine | undefined;
+  if (!line?.templateName) {
+    await sdb.doc(WA_LINE).set(
+      { templateName: parsed.data.name, templateLang: parsed.data.language || 'en', templateHasName: false },
+      { merge: true },
+    );
+  }
+
+  return { ok: true, id: made.id ?? null, status: made.status ?? 'PENDING' };
+});
+
+/** Every template on the connected account, and where Meta's review got to. */
+export const agentWhatsAppTemplates = deskCall('sales', async () => {
+  const { wabaId, token } = await wabaFor();
+  const res = await graph<{ data?: { name: string; status: string; category?: string; language?: string }[] }>(
+    `${GRAPH}/${encodeURIComponent(wabaId)}/message_templates?fields=name,status,category,language&limit=50`,
+    { headers: { authorization: `Bearer ${token}` } },
+  );
+  return { templates: res.data ?? [] };
+});
+
 export const agentWhatsAppSignupState = deskCall('sales', async () => {
   const app = await metaApp();
   const cfg = configId();

@@ -28,7 +28,12 @@ import { sendCallFollowUp, type WaLine } from './whatsapp';
 
 export { agentStartCall, agentVoiceAnswer, agentVoiceSession, agentVoiceResult, agentVoiceStatus } from './calls';
 export { agentWhatsappWebhook, agentSaveWhatsApp, agentDisconnectWhatsApp, agentThreadAction } from './whatsapp';
-export { agentWhatsAppSignupState, agentFinishWhatsAppSignup } from './whatsappOnboard';
+export {
+  agentWhatsAppSignupState,
+  agentFinishWhatsAppSignup,
+  agentSubmitWhatsAppTemplate,
+  agentWhatsAppTemplates,
+} from './whatsappOnboard';
 
 const REGION = 'asia-south1';
 

@@ -16,7 +16,7 @@ import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestor
 import { db } from '@/lib/firebase';
 import { colors } from '@/lib/config';
 import { glass } from '@/components/ui';
-import { WhatsAppSignup } from './whatsappSignup';
+import { WhatsAppSignup, WhatsAppTemplates } from './whatsappSignup';
 import {
   agentPrice,
   agentsApi,
@@ -386,6 +386,14 @@ export function WhatsAppLine({
             Verify token: <code style={{ fontWeight: 800 }}>{line.verifyToken}</code>
           </span>
           <span className="fx-muted">In your Meta app → WhatsApp → Configuration: paste both, then subscribe to “messages”.</span>
+        </div>
+      ) : null}
+
+      {/* Templates belong to the number, so the card only means anything once
+          one is connected. */}
+      {line ? (
+        <div style={{ margin: '12px 0 0' }}>
+          <WhatsAppTemplates />
         </div>
       ) : null}
 

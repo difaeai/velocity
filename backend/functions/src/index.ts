@@ -753,6 +753,8 @@ export {
   agentSaveWhatsApp,
   agentWhatsAppSignupState,
   agentFinishWhatsAppSignup,
+  agentSubmitWhatsAppTemplate,
+  agentWhatsAppTemplates,
   agentDisconnectWhatsApp,
   agentThreadAction,
   adminAgentsOverview,

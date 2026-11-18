@@ -2390,6 +2390,14 @@ export interface AgentNumber {
   agentId: string | null;
 }
 
+/** A message template on the connected WhatsApp Business account. */
+export interface WhatsAppTemplate {
+  name: string;
+  status: string;
+  category?: string;
+  language?: string;
+}
+
 export interface AgentWaLine {
   phoneNumberId: string;
   displayNumber: string;
@@ -2522,6 +2530,11 @@ export const agentsApi = {
     { code: string; wabaId: string; phoneNumberId: string },
     { ok: boolean; line: AgentWaLine; needsTemplate: boolean; webhookUrl: string }
   >('agentFinishWhatsAppSignup'),
+  submitTemplate: callable<
+    { name: string; body: string; language?: string; category?: 'MARKETING' | 'UTILITY' },
+    { ok: boolean; id: string | null; status: string }
+  >('agentSubmitWhatsAppTemplate', 60_000),
+  templates: callable<Record<string, never>, { templates: WhatsAppTemplate[] }>('agentWhatsAppTemplates'),
   threadAction: callable<{ waId: string; action: 'send' | 'takeover' | 'handback' | 'read'; text?: string }, { ok: boolean }>(
     'agentThreadAction',
   ),
