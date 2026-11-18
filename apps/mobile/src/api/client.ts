@@ -2090,6 +2090,9 @@ export const api = {
     { ok: boolean; status: 'pending' }
   >('applyAmbassador'),
   getMyAmbassador: callable<Record<string, never>, MyAmbassador>('getMyAmbassador'),
+  getMyAmbassadorFleet: callable<Record<string, never>, MyAmbassadorFleet>('getMyAmbassadorFleet'),
+  /** Nudge one recruit, or all of them when `to` is left out. */
+  notifyMyFleet: callable<{ to?: string }, { ok: boolean; sent: number; asked: number }>('notifyMyFleet'),
   setAmbassadorPayout: callable<
     { accountTitle: string; accountNumber: string; bankName: string },
     { ok: boolean }
@@ -2287,6 +2290,24 @@ export interface BusinessAdCreative {
 }
 
 /** What the Velocity Ambassador board shows — backend ambassadors/index.ts. */
+/** One person an ambassador brought in, and what they have actually done. */
+export interface FleetMember {
+  uid: string;
+  name: string;
+  joinedAtMs: number | null;
+  /** They went on to buy an Earn with Velocity plan. */
+  boughtPartnerPlan: boolean;
+  trips: number;
+  /** They have actually taken a ride, not merely signed up. */
+  active: boolean;
+}
+
+export interface MyAmbassadorFleet {
+  ok: boolean;
+  activeRiders: number;
+  fleet: FleetMember[];
+}
+
 export interface MyAmbassador {
   ok: boolean;
   /** `none` is the normal first answer: the screen that asks is the one that applies. */
