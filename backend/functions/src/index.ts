@@ -481,6 +481,8 @@ export {
   adminReviewAmbassador,
   setAmbassadorPayout,
   getMyAmbassador,
+  getMyAmbassadorFleet,
+  notifyMyFleet,
   adminListAmbassadors,
 } from './ambassadors';
 

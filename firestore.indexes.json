@@ -591,6 +591,20 @@
       ]
     },
     {
+      "collectionGroup": "ambassadorApplications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "submittedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "businessAdApplications",
       "queryScope": "COLLECTION",
       "fields": [

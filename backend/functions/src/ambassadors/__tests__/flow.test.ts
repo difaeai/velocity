@@ -22,6 +22,8 @@ import {
   adminReviewAmbassador,
   applyAmbassador,
   getMyAmbassador,
+  getMyAmbassadorFleet,
+  notifyMyFleet,
   setAmbassadorPayout,
 } from '../index';
 import { claimPartnerReferral } from '../../partners/referrals';
@@ -306,5 +308,95 @@ describe('somebody who is not an ambassador', () => {
   it('is told so plainly rather than refused', async () => {
     const me = await call<{ stage: string }>(getMyAmbassador, {}, RECRUIT);
     expect(me.stage).toBe('none');
+  });
+});
+
+/**
+ * The fleet board and the nudge.
+ *
+ * Two of an ambassador's three numbers are counters that decide a salary, and
+ * they are tested above. This is the third — of the people who installed on
+ * this code, how many actually ride — and the button that chases the ones who
+ * do not.
+ *
+ * The test that matters most here is the one that refuses a uid which is not
+ * on this ambassador's edge. Without it the callable is a way to push a
+ * notification to any account whose id somebody can guess.
+ */
+describe('the fleet, and asking them to ride', () => {
+  const OTHER = 'recruit2';
+  const STRANGER = 'stranger1';
+
+  async function fleetOf(code: string) {
+    await db().doc(`users/${OTHER}`).set({ name: 'Bilal Ahmed' });
+    await db().doc(`users/${STRANGER}`).set({ name: 'Not Theirs' });
+    await call(claimPartnerReferral, { code }, RECRUIT);
+    await call(claimPartnerReferral, { code }, OTHER);
+  }
+
+  it('counts only the people who have actually ridden', async () => {
+    const code = await approvedAmbassador();
+    await fleetOf(code);
+    // One of the two has taken rides; the other installed and stopped.
+    await db().doc(`users/${RECRUIT}`).set({ totalTrips: 3 }, { merge: true });
+
+    const out = await call<{ activeRiders: number; fleet: { uid: string; active: boolean; trips: number }[] }>(
+      getMyAmbassadorFleet,
+      {},
+      AMB,
+    );
+
+    expect(out.fleet).toHaveLength(2);
+    expect(out.activeRiders).toBe(1);
+    expect(out.fleet.find((f) => f.uid === RECRUIT)).toMatchObject({ active: true, trips: 3 });
+    expect(out.fleet.find((f) => f.uid === OTHER)).toMatchObject({ active: false, trips: 0 });
+  });
+
+  it('never hands out a recruit’s phone number', async () => {
+    const code = await approvedAmbassador();
+    await fleetOf(code);
+    const out = await call<{ fleet: Record<string, unknown>[] }>(getMyAmbassadorFleet, {}, AMB);
+    for (const member of out.fleet) {
+      expect(member).not.toHaveProperty('mobile');
+      expect(member).not.toHaveProperty('phoneNumber');
+    }
+  });
+
+  it('asks everybody on the code, and says how many it reached', async () => {
+    const code = await approvedAmbassador();
+    await fleetOf(code);
+    const out = await call<{ sent: number; asked: number }>(notifyMyFleet, {}, AMB);
+    expect(out.asked).toBe(2);
+    expect(out.sent).toBe(2);
+    // The nudge is a real notification on each recruit's own list.
+    const inbox = await db().collection(`notifications/${RECRUIT}/items`).get();
+    expect(inbox.docs.some((d) => String(d.get('title')).includes('Book your ride'))).toBe(true);
+  });
+
+  it('asks one person when told to', async () => {
+    const code = await approvedAmbassador();
+    await fleetOf(code);
+    const out = await call<{ sent: number; asked: number }>(notifyMyFleet, { to: RECRUIT }, AMB);
+    expect(out).toMatchObject({ asked: 1, sent: 1 });
+    expect((await db().collection(`notifications/${OTHER}/items`).get()).empty).toBe(true);
+  });
+
+  it('refuses to push to somebody who is not on this ambassador’s code', async () => {
+    const code = await approvedAmbassador();
+    await fleetOf(code);
+    await expect(call(notifyMyFleet, { to: STRANGER }, AMB)).rejects.toThrow();
+    expect((await db().collection(`notifications/${STRANGER}/items`).get()).empty).toBe(true);
+  });
+
+  it('refuses the whole board to somebody who is not an approved ambassador', async () => {
+    await expect(call(getMyAmbassadorFleet, {}, RECRUIT)).rejects.toThrow();
+    await expect(call(notifyMyFleet, {}, RECRUIT)).rejects.toThrow();
+  });
+
+  it('says plainly when nobody has used the code yet', async () => {
+    await approvedAmbassador();
+    const out = await call<{ activeRiders: number; fleet: unknown[] }>(getMyAmbassadorFleet, {}, AMB);
+    expect(out).toMatchObject({ activeRiders: 0, fleet: [] });
+    await expect(call(notifyMyFleet, {}, AMB)).rejects.toThrow();
   });
 });

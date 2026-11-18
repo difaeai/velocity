@@ -26,7 +26,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { api } from '../../../src/api/client';
-import type { MyAmbassador } from '../../../src/api/client';
+import type { FleetMember, MyAmbassador, MyAmbassadorFleet } from '../../../src/api/client';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
 import { useCachedResource } from '../../../src/lib/cachedResource';
@@ -323,6 +323,9 @@ function Board({ data, onSaved }: { data: MyAmbassador; onSaved: () => void }) {
         unit="partners"
       />
 
+      {/* Not a target: of the people who installed on this code, who rides. */}
+      {suspended ? null : <Fleet onboarded={p.usersOnboarded} sold={p.partnersSold} />}
+
       <View style={[s.payCard, p.salaryUnlocked && s.payCardOn]}>
         <Text style={s.payLabel}>
           {p.salaryUnlocked ? 'SALARY UNLOCKED' : 'WHAT YOU HAVE EARNED SO FAR'}
@@ -351,6 +354,118 @@ function Board({ data, onSaved }: { data: MyAmbassador; onSaved: () => void }) {
       </View>
 
       <PayoutCard account={data.payoutAccount ?? null} onSaved={onSaved} />
+    </View>
+  );
+}
+
+/**
+ * Who actually turned up, and the nudge.
+ *
+ * The two bars above are targets, and they are counters kept by the events
+ * that made them true, because they decide whether a salary is owed. This is
+ * the third number, and the only one that is not a target: of the people who
+ * installed the app on this code, how many actually ride. An ambassador with
+ * ninety installs and four riders is being told something the targets alone
+ * would hide from them.
+ *
+ * The nudge is the other half of that. One person — the friend who installed
+ * it and stopped — or everybody at once, which is how a campus ambassador
+ * fills a morning. The words are Velocity's, not theirs: a message box with a
+ * hundred recipients is a spam channel with our name on the notification.
+ */
+function Fleet({ onboarded, sold }: { onboarded: number; sold: number }) {
+  const { data, loading, error, reload } = useCachedResource<MyAmbassadorFleet>(
+    'myAmbassadorFleet',
+    () => api.getMyAmbassadorFleet({}),
+    'Could not load the people on your code.',
+  );
+  const [sending, setSending] = useState<string | null>(null);
+
+  const nudge = useCallback(
+    async (member?: FleetMember) => {
+      setSending(member?.uid ?? 'all');
+      try {
+        const out = await api.notifyMyFleet(member ? { to: member.uid } : {});
+        Alert.alert(
+          'Sent',
+          member
+            ? `${member.name} has been asked to book a ride.`
+            : `${out.sent} of your ${out.asked} ${out.asked === 1 ? 'person was' : 'people were'} asked to book a ride.`,
+        );
+      } catch (e) {
+        Alert.alert('Not sent', e instanceof Error ? e.message : 'Try again in a little while.');
+      } finally {
+        setSending(null);
+      }
+    },
+    [],
+  );
+
+  const fleet = data?.fleet ?? [];
+
+  return (
+    <View style={{ gap: 12 }}>
+      <Text style={s.label}>YOUR PEOPLE</Text>
+
+      <View style={s.statsRow}>
+        <Stat n={onboarded} label="On the app" />
+        <Stat n={sold} label="On Earn with Velocity" />
+        <Stat n={data?.activeRiders ?? 0} label="Actually riding" dim={!data} />
+      </View>
+
+      {error && !data ? (
+        <ErrorState message={error} onRetry={reload} />
+      ) : loading && !data ? (
+        <Skeleton height={80} radius={18} />
+      ) : !fleet.length ? (
+        <View style={s.emptyCard}>
+          <Text style={s.emptyText}>
+            Nobody has typed your code in yet. When they do, they appear here and you can ask them to
+            ride.
+          </Text>
+        </View>
+      ) : (
+        <>
+          <PrimaryButton
+            label="Ask everyone to book a ride"
+            onPress={() => void nudge()}
+            loading={sending === 'all'}
+            disabled={sending !== null}
+          />
+          <Text style={s.nudgeHint}>Everyone, once a day. One person, a few times a day.</Text>
+
+          {fleet.map((m) => (
+            <View key={m.uid} style={s.memberRow}>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={s.memberName}>{m.name}</Text>
+                <Text style={s.memberMeta}>
+                  {m.active
+                    ? `${m.trips} ${m.trips === 1 ? 'ride' : 'rides'}`
+                    : 'Installed, no ride yet'}
+                  {m.boughtPartnerPlan ? ' · Earn with Velocity' : ''}
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => void nudge(m)}
+                disabled={sending !== null}
+                hitSlop={8}
+                style={[s.nudgeBtn, sending !== null && { opacity: 0.5 }]}
+              >
+                <Text style={s.nudgeBtnText}>{sending === m.uid ? '…' : 'Nudge'}</Text>
+              </Pressable>
+            </View>
+          ))}
+        </>
+      )}
+    </View>
+  );
+}
+
+function Stat({ n, label, dim }: { n: number; label: string; dim?: boolean }) {
+  return (
+    <View style={s.stat}>
+      <Text style={[s.statN, dim && { color: colors.muted }]}>{n}</Text>
+      <Text style={s.statLabel}>{label}</Text>
     </View>
   );
 }
@@ -560,6 +675,47 @@ const s = themed(() => StyleSheet.create({
   payAmount: { fontSize: 32, fontWeight: '900', color: colors.text, letterSpacing: -0.8 },
   payMeta: { fontSize: 12.5, fontWeight: '700', color: colors.muted, lineHeight: 18 },
   payNote: { fontSize: 11.5, fontWeight: '600', color: colors.muted, lineHeight: 17 },
+
+  statsRow: { flexDirection: 'row', gap: 8 },
+  stat: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    gap: 2,
+  },
+  statN: { fontSize: 24, fontWeight: '900', color: colors.text, letterSpacing: -0.6 },
+  statLabel: { fontSize: 10.5, fontWeight: '800', color: colors.muted, lineHeight: 14 },
+  emptyCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 16,
+  },
+  emptyText: { fontSize: 12.5, fontWeight: '700', color: colors.muted, lineHeight: 18 },
+  nudgeHint: { fontSize: 11, fontWeight: '700', color: colors.muted, textAlign: 'center' },
+  memberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  memberName: { fontSize: 14, fontWeight: '800', color: colors.text },
+  memberMeta: { fontSize: 11.5, fontWeight: '700', color: colors.muted },
+  nudgeBtn: {
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  nudgeBtnText: { fontSize: 12, fontWeight: '900', color: colors.primary },
 
   barTitle: { fontSize: 14, fontWeight: '900', color: colors.text },
   barRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },

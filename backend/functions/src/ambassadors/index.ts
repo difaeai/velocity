@@ -207,7 +207,11 @@ export const adminReviewAmbassador = onCall(async (req) => {
           payoutAccount: already.get('payoutAccount') ?? null,
           approvedAt: now,
           approvedBy: admin.uid,
-          createdAt: already.exists ? already.get('createdAt') : now,
+          // `?? now` is not belt and braces: the referral claim creates this
+          // same document with `merge` to bump a counter, so it can exist with
+          // no `createdAt` on it — and an undefined in a write makes Firestore
+          // throw, which would fail the approval itself.
+          createdAt: (already.exists ? already.get('createdAt') : null) ?? now,
           updatedAt: now,
         },
         { merge: true },
@@ -379,4 +383,130 @@ export const adminListAmbassadors = onCall(async (req) => {
       };
     }),
   };
+});
+
+/** Nobody is asked to recruit more than this, so nobody needs a longer list. */
+const FLEET_LIMIT = 500;
+
+/** The ambassador's own record, or a refusal. Used by both fleet calls. */
+async function requireApprovedAmbassador(uid: string) {
+  const snap = await db.doc(`ambassadors/${uid}`).get();
+  if (!snap.exists || snap.get('status') !== 'approved') {
+    invalid('Only an approved Velocity Ambassador has a fleet.');
+  }
+  return snap;
+}
+
+/**
+ * Everyone this ambassador brought in, and what each of them has actually done.
+ *
+ * Three numbers matter to an ambassador, and until now the board showed two of
+ * them. "Installed the app" and "bought Earn with Velocity" are counters kept
+ * by the events themselves, because they decide whether a salary is owed. The
+ * third — how many of those people actually ride — decides nothing and is
+ * therefore counted here, by reading the recruits, rather than by adding a
+ * write to the ride flow that every booking in the country would pay for.
+ *
+ * What comes back is a name and what they have done. Not a phone number: an
+ * ambassador needs to tell their recruits apart and send one a nudge, and
+ * neither of those needs somebody else's number.
+ */
+export const getMyAmbassadorFleet = onCall(async (req) => {
+  const { uid } = requireAuth(req);
+  await requireApprovedAmbassador(uid);
+
+  const edges = await db
+    .collection('ambassador_referrals')
+    .where('ambassadorId', '==', uid)
+    .limit(FLEET_LIMIT)
+    .get();
+
+  if (edges.empty) return { ok: true, activeRiders: 0, fleet: [] as unknown[] };
+
+  // One batched read rather than one call per recruit.
+  const people = await db.getAll(...edges.docs.map((e) => db.doc(`users/${e.id}`)));
+  const byUid = new Map(people.map((p) => [p.id, p]));
+
+  const fleet = edges.docs.map((e) => {
+    const person = byUid.get(e.id);
+    const trips = Math.max(0, Math.floor((person?.get('totalTrips') as number | undefined) ?? 0));
+    const boundAt = e.get('boundAt') as { toMillis?: () => number } | undefined;
+    return {
+      uid: e.id,
+      // A recruit who has not set a name yet is still a recruit.
+      name: ((person?.get('name') as string | undefined) ?? '').trim() || 'Velocity user',
+      joinedAtMs: typeof boundAt?.toMillis === 'function' ? boundAt.toMillis() : null,
+      boughtPartnerPlan: e.get('boughtPartnerPlan') === true,
+      trips,
+      /** "Active" means they have actually taken a ride, not merely signed up. */
+      active: trips > 0,
+    };
+  });
+
+  return { ok: true, activeRiders: fleet.filter((f) => f.active).length, fleet };
+});
+
+/**
+ * "Book a ride" — an ambassador nudging the people they brought in.
+ *
+ * Either one of them or all of them, which is the whole feature: a nudge to
+ * everybody is how a campus ambassador fills a morning, and a nudge to one
+ * person is how they chase the friend who installed the app and stopped.
+ *
+ * Three things make this safe to expose to a few hundred students:
+ *
+ *  - **The words are ours.** No free text field. An ambassador with a message
+ *    box and a hundred recipients is a spam channel with our name on the
+ *    notification, and nobody asked for one.
+ *  - **Only their own recruits.** A uid that is not on this ambassador's
+ *    edge is refused, so the callable cannot be used to push to any account
+ *    somebody can guess.
+ *  - **Rationed.** Everyone, once a day; one person, a few times a day. The
+ *    recruit who is nudged every hour uninstalls the app, and that costs the
+ *    ambassador the very target this is meant to help them hit.
+ */
+export const notifyMyFleet = onCall({ timeoutSeconds: 120 }, async (req) => {
+  const { uid } = requireAuth(req);
+  const me = await requireApprovedAmbassador(uid);
+
+  const parsed = z.object({ to: docId.optional() }).safeParse(req.data ?? {});
+  if (!parsed.success) invalid('Invalid request.');
+  const { to } = parsed.data;
+
+  await rateLimit(uid, to ? 'ambassadorNudgeOne' : 'ambassadorNudgeAll', to ? 20 : 1, 86_400);
+
+  let targets: string[];
+  if (to) {
+    const edge = await db.doc(`ambassador_referrals/${to}`).get();
+    if (!edge.exists || edge.get('ambassadorId') !== uid) {
+      invalid('That person is not in your fleet.');
+    }
+    targets = [to];
+  } else {
+    const edges = await db
+      .collection('ambassador_referrals')
+      .where('ambassadorId', '==', uid)
+      .limit(FLEET_LIMIT)
+      .get();
+    targets = edges.docs.map((e) => e.id);
+  }
+  if (!targets.length) invalid('Nobody has used your code yet.');
+
+  const who = ((me.get('fullName') as string | undefined) ?? '').trim() || 'Your Velocity Ambassador';
+  const title = 'Book your ride with Velocity';
+  const body = `${who} is inviting you to book a ride. Open Velocity Rides and go.`;
+
+  // In chunks: a hundred sequential pushes is a two-minute function, and a
+  // hundred at once is a thundering herd on FCM.
+  let sent = 0;
+  for (let i = 0; i < targets.length; i += 20) {
+    const chunk = targets.slice(i, i + 20);
+    const results = await Promise.allSettled(
+      chunk.map((target) => notifyUser(target, title, body, 'system', { screen: 'home' })),
+    );
+    sent += results.filter((r) => r.status === 'fulfilled').length;
+  }
+
+  logger.info('Ambassador nudged their fleet', { uid, asked: targets.length, sent });
+  return { ok: true, sent, asked: targets.length };
 });
