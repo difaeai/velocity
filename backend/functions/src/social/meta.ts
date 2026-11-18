@@ -263,6 +263,14 @@ export const adminStartMetaConnect = deskCall('any', async (req) => {
     `&redirect_uri=${encodeURIComponent(redirectUri())}` +
     `&state=${encodeURIComponent(state)}` +
     `&response_type=code` +
+    // Ask again for everything, every time, instead of only for what is
+    // missing. Without this Facebook shows a connected account nothing but
+    // "Vexa will receive your name and profile picture" and hands back the
+    // same grants silently — so a permission the owner once declined stays
+    // declined, with no screen anywhere that says which one or why the
+    // feature behind it does nothing. It is also what makes the grant
+    // visible, which app review has to be able to see happen.
+    `&auth_type=rerequest` +
     `&scope=${encodeURIComponent((ads ? [...SCOPES, ...ADS_SCOPES] : SCOPES).join(','))}`;
 
   return { url, state, redirectUri: redirectUri() };
