@@ -65,6 +65,9 @@ const SCOPES = [
   'pages_read_user_content',
   'pages_manage_posts',
   'pages_manage_engagement',
+  // Subscribing the app to the Page's feed, so a comment arrives as it is
+  // written rather than at the next poll (`adminChooseMetaPage`).
+  'pages_manage_metadata',
   'instagram_basic',
   'instagram_content_publish',
   'instagram_manage_comments',
@@ -445,6 +448,31 @@ export const adminChooseMetaPage = deskCall('any', async (req) => {
   // nothing half-connected has been written yet.
   await connectVerifiedAccount('facebook', { accessToken: pageToken, externalId: page.id }, ctx.uid);
   connected.push('facebook');
+
+  // Subscribe this app to the Page's feed, so a visitor's comment reaches the
+  // inbox when it is written instead of at the next two-hourly poll. The
+  // subscription belongs to the Page, so it is made with the Page token and
+  // remade every time the Page is connected.
+  //
+  // It must never cost the connection. The poll still covers the inbox, and a
+  // Page whose owner did not grant pages_manage_metadata would otherwise be
+  // unable to connect at all.
+  try {
+    await graph(`${GRAPH}/${encodeURIComponent(page.id)}/subscribed_apps`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ subscribed_fields: 'feed', access_token: pageToken }).toString(),
+    });
+    // Root level, like `vexaNumbers`: the webhook has no workspace yet, and the
+    // Page id is the only thing on a Page event that says whose Page it is.
+    await db.doc(`vexaPages/${page.id}`).set({ wid: currentWorkspace(), atMs: Date.now() });
+    connected.push('live comments');
+  } catch (e) {
+    logger.warn('meta: this Page would not subscribe to its own feed; its comments will be polled instead', {
+      pageId: page.id,
+      error: (e as Error).message,
+    });
+  }
 
   const igId = detail.instagram_business_account?.id ?? null;
   if (igId) {

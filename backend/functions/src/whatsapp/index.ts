@@ -26,6 +26,7 @@ import { classifySendError, toWhatsAppNumber, whatsAppConfig } from './client';
 import { handleLeadMessage, type InboundMessage } from './leads';
 import { readInboundIntent } from './policy';
 import { handleFailure as handleVexaFailure, handleInbound as handleVexaInbound } from '../social/closer';
+import { handlePageFeedEvent, type PageFeedValue } from '../social/engagement';
 
 const prefSchema = z.object({
   enabled: z.boolean(),
@@ -246,11 +247,19 @@ interface WebhookValue {
 
 /** Walks Meta's nested envelope and acts on each thing it carries. */
 export async function handleWebhookBody(body: unknown): Promise<void> {
-  const entries = (body as { entry?: { changes?: { value?: WebhookValue }[] }[] } | null)?.entry ?? [];
+  const entries =
+    (body as { entry?: { id?: string; changes?: { field?: string; value?: WebhookValue }[] }[] } | null)?.entry ?? [];
   for (const entry of entries) {
     for (const change of entry.changes ?? []) {
       const value = change.value;
       if (!value) continue;
+      // A Page event rather than a WhatsApp one: somebody commented on a
+      // connected Page. The entry's id is the Page id, which is the only thing
+      // here that says whose Page it is — the job `phone_number_id` does below.
+      if (change.field === 'feed') {
+        if (entry.id) await handlePageFeedEvent(entry.id, value as PageFeedValue);
+        continue;
+      }
       const phoneNumberId = value.metadata?.phone_number_id ?? null;
       for (const msg of value.messages ?? []) {
         const name = value.contacts?.find((c) => c.wa_id === msg.from)?.profile?.name ?? null;
