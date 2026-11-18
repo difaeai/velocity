@@ -105,6 +105,7 @@ export {
   vexaChatAction,
   vexaCloserState,
   vexaRunOutreach,
+  vexaSyncInstagramDms,
   vexaCloserSweep,
 } from './closer';
 

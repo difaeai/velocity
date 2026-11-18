@@ -134,6 +134,18 @@ export interface RawComment {
   createdAtMs: number;
 }
 
+/** One direct-message thread, as the sales desk reads it. */
+export interface RawThread {
+  /**
+   * Their Instagram-scoped id. It is the only handle a reply can be addressed
+   * to, it is scoped to this app, and it is not their Instagram user id.
+   */
+  participantId: string;
+  participantName: string | null;
+  /** Oldest first, our own messages included, so the desk reads a conversation. */
+  messages: { id: string; fromUs: boolean; text: string; atMs: number }[];
+}
+
 const firstVideo = (p: PublishPayload, platform: Platform): MediaAsset => {
   const video = p.media.find((m) => m.kind === 'video' && m.url);
   if (!video?.url) throw new PlatformError(platform, 'That post has no rendered video to publish.');
@@ -531,6 +543,65 @@ async function instagramReply(c: PlatformCredentials, commentId: string, text: s
     form: { message: text, access_token: c.accessToken },
   });
   return res.id;
+}
+
+/**
+ * The Instagram inbox.
+ *
+ * `platform=instagram` is not decoration: without it the edge answers with the
+ * Page's Messenger threads, which are a different inbox with different ids, and
+ * a reply addressed to a Messenger id reaches nobody on Instagram.
+ */
+async function instagramThreads(c: PlatformCredentials, limit: number): Promise<RawThread[]> {
+  const res = await call<{
+    data?: {
+      participants?: { data?: { id: string; username?: string; name?: string }[] };
+      messages?: { data?: { id: string; from?: { id: string }; message?: string; created_time?: string }[] };
+    }[];
+  }>(
+    'instagram',
+    `${GRAPH}/${c.externalId}/conversations?platform=instagram` +
+      `&fields=participants,messages.limit(20){id,from,message,created_time}` +
+      `&limit=${limit}&access_token=${encodeURIComponent(c.accessToken)}`,
+  );
+
+  return (res.data ?? [])
+    .map((thread) => {
+      const them = (thread.participants?.data ?? []).find((p) => p.id !== c.externalId);
+      return {
+        participantId: them?.id ?? '',
+        participantName: them?.username ? `@${them.username}` : (them?.name ?? null),
+        messages: (thread.messages?.data ?? [])
+          .filter((m) => (m.message ?? '').trim())
+          .map((m) => ({
+            id: m.id,
+            fromUs: m.from?.id === c.externalId,
+            text: m.message as string,
+            atMs: m.created_time ? Date.parse(m.created_time) : Date.now(),
+          }))
+          // The edge hands them back newest first; a conversation reads the other way.
+          .sort((a, b) => a.atMs - b.atMs),
+      };
+    })
+    .filter((t) => t.participantId && t.messages.length);
+}
+
+/**
+ * Send one Instagram DM.
+ *
+ * Meta allows a free-form message only within 24 hours of their last one;
+ * outside that this call fails and says so, which is why the caller never
+ * decides the window for itself.
+ */
+async function instagramSendDm(c: PlatformCredentials, recipientId: string, text: string): Promise<string> {
+  const res = await call<{ message_id?: string }>('instagram', `${GRAPH}/${c.externalId}/messages`, {
+    form: {
+      recipient: JSON.stringify({ id: recipientId }),
+      message: JSON.stringify({ text }),
+      access_token: c.accessToken,
+    },
+  });
+  return res.message_id ?? '';
 }
 
 // ── Threads ─────────────────────────────────────────────────────────────────
@@ -1163,6 +1234,10 @@ interface Adapter {
   listComments?: (c: PlatformCredentials, mediaId: string) => Promise<RawComment[]>;
   /** Answer one of them. */
   reply?: (c: PlatformCredentials, commentId: string, text: string) => Promise<string>;
+  /** Read the direct-message inbox. */
+  listThreads?: (c: PlatformCredentials, limit: number) => Promise<RawThread[]>;
+  /** Answer one of those, addressed to the person rather than to a thread. */
+  sendDm?: (c: PlatformCredentials, recipientId: string, text: string) => Promise<string>;
   /** How our own last few dozen posts actually did. */
   recentPosts?: (c: PlatformCredentials, limit: number) => Promise<PostPerformance[]>;
   /** The profile as a stranger arriving from one reel would see it. */
@@ -1194,6 +1269,8 @@ export const ADAPTERS: Record<Platform, Adapter> = {
     publish: publishInstagram,
     listComments: instagramComments,
     reply: instagramReply,
+    listThreads: instagramThreads,
+    sendDm: instagramSendDm,
     recentPosts: instagramRecentPosts,
     profileDetail: instagramProfileDetail,
     fields: [
@@ -1332,4 +1409,31 @@ export async function replyToComment(
     throw new PlatformError(platform, `Replying on ${adapter.label} is not supported by its API here.`);
   }
   return adapter.reply(credentials, commentId, text);
+}
+
+export function canMessage(platform: Platform): boolean {
+  return typeof ADAPTERS[platform].sendDm === 'function';
+}
+
+export async function listThreads(
+  platform: Platform,
+  credentials: PlatformCredentials,
+  limit: number,
+): Promise<RawThread[]> {
+  const adapter = ADAPTERS[platform];
+  if (!adapter.listThreads) return [];
+  return adapter.listThreads(credentials, limit);
+}
+
+export async function sendDm(
+  platform: Platform,
+  credentials: PlatformCredentials,
+  recipientId: string,
+  text: string,
+): Promise<string> {
+  const adapter = ADAPTERS[platform];
+  if (!adapter.sendDm) {
+    throw new PlatformError(platform, `Direct messages on ${adapter.label} are not supported by its API here.`);
+  }
+  return adapter.sendDm(credentials, recipientId, text);
 }

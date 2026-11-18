@@ -17,6 +17,7 @@ import {
   handleInbound,
   numberRef,
   runOutreach,
+  syncInstagramDms,
   type SalesChat,
 } from '../closer';
 import { seal } from '../secrets';
@@ -34,11 +35,22 @@ const saved = { free: process.env.FREE_MODEL_KEY, vault: process.env.SOCIAL_TOKE
 let sent: { url: string; body: Record<string, unknown> }[] = [];
 /** What the model answers next. */
 let modelReply: Record<string, unknown> = {};
+/** What the Instagram inbox holds next. */
+let igInbox: Record<string, unknown> = { data: [] };
 
 function stubFetch() {
   vi.stubGlobal('fetch', async (input: unknown, init?: { body?: string }) => {
     const url = String(input);
-    const body = init?.body ? (JSON.parse(init.body) as Record<string, unknown>) : {};
+    // WhatsApp is sent as JSON and Instagram as a form, so the harness has to
+    // read both or a form body throws here instead of in the code under test.
+    let body: Record<string, unknown> = {};
+    if (init?.body) {
+      try {
+        body = JSON.parse(init.body) as Record<string, unknown>;
+      } catch {
+        body = Object.fromEntries(new URLSearchParams(init.body));
+      }
+    }
     if (url.includes('/chat/completions')) {
       return {
         ok: true,
@@ -46,6 +58,16 @@ function stubFetch() {
         statusText: 'OK',
         json: async () => ({ choices: [{ message: { content: JSON.stringify(modelReply) }, finish_reason: 'stop' }] }),
         text: async () => JSON.stringify({ choices: [{ message: { content: JSON.stringify(modelReply) }, finish_reason: 'stop' }] }),
+      } as unknown as Response;
+    }
+    if (url.includes('/conversations')) {
+      sent.push({ url, body });
+      return {
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => igInbox,
+        text: async () => JSON.stringify(igInbox),
       } as unknown as Response;
     }
     if (url.includes('graph.facebook.com')) {
@@ -377,6 +399,76 @@ describe('the nudge', () => {
     });
     await inWorkspace(WID, () => runOutreach(nowMs));
     expect(sent.filter((s) => s.url.includes('/messages'))).toHaveLength(0);
+  });
+});
+
+/**
+ * The second door onto the same funnel.
+ *
+ * The inbox is polled rather than pushed, which makes two things the only
+ * thing standing between a connected account and a mess: the watermark, so a
+ * DM is not answered again every fifteen minutes, and the 24-hour window, so
+ * connecting an account with months of old threads in it does not message
+ * every one of those people at once.
+ */
+describe('a lead sends a DM on Instagram', () => {
+  const IG_ME = '17841400000000000';
+  const THEM = '17841499999999999';
+  const CHAT = `${WS}/salesChats/ig_${THEM}`;
+
+  const inboxAt = (atMs: number) => ({
+    data: [
+      {
+        participants: { data: [{ id: IG_ME, username: 'shahzadestates' }, { id: THEM, username: 'ali' }] },
+        messages: {
+          data: [{ id: 'm1', from: { id: THEM }, message: 'price kya hai?', created_time: new Date(atMs).toISOString() }],
+        },
+      },
+    ],
+  });
+
+  const dmsSent = () => sent.filter((s) => s.url.includes(`/${IG_ME}/messages`));
+
+  beforeEach(async () => {
+    igInbox = { data: [] };
+    await db.doc(`${WS}/socialAccounts/instagram/secret/credentials`).set({
+      accessToken: seal('EAAG-instagram-token-bbbbbbbbbbbbbbbbbbbbbbbbbb'),
+      externalId: IG_ME,
+    });
+  });
+
+  it('answers a fresh DM, from the account itself, and files it as one lead', async () => {
+    igInbox = inboxAt(Date.now() - 60_000);
+    expect(await inWorkspace(WID, () => syncInstagramDms())).toEqual({ threads: 1, answered: 1 });
+
+    const chat = (await db.doc(CHAT).get()).data() as SalesChat;
+    expect(chat.source).toBe('instagram');
+    expect(chat.name).toBe('@ali');
+
+    // Addressed to them by their Instagram-scoped id, not to a thread or a number.
+    expect(dmsSent()).toHaveLength(1);
+    expect(JSON.parse(dmsSent()[0].body.recipient as string)).toEqual({ id: THEM });
+  });
+
+  it('never answers a thread that has gone cold, which Meta would refuse anyway', async () => {
+    igInbox = inboxAt(Date.now() - 3 * 86_400_000);
+    expect(await inWorkspace(WID, () => syncInstagramDms())).toEqual({ threads: 1, answered: 0 });
+    expect((await db.doc(CHAT).get()).exists).toBe(false);
+    expect(dmsSent()).toHaveLength(0);
+  });
+
+  it('does not answer the same DM again the next time the inbox is read', async () => {
+    igInbox = inboxAt(Date.now() - 60_000);
+    await inWorkspace(WID, () => syncInstagramDms());
+    expect(await inWorkspace(WID, () => syncInstagramDms())).toEqual({ threads: 1, answered: 0 });
+    expect(dmsSent()).toHaveLength(1);
+  });
+
+  it('says nothing and sends nothing when no Instagram account is connected', async () => {
+    await db.doc(`${WS}/socialAccounts/instagram/secret/credentials`).delete();
+    igInbox = inboxAt(Date.now() - 60_000);
+    expect(await inWorkspace(WID, () => syncInstagramDms())).toEqual({ threads: 0, answered: 0 });
+    expect(sent).toHaveLength(0);
   });
 });
 

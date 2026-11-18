@@ -631,6 +631,7 @@ export {
   vexaChatAction,
   vexaCloserState,
   vexaRunOutreach,
+  vexaSyncInstagramDms,
   vexaCloserSweep,
   researchDummyCampaign,
   researchAddCompetitorAd,

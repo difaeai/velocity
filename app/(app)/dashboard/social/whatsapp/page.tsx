@@ -128,11 +128,11 @@ export default function WhatsAppSalesPage() {
   return (
     <div style={{ display: 'grid', gap: 16, maxWidth: 980 }}>
       <header>
-        <h1 style={{ fontSize: 22, fontWeight: 900, margin: 0 }}>WhatsApp sales</h1>
+        <h1 style={{ fontSize: 22, fontWeight: 900, margin: 0 }}>WhatsApp &amp; Instagram sales</h1>
         <p style={{ fontSize: 13, color: colors.muted, margin: '6px 0 0', lineHeight: 1.55, maxWidth: 680 }}>
-          Vexa answers the people who write to your WhatsApp, in their own language, from your own number — and
-          takes them from &ldquo;kitna hai?&rdquo; to a sale. Short messages, because nobody reads long ones. Anything
-          that needs a person stops and waits for you.
+          Vexa answers the people who write to your WhatsApp or send a DM on Instagram, in their own language,
+          from your own number and your own account — and takes them from &ldquo;kitna hai?&rdquo; to a sale. Short
+          messages, because nobody reads long ones. Anything that needs a person stops and waits for you.
         </p>
       </header>
 
@@ -153,12 +153,36 @@ export default function WhatsAppSalesPage() {
         <>
           <Funnel state={state} />
           <Sheet busy={busy} run={run} onNote={setNote} perDay={state?.config.dailyCap ?? 0} templateReady={Boolean(state?.config.templateName)} />
+        </>
+      ) : null}
 
+      {/* Instagram needs no number, so the inbox is shown as soon as there is
+          anything in it — a desk that only sells on Instagram is still a desk. */}
+      {connected || sorted.length ? (
+        <>
           <Card>
-            <h2 style={h2}>Conversations</h2>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+              <h2 style={{ ...h2, flex: 1 }}>Conversations</h2>
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  run('ig', async () => {
+                    const out = await closerApi.syncInstagram({});
+                    setNote(
+                      out.threads
+                        ? `${out.threads} Instagram chat${out.threads === 1 ? '' : 's'} read, ${out.answered} answered.`
+                        : 'Nothing new on Instagram, or no Instagram account is connected.',
+                    );
+                  })
+                }
+                disabled={busy === 'ig'}
+              >
+                {busy === 'ig' ? 'Reading Instagram…' : 'Check Instagram now'}
+              </Button>
+            </div>
             {!sorted.length ? (
               <Empty>
-                Nobody has written yet. When somebody messages your number, or your sheet goes out, the
+                Nobody has written yet. When somebody messages your number or sends a DM on Instagram, the
                 conversation appears here as it happens.
               </Empty>
             ) : (
@@ -407,7 +431,10 @@ function ChatRow({
         <span style={{ fontSize: 10.5, fontWeight: 900, color: STAGE_TONE[chat.stage], minWidth: 120, textTransform: 'uppercase' }}>
           {STAGE_LABEL[chat.stage]}
         </span>
-        <span style={{ fontWeight: 700, fontSize: 13 }}>{chat.name || `+${chat.waId}`}</span>
+        <span style={{ fontWeight: 700, fontSize: 13 }}>
+          {/* An Instagram lead has no phone number — only a handle and an app-scoped id. */}
+          {chat.name || (chat.source === 'instagram' ? 'Instagram lead' : `+${chat.waId}`)}
+        </span>
         <span style={{ flex: 1, minWidth: 200, fontSize: 12.5, color: colors.muted }}>
           {chat.summary || chat.messages.at(-1)?.text || chat.note || '—'}
         </span>
@@ -418,7 +445,7 @@ function ChatRow({
         <div style={{ marginTop: 10, paddingLeft: 4 }}>
           {chat.blocked ? (
             <p style={{ fontSize: 12.5, color: '#ff6b6b', margin: '0 0 8px' }}>
-              {chat.blockedReason ?? 'This number is not messaged any more.'}
+              {chat.blockedReason ?? 'This lead is not messaged any more.'}
             </p>
           ) : null}
           {chat.nextStep ? (

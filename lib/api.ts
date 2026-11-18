@@ -1985,6 +1985,11 @@ export const closerApi = {
     'vexaChatAction',
   ),
   runNow: callable<Record<string, never>, { ok: boolean; status: string }>('vexaRunOutreach', 9 * 60_000),
+  /** Read the Instagram inbox now, instead of waiting for the next sweep. */
+  syncInstagram: callable<Record<string, never>, { ok: boolean; threads: number; answered: number }>(
+    'vexaSyncInstagramDms',
+    9 * 60_000,
+  ),
 };
 
 /**
