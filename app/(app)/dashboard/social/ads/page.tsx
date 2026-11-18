@@ -51,7 +51,7 @@ import { FX_CSS } from '@/components/social/fx';
 const DAY_MS = 86_400_000;
 
 export default function AdsPage() {
-  const { path, house, ws, includes } = useWorkspace();
+  const { path, house, includes } = useWorkspace();
   const [cfg, setCfg] = useState<AdsConfigDoc | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [campaigns, setCampaigns] = useState<AdCampaignDoc[]>([]);
@@ -179,8 +179,8 @@ export default function AdsPage() {
             <div className="fx-eyebrow">Facebook + Instagram ads · Google Ads</div>
             <h1 style={{ fontSize: 26 }}>Meta &amp; Google Ad Expert</h1>
             <p style={{ maxWidth: 680 }}>
-              {manager ? `${manager} plans` : 'Your expert plans'} {house ? 'Velocity Rides’' : `${ws?.name ?? 'your'}’s`} ads,
-              launches them and watches every rupee: winners keep running, losers are paused.
+              {manager ? `${manager} plans` : 'Your expert plans'} your ads, launches them and watches every rupee:
+              winners keep running, losers are paused.
             </p>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>

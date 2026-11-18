@@ -410,9 +410,10 @@ function AdminShell({ email, signOut, children }: ShellProps) {
           pathname={pathname}
           storageKey={`nav.${section.key}`}
           brand={
-            <Link href="/dashboard">
+            // The social half is Vexa, the same product a Studio customer logs into, so it is named Vexa here too.
+            <Link href={section.home}>
               <VelocityIcon size={30} />
-              <span>Velocity Rides</span>
+              <span>{section.key === 'social' ? 'Vexa' : 'Velocity Rides'}</span>
             </Link>
           }
           top={

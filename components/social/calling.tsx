@@ -568,7 +568,7 @@ function aiBlocked(desk: AgentState | null, caller: SalesCallAgent | null): stri
   if (!desk) return 'Loading…';
   if (!desk.bridge) return 'AI calling is not switched on yet.';
   if (!desk.phoneLine) return 'No phone line is connected yet.';
-  if (!numberOf(desk, caller.id)) return `${caller.name} has no phone number yet — Velocity gives it one.`;
+  if (!numberOf(desk, caller.id)) return `${caller.name} has no phone number yet — Vexa gives it one.`;
   if (!desk.house && !desk.planLive) return 'Choose and pay for an AI calling package first.';
   return null;
 }

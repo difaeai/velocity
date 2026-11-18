@@ -314,7 +314,7 @@ export default function AutomationPage() {
           <span style={{ fontSize: 13 }}>
             <strong>Post everything automatically, without my approval</strong>
             <span style={{ display: 'block', fontSize: 12, color: colors.muted, marginTop: 2 }}>
-              Published under Velocity Rides&rsquo; own name to the connected networks. A post can be deleted
+              Published under your own name to the connected networks. A post can be deleted
               afterwards; a screenshot of it cannot. This switch is the only thing that stops it — turn it off
               and the next run waits for you again.
             </span>

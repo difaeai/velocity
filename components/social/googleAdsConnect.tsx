@@ -157,7 +157,7 @@ export function GoogleAdsConnect({ link }: { link: GoogleAdsLink | null | undefi
     try {
       await googleAdsApi.disconnect({});
       setSummary(null);
-      setNote('Disconnected. Velocity no longer holds any Google access.');
+      setNote('Disconnected. Vexa no longer holds any Google access.');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not disconnect.');
     } finally {
