@@ -59,12 +59,19 @@ const DIALOG = 'https://www.facebook.com/v21.0/dialog/oauth';
 const SCOPES = [
   'pages_show_list',
   'pages_read_engagement',
+  // Reading what visitors wrote is a separate grant from reading the Page's
+  // own numbers: without it the comment sync returns an empty list rather than
+  // an error, and the inbox just looks quiet.
+  'pages_read_user_content',
   'pages_manage_posts',
   'pages_manage_engagement',
   'instagram_basic',
   'instagram_content_publish',
   'instagram_manage_comments',
   'instagram_manage_insights',
+  // The Instagram inbox (see `closer.ts`). Reading a DM and answering it are
+  // the same grant.
+  'instagram_manage_messages',
   'business_management',
 ];
 
@@ -73,7 +80,13 @@ const SCOPES = [
  * page. Kept off the Instagram connect so that an app without the Marketing API
  * can still connect a Page: an unknown scope fails the whole dialog.
  */
-const ADS_SCOPES = ['ads_management', 'ads_read'];
+const ADS_SCOPES = [
+  'ads_management',
+  'ads_read',
+  // Every creative this desk builds runs from the Page as its identity
+  // (`object_story_spec.page_id` in `ads.ts`), which is its own grant.
+  'pages_manage_ads',
+];
 
 /** A started connection is finished in one sitting or not at all. */
 const STATE_TTL_MS = 15 * 60_000;
