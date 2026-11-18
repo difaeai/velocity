@@ -41,6 +41,14 @@ import { THREADS, WA_INDEX, WA_LINE, WA_SECRET, addUsage, agentPlanOf, functions
 /** The connected line, as the Sales page shows it. Never a token. */
 export interface WaLine {
   phoneNumberId: string;
+  /**
+   * The WhatsApp Business account the number belongs to.
+   *
+   * Only a line connected through Embedded Signup has one: a pasted token says
+   * nothing about which account it came from. Templates live on this, not on
+   * the number, so a pasted line cannot submit one.
+   */
+  wabaId?: string;
   displayNumber: string;
   verifiedName: string;
   templateName: string;

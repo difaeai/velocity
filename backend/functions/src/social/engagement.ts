@@ -23,8 +23,8 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
-import { FieldValue } from '../lib/firebase';
-import { deskCall, forEachWorkspace, sdb } from './workspace';
+import { db, FieldValue } from '../lib/firebase';
+import { deskCall, forEachWorkspace, inWorkspace, sdb } from './workspace';
 
 import { flagIfDead, loadCredentials } from './accounts';
 import { brandName, systemFor } from './crew';
@@ -130,6 +130,80 @@ export async function syncComments(): Promise<{ found: number; added: number; er
   }
 
   return { found, added, errors };
+}
+
+/**
+ * One comment on a connected Page, brought by Meta's webhook rather than found
+ * by the next poll.
+ *
+ * The poll is not replaced. A webhook is the faster path and never the only
+ * one: subscriptions get dropped, deliveries get missed, and an inbox that
+ * silently stops is worse than one that is two hours behind. This writes the
+ * same row `syncComments` writes and does nothing if the poll got there first,
+ * so a comment is never stored twice or drafted twice.
+ */
+export async function handlePageComment(value: PageFeedValue): Promise<boolean> {
+  if (value.item !== 'comment' || value.verb !== 'add') return false;
+  const id = value.comment_id;
+  const text = (value.message ?? '').trim();
+  if (!id || !text) return false;
+
+  // Our own replies come back down the same webhook. Answering ourselves is a
+  // loop, and it bills for a model call on every turn of it.
+  const ours = (await loadCredentials('facebook'))?.externalId;
+  if (ours && value.from?.id === ours) return false;
+
+  const ref = commentRef('facebook', id);
+  if ((await ref.get()).exists) return false;
+
+  const row: SocialComment = {
+    id: commentId('facebook', id),
+    platform: 'facebook',
+    mediaId: value.post_id ?? '',
+    postId: null,
+    commentId: id,
+    authorName: (value.from?.name ?? 'Someone').slice(0, 120),
+    text: text.slice(0, 2000),
+    permalink: null,
+    // Meta sends seconds here and milliseconds everywhere else in this file.
+    createdAtMs: value.created_time ? value.created_time * 1000 : Date.now(),
+    status: 'new',
+    intent: null,
+    draftReply: null,
+    draftedBy: null,
+    sentReply: null,
+    sentAtMs: null,
+    error: null,
+  };
+  await ref.set({ ...row, syncedAt: FieldValue.serverTimestamp() });
+  return true;
+}
+
+/** What Meta puts on a Page `feed` change. Only comments are acted on. */
+export interface PageFeedValue {
+  item?: string;
+  verb?: string;
+  comment_id?: string;
+  post_id?: string;
+  message?: string;
+  /** Seconds, not milliseconds. */
+  created_time?: number;
+  from?: { id?: string; name?: string };
+}
+
+/**
+ * Route a Page event to the workspace whose Page it is.
+ *
+ * One Meta app carries every customer's Page, and they all post to the one
+ * webhook. The entry's id is the Page id, and it is the only thing on a Page
+ * event that says whose Page was commented on — the same job `phone_number_id`
+ * does for WhatsApp. Returns true when it was one of ours.
+ */
+export async function handlePageFeedEvent(pageId: string, value: PageFeedValue): Promise<boolean> {
+  const wid = (await db.doc(`vexaPages/${pageId}`).get()).data()?.wid as string | undefined;
+  if (!wid) return false;
+  await inWorkspace(wid, () => handlePageComment(value).then(() => undefined));
+  return true;
 }
 
 const DRAFT_SYSTEM = (whatsapp: string | null): string => `You are answering comments on ${brandName()}'s own social accounts.

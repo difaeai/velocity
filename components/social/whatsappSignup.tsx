@@ -24,7 +24,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { colors } from '@/lib/config';
-import { agentsApi } from '@/lib/api';
+import { agentsApi, type WhatsAppTemplate } from '@/lib/api';
 import { Button, Card } from '@/components/ui';
 
 type Step = 'idle' | 'opening' | 'finishing' | 'done';
@@ -218,6 +218,114 @@ export function WhatsAppSignup({ onConnected }: { onConnected?: () => void }) {
       {error ? (
         <p style={{ fontSize: 12.5, color: '#b42318', margin: '12px 0 0', lineHeight: 1.5 }}>{error}</p>
       ) : null}
+    </Card>
+  );
+}
+
+/**
+ * Message templates, and where Meta's review of each one got to.
+ *
+ * A template is the only way to write to somebody more than 24 hours after
+ * their last message, so until one is approved the desk can answer but never
+ * open a conversation. Nothing here can hurry the review: it is submitted, it
+ * says PENDING, and then it is approved or it is not.
+ *
+ * Templates belong to the WhatsApp Business account, which only a line
+ * connected through Embedded Signup records — a pasted token says nothing
+ * about which account it came from. That is what the backend refuses with, and
+ * this card shows that refusal rather than hiding itself.
+ */
+export function WhatsAppTemplates() {
+  const [rows, setRows] = useState<WhatsAppTemplate[] | null>(null);
+  const [why, setWhy] = useState<string | null>(null);
+  const [name, setName] = useState('');
+  const [body, setBody] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    agentsApi
+      .templates({})
+      .then((r) => {
+        setRows(r.templates);
+        setWhy(null);
+      })
+      .catch((e) => {
+        setRows([]);
+        setWhy(e instanceof Error ? e.message : 'Templates could not be read.');
+      });
+  }, []);
+
+  useEffect(load, [load]);
+
+  const field = {
+    padding: '9px 11px',
+    borderRadius: 8,
+    border: `1px solid ${colors.border}`,
+    background: 'transparent',
+    color: 'inherit',
+    fontSize: 13,
+  } as const;
+
+  const tone = (status: string) =>
+    status === 'APPROVED' ? '#28c76f' : status === 'REJECTED' ? '#b42318' : colors.muted;
+
+  return (
+    <Card>
+      <h3 style={{ fontSize: 15, fontWeight: 800, margin: '0 0 6px' }}>Message templates</h3>
+      <p style={{ fontSize: 12.5, color: colors.muted, margin: '0 0 12px', lineHeight: 1.5 }}>
+        The only way to write to somebody more than 24 hours after their last message. Meta reviews every one.
+      </p>
+
+      <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_'))}
+          placeholder="template_name"
+          style={field}
+        />
+        <textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="What it says." rows={3} style={{ ...field, resize: 'vertical' }} />
+        <div>
+          <Button
+            variant="secondary"
+            disabled={busy || !name.trim() || !body.trim()}
+            onClick={() => {
+              setBusy(true);
+              setNote(null);
+              agentsApi
+                .submitTemplate({ name: name.trim(), body: body.trim() })
+                .then((out) => {
+                  setNote(`Submitted. Meta says ${out.status}.`);
+                  setName('');
+                  setBody('');
+                  load();
+                })
+                .catch((e) => setWhy(e instanceof Error ? e.message : 'Meta would not take that template.'))
+                .finally(() => setBusy(false));
+            }}
+          >
+            {busy ? 'Submitting…' : 'Submit for review'}
+          </Button>
+        </div>
+      </div>
+
+      {rows === null ? null : rows.length ? (
+        rows.map((t) => (
+          <div
+            key={`${t.name}-${t.language ?? ''}`}
+            style={{ display: 'flex', gap: 10, alignItems: 'baseline', padding: '8px 0', borderTop: `1px solid ${colors.border}` }}
+          >
+            <strong style={{ fontSize: 13, flex: 1 }}>{t.name}</strong>
+            <span style={{ fontSize: 11.5, color: colors.muted }}>{t.language ?? ''}</span>
+            <span style={{ fontSize: 11, fontWeight: 900, color: tone(t.status), textTransform: 'uppercase' }}>{t.status}</span>
+          </div>
+        ))
+      ) : (
+        <p style={{ fontSize: 12.5, color: colors.muted, margin: 0 }}>No templates yet.</p>
+      )}
+
+      {note ? <p style={{ fontSize: 12.5, color: colors.muted, margin: '12px 0 0' }}>{note}</p> : null}
+      {why ? <p style={{ fontSize: 12.5, color: '#b42318', margin: '12px 0 0', lineHeight: 1.5 }}>{why}</p> : null}
     </Card>
   );
 }
