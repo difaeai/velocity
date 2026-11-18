@@ -157,11 +157,13 @@ export default function TravelMateProfile() {
           <Text style={s.backBtnText}>← Book Ride</Text>
         </Pressable>
         <Text style={s.title}>My Profile</Text>
-        <Pressable onPress={() => router.push('/passenger/travel-mate/setup')} style={s.editBtnSmall}>
-          <Text style={s.editBtnSmallText}>Edit</Text>
-        </Pressable>
+        <View style={s.topRight}>
+          <InboxModeBar />
+          <Pressable onPress={() => router.push('/passenger/travel-mate/setup')} style={s.editBtnSmall}>
+            <Text style={s.editBtnSmallText}>Edit</Text>
+          </Pressable>
+        </View>
       </View>
-      <InboxModeBar />
 
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
         {/* Photo + basic info */}
@@ -327,6 +329,8 @@ const s = themed(() => StyleSheet.create({
   backBtn: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 99, backgroundColor: `${colors.primary}18`, borderWidth: 1.5, borderColor: `${colors.primary}40` },
   backBtnText: { fontSize: 12, fontWeight: '800', color: colors.primary },
   title:   { fontSize: 18, fontWeight: '900', color: colors.text },
+  /** Status pill + settings, as one group on the right of the header. */
+  topRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   editBtnSmall: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 99, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   editBtnSmallText: { fontSize: 13, fontWeight: '800', color: colors.text },
 
