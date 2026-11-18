@@ -277,7 +277,7 @@ export function InstagramConnect({
           <p style={{ fontSize: 13.5, color: colors.muted, margin: '5px 0 0', lineHeight: 1.55 }}>
             {ads ? (
               <>
-                Sign in with the Facebook account that runs Velocity Rides&apos; ads, allow the ads permissions, then
+                Sign in with the Facebook account that runs your ads, allow the ads permissions, then
                 pick the ad account and the Page. The sign-in lasts about sixty days; the page says when to press
                 Reconnect.
               </>
@@ -376,7 +376,7 @@ export function InstagramConnect({
       {choosing && pages.length ? (
         <div style={{ marginTop: 14, display: 'grid', gap: 8 }} role="radiogroup" aria-label="Facebook Page">
           <span style={{ fontSize: 12.5, fontWeight: 800, color: colors.muted }}>
-            {pages.length === 1 ? 'The Page we found:' : 'Which Page is Velocity Rides?'}
+            {pages.length === 1 ? 'The Page we found:' : 'Which Page is yours?'}
           </span>
           {pages.map((p) => (
             <button

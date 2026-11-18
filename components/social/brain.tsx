@@ -818,7 +818,7 @@ export function Brain({
       <div className="bn-box bn-think">
         <div className="bn-head">
           <div style={{ minWidth: 0 }}>
-            <div className="fx-eyebrow">Velocity Brain</div>
+            <div className="fx-eyebrow">Vexa Brain</div>
             <h2>Where your content goes</h2>
           </div>
           <span className="bn-status">
