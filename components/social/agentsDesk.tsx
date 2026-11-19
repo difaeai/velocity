@@ -307,6 +307,7 @@ export function WhatsAppLine({
   const [open, setOpen] = useState(false);
   const [f, setF] = useState({
     phoneNumberId: line?.phoneNumberId ?? '',
+    wabaId: line?.wabaId ?? '',
     token: '',
     appSecret: '',
     templateName: line?.templateName ?? '',
@@ -323,6 +324,7 @@ export function WhatsAppLine({
     try {
       await agentsApi.saveWhatsApp({
         phoneNumberId: f.phoneNumberId.trim(),
+        ...(f.wabaId.trim() ? { wabaId: f.wabaId.trim() } : {}),
         ...(f.token.trim() ? { token: f.token.trim() } : {}),
         ...(f.appSecret.trim() ? { appSecret: f.appSecret.trim() } : {}),
         templateName: f.templateName.trim(),
@@ -418,6 +420,12 @@ export function WhatsAppLine({
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
             <Field label="Phone number ID">
               <input value={f.phoneNumberId} onChange={(e) => set('phoneNumberId', e.target.value.replace(/\D/g, ''))} className="fx-mini" style={{ width: '100%' }} />
+            </Field>
+            {/* Templates belong to the account, not to the number, so without
+                this the templates card has nothing to submit to. Meta's API
+                Setup page prints it beside the phone number id. */}
+            <Field label="WhatsApp Business account ID">
+              <input value={f.wabaId} onChange={(e) => set('wabaId', e.target.value.replace(/\D/g, ''))} className="fx-mini" style={{ width: '100%' }} />
             </Field>
             <Field label={line ? 'Permanent access token (only to change it)' : 'Permanent access token'}>
               <input type="password" autoComplete="off" value={f.token} onChange={(e) => set('token', e.target.value)} className="fx-mini" style={{ width: '100%' }} />

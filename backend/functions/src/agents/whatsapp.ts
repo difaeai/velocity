@@ -336,6 +336,15 @@ export async function sendCallFollowUp(call: { to: string; leadId: string; leadN
 
 const lineSchema = z.object({
   phoneNumberId: z.string().regex(/^\d{5,30}$/),
+  /**
+   * The WhatsApp Business account the number sits in.
+   *
+   * Optional, and only pasted: Embedded Signup hands it over by itself. Meta's
+   * API Setup page shows it beside the phone number id, and without it the
+   * templates card has nothing to submit a template to — templates belong to
+   * the account, not to the number.
+   */
+  wabaId: z.string().regex(/^\d{5,30}$/).optional(),
   /** Only sent when it changes; never read back. */
   token: z.string().trim().min(20).max(1000).optional(),
   appSecret: z.string().trim().regex(/^[a-f0-9]{32}$/i).optional(),
@@ -386,6 +395,9 @@ export const agentSaveWhatsApp = deskCall('sales', { timeoutSeconds: 60 }, async
   if (prev?.phoneNumberId && prev.phoneNumberId !== p.phoneNumberId) await db.doc(`${WA_INDEX}/${prev.phoneNumberId}`).delete();
   const line: WaLine = {
     phoneNumberId: p.phoneNumberId,
+    // Kept when this save did not carry one, so changing a template does not
+    // lose the account the templates live on.
+    ...(p.wabaId ?? prev?.wabaId ? { wabaId: p.wabaId ?? prev?.wabaId } : {}),
     displayNumber: info.display_phone_number ?? '',
     verifiedName: info.verified_name ?? '',
     templateName: p.templateName,
