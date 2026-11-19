@@ -290,12 +290,18 @@ export function WhatsAppLine({
 }) {
   const line = state?.whatsapp ?? null;
   /**
-   * This line answers a Vexa customer's own number, on their own Meta app, which
-   * is why it asks for their app secret and gets its own webhook. Velocity's own
-   * number is not that: it rides the house webhook and the house app secret, and
-   * is connected on the WhatsApp sales page. Offering the house this form sent it
-   * down a path that cannot work, so the house is pointed at the right page
-   * instead — unless a line is already connected here, which stays changeable.
+   * The *pasted* line answers a Vexa customer's own number, on their own Meta
+   * app, which is why it asks for their app secret and gets its own webhook.
+   * Velocity's own number is not that: it rides the house webhook and the house
+   * app secret, and is connected on the WhatsApp sales page. Offering the house
+   * this form sent it down a path that cannot work, so the house is pointed at
+   * the right page instead — unless a line is already connected here, which
+   * stays changeable.
+   *
+   * Embedded Signup below is a different matter and is offered to everyone: it
+   * connects through Vexa's own app and seals Vexa's own app secret beside the
+   * token, so a house line made that way receives on the desk webhook like any
+   * other. A second Velocity number for the agents to sell on is exactly that.
    */
   const customerLineOnly = (state?.house ?? false) && !line;
   const [open, setOpen] = useState(false);
@@ -348,9 +354,7 @@ export function WhatsAppLine({
           <p className="fx-sub">
             {line
               ? `${line.verifiedName || 'Connected'} · ${line.displayNumber} · ${line.autoReply ? 'the AI answers' : 'you answer'}`
-              : customerLineOnly
-                ? 'For a customer’s own number. Velocity’s own number is connected on WhatsApp sales.'
-                : 'Connect your WhatsApp Business number so the AI can answer, follow up after calls and close.'}
+              : 'Connect your WhatsApp Business number so the AI can answer, follow up after calls and close.'}
           </p>
         </div>
         {customerLineOnly ? null : (
@@ -360,22 +364,23 @@ export function WhatsAppLine({
         )}
       </div>
 
+      {/* One press, no pasting, and nothing about it is customer-only. The paste
+          form below stays for anyone who already holds a token, and for the days
+          Embedded Signup is not set up. */}
+      <div style={{ margin: '14px 0 0' }}>
+        <WhatsAppSignup />
+      </div>
+
       {customerLineOnly ? (
-        <p className="fx-sub" style={{ margin: '14px 0 0' }}>
-          This line answers a customer’s number on their own Meta app, so it asks for their app secret and runs on its own
-          webhook. Velocity’s own number runs on Velocity’s webhook instead — connect it on{' '}
+        <p className="fx-sub" style={{ margin: '12px 0 0' }}>
+          Pasting a token by hand is for a customer’s number on their own Meta app, so it asks for their app secret and
+          runs on its own webhook. Velocity’s own number runs on Velocity’s webhook instead — connect that one on{' '}
           <Link href="/dashboard/social/whatsapp" className="fx-link">
             WhatsApp sales
           </Link>
           .
         </p>
-      ) : (
-        /* One press, no pasting. The paste form below stays for anyone who
-           already holds a token, and for the days Embedded Signup is not set up. */
-        <div style={{ margin: '14px 0 0' }}>
-          <WhatsAppSignup />
-        </div>
-      )}
+      ) : null}
 
       {line ? (
         <div style={{ display: 'grid', gap: 4, fontSize: 12.5, padding: 10, borderRadius: 12, background: '#f6faf7', marginBottom: open ? 12 : 0 }}>
