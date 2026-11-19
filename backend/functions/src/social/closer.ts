@@ -658,8 +658,16 @@ async function receive(
   text: string,
   live = true,
   channel: Channel = 'whatsapp',
+  atMs?: number,
 ): Promise<void> {
   const nowMs = Date.now();
+  // When they wrote, in Meta's clock, not when we read it. WhatsApp arrives on a
+  // webhook, so the two are the same; Instagram is polled, and a DM can be hours
+  // old by the time a sweep sees it. The 24-hour window runs from their message,
+  // so stamping the time of the sync made the console offer a reply box on
+  // threads every send to which Instagram refuses as "(#10) outside of allowed
+  // window".
+  const saidAtMs = atMs ?? nowMs;
   const waId = chatIdFor(channel, from);
   const said = text.trim().slice(0, 2000);
   if (!said) return;
@@ -667,12 +675,12 @@ async function receive(
   const ref = chatRef(waId);
   const existing = (await ref.get()).data() as SalesChat | undefined;
   const chat: SalesChat = existing ?? newChat({ waId, name, source: channel, nowMs });
-  const theirs: ChatMessage = { from: 'them', text: said, atMs: nowMs };
+  const theirs: ChatMessage = { from: 'them', text: said, atMs: saidAtMs };
 
   chat.name = chat.name ?? name;
   chat.language = languageOf(said, chat.language);
   chat.messages = [...chat.messages, theirs].slice(-KEEP_MESSAGES);
-  chat.lastInboundAtMs = nowMs;
+  chat.lastInboundAtMs = saidAtMs;
   chat.updatedAtMs = nowMs;
 
   /** Their message, the fields it moved, and whatever else this turn decided. */
@@ -684,7 +692,7 @@ async function receive(
         ...(existing ? {} : newChat({ waId, name, source: channel, nowMs })),
         name: chat.name,
         language: chat.language,
-        lastInboundAtMs: nowMs,
+        lastInboundAtMs: saidAtMs,
         updatedAtMs: Date.now(),
         ...fields,
         messages: FieldValue.arrayUnion(...union),
@@ -783,10 +791,20 @@ export async function syncInstagramDms(live = true): Promise<{ threads: number; 
     const existing = (await ref.get()).data() as SalesChat | undefined;
     const since = existing?.igSyncedUpToMs ?? 0;
     const fresh = thread.messages.filter((m) => !m.fromUs && m.atMs > since);
-    if (!fresh.length) continue;
-
     const latest = fresh[fresh.length - 1];
-    if (!canFreeForm(latest.atMs, nowMs)) continue;
+
+    if (!latest || !canFreeForm(latest.atMs, nowMs)) {
+      // Nothing to answer — but the window on this thread is still worth
+      // correcting. A sweep before this one stamped the time it looked rather
+      // than the time they wrote, which leaves the console offering a reply box
+      // Instagram will refuse. Meta's own clock is the authority, so take it
+      // from the inbox every time the inbox is open.
+      const theirLast = thread.messages.filter((m) => !m.fromUs).pop()?.atMs;
+      if (existing && theirLast !== undefined && existing.lastInboundAtMs !== theirLast) {
+        await ref.set({ lastInboundAtMs: theirLast }, { merge: true });
+      }
+      continue;
+    }
 
     // "salam", then "rate?" seconds later is one turn of a conversation.
     // Answering each separately is two model bills and two replies to somebody
@@ -795,7 +813,7 @@ export async function syncInstagramDms(live = true): Promise<{ threads: number; 
       .slice(-5)
       .map((m) => m.text)
       .join('\n');
-    await receive(thread.participantId, thread.participantName, said, live, 'instagram');
+    await receive(thread.participantId, thread.participantName, said, live, 'instagram', latest.atMs);
     // Written after the turn, so a crash mid-reply re-reads the message rather
     // than losing it.
     await ref.set({ igSyncedUpToMs: latest.atMs }, { merge: true });

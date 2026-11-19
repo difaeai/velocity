@@ -464,6 +464,31 @@ describe('a lead sends a DM on Instagram', () => {
     expect(dmsSent()).toHaveLength(1);
   });
 
+  it('stamps their DM with the time they wrote it, not the time the inbox was read', async () => {
+    const wrote = Date.now() - 20 * 3600_000;
+    igInbox = inboxAt(wrote);
+    await inWorkspace(WID, () => syncInstagramDms());
+
+    // Four hours of Meta's window are left, not a fresh twenty-four. Stamping
+    // the sync's own clock here is what made the console offer a reply box on
+    // threads Instagram refuses with "(#10) outside of allowed window".
+    const chat = (await db.doc(CHAT).get()).data() as SalesChat;
+    expect(chat.lastInboundAtMs).toBe(wrote);
+    expect(chat.messages.find((m) => m.from === 'them')?.atMs).toBe(wrote);
+  });
+
+  it('corrects a stamp an earlier sweep wrote with its own clock', async () => {
+    const wrote = Date.now() - 3 * 86_400_000;
+    // What the old code left behind: a three-day-old DM, read and marked as
+    // read, but stamped as though it had arrived an hour ago.
+    await db.doc(CHAT).set({ waId: `ig_${THEM}`, source: 'instagram', lastInboundAtMs: Date.now() - 3600_000, igSyncedUpToMs: wrote });
+    igInbox = inboxAt(wrote);
+
+    expect(await inWorkspace(WID, () => syncInstagramDms())).toEqual({ threads: 1, answered: 0 });
+    expect(((await db.doc(CHAT).get()).data() as SalesChat).lastInboundAtMs).toBe(wrote);
+    expect(dmsSent()).toHaveLength(0);
+  });
+
   it('says nothing and sends nothing when no Instagram account is connected', async () => {
     await db.doc(`${WS}/socialAccounts/instagram/secret/credentials`).delete();
     igInbox = inboxAt(Date.now() - 60_000);
