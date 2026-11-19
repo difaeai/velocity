@@ -2400,6 +2400,8 @@ export interface WhatsAppTemplate {
 
 export interface AgentWaLine {
   phoneNumberId: string;
+  /** The account the number sits in; templates belong to it. Pasted, or from Embedded Signup. */
+  wabaId?: string;
   displayNumber: string;
   verifiedName: string;
   templateName: string;
