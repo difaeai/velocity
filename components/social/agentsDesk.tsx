@@ -368,7 +368,13 @@ export function WhatsAppLine({
           form below stays for anyone who already holds a token, and for the days
           Embedded Signup is not set up. */}
       <div style={{ margin: '14px 0 0' }}>
-        <WhatsAppSignup />
+        {/* The desk state is what draws the webhook address, the verify token
+            and the templates card, and it was read before this line existed —
+            so a sign-up that finished left them all hidden until somebody
+            reloaded the page by hand. */}
+        <WhatsAppSignup
+          onConnected={() => onSaved('WhatsApp connected. Point your Meta app’s webhook at the address shown, with the verify token.')}
+        />
       </div>
 
       {customerLineOnly ? (
