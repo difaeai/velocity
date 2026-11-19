@@ -139,36 +139,43 @@ export function WhatsAppSignup({ onConnected }: { onConnected?: () => void }) {
     assets.current = null;
     setStep('opening');
 
+    const finish = async (res: { authResponse?: { code?: string } | null }) => {
+      const code = res?.authResponse?.code;
+      // No code means the window was closed before the end. The CANCEL
+      // handler above has usually already said so.
+      if (!code) {
+        setStep((s) => (s === 'opening' ? 'idle' : s));
+        return;
+      }
+      if (!assets.current) {
+        setStep('idle');
+        setError('Meta returned a sign-in but not the number. Press Connect again.');
+        return;
+      }
+      setStep('finishing');
+      try {
+        const out = await agentsApi.finishWhatsAppSignup({ code, ...assets.current });
+        setStep('done');
+        setNote(
+          out.needsTemplate
+            ? 'Connected. Add a message template before the first outbound message — replies inside 24 hours need none.'
+            : 'Connected.',
+        );
+        await refresh();
+        onConnected?.();
+      } catch (e) {
+        setStep('idle');
+        setError((e as Error).message);
+      }
+    };
+
     window.FB.login(
-      async (res) => {
-        const code = res?.authResponse?.code;
-        // No code means the window was closed before the end. The CANCEL
-        // handler above has usually already said so.
-        if (!code) {
-          setStep((s) => (s === 'opening' ? 'idle' : s));
-          return;
-        }
-        if (!assets.current) {
-          setStep('idle');
-          setError('Meta returned a sign-in but not the number. Press Connect again.');
-          return;
-        }
-        setStep('finishing');
-        try {
-          const out = await agentsApi.finishWhatsAppSignup({ code, ...assets.current });
-          setStep('done');
-          setNote(
-            out.needsTemplate
-              ? 'Connected. Add a message template before the first outbound message — replies inside 24 hours need none.'
-              : 'Connected.',
-          );
-          await refresh();
-          onConnected?.();
-        } catch (e) {
-          setStep('idle');
-          setError((e as Error).message);
-        }
-      },
+      // Not `async (res) => …`. Meta's SDK type-checks this argument and throws
+      // "Expression is of type asyncfunction, not function" before it opens
+      // anything, so an async callback meant the window never appeared and the
+      // button sat on "Waiting for Meta…" for ever. Nobody could connect a
+      // number through this card until it was a plain function.
+      (res) => void finish(res),
       {
         config_id: state.configId,
         response_type: 'code',
