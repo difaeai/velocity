@@ -359,11 +359,14 @@ export function WhatsAppLine({
               : 'Connect your WhatsApp Business number so the AI can answer, follow up after calls and close.'}
           </p>
         </div>
-        {customerLineOnly ? null : (
-          <button type="button" className="fx-btn ghost small" onClick={() => setOpen(!open)}>
-            {open ? 'Close' : line ? 'Change' : 'Connect'}
-          </button>
-        )}
+        {/* Open to the house as well. A number that belongs to Vexa's own Meta
+            app — the test number among them — is connected by pasting exactly
+            these three values, and it runs on the desk webhook with Vexa's own
+            app secret. The note below still points Velocity's sign-in number
+            at the page that owns it. */}
+        <button type="button" className="fx-btn ghost small" onClick={() => setOpen(!open)}>
+          {open ? 'Close' : line ? 'Change' : 'Connect'}
+        </button>
       </div>
 
       {/* One press, no pasting, and nothing about it is customer-only. The paste
