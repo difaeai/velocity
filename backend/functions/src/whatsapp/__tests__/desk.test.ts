@@ -41,6 +41,9 @@ describe('readDeskCommand — area broadcast', () => {
     ['sector i8/3 mein demand bhejo', 'I-8/3'],
     ['blue area main demand bhejo', 'Blue Area'],
     ['saddar ke drivers ko demand ka message bhejo', 'Saddar'],
+    // A named place, not a sector: the owner's own example.
+    ['drivers ko IQRA university H9 campus bhejo wahan demand hai', 'Iqra University H9 Campus'],
+    ['bahria town phase 7 mein demand bhejo', 'Bahria Town Phase 7'],
     // A sector on its own is unambiguous enough to act on.
     ['F-7', 'F-7'],
     ['g10', 'G-10'],
@@ -97,7 +100,13 @@ describe('normaliseArea', () => {
     ['i8 / 3', 'I-8/3'],
     ['blue area', 'Blue Area'],
     ['bahria town', 'Bahria Town'],
+    ['iqra university h-9 campus', 'Iqra University H-9 Campus'],
   ])('writes %s as %s', (raw, written) => {
     expect(normaliseArea(raw)).toBe(written);
+  });
+
+  it('cannot hand a template more text than it will accept', () => {
+    // A hydrated template that is too long is refused outright (132005).
+    expect(normaliseArea('x'.repeat(200)).length).toBe(60);
   });
 });
