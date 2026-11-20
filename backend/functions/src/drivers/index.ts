@@ -18,6 +18,8 @@ import { todayKey } from './dailyTarget';
 import { PRIMARY_VEHICLE_ID } from '../domain/vehicleCheck';
 import { enqueueDriverVerification, getVerificationConfig } from './verification';
 import { rateLimit } from '../lib/ratelimit';
+import { PROSPECTS_COLLECTION } from '../whatsapp/alerts';
+import { toWhatsAppNumber } from '../whatsapp/client';
 
 const onboardingSchema = z.object({
   fullName:            z.string().min(2).max(120),
@@ -199,6 +201,30 @@ export const submitDriverOnboarding = onCall(async (req) => {
   } catch (err) {
     // `error:`, never `message:` — the logger overwrites that key.
     logger.warn('Driver rider-profile seed failed', { uid: ctx.uid, error: err });
+  }
+
+  /**
+   * They were recruited by hand and have now signed up themselves, so retire
+   * the recruit record (whatsapp/desk.ts).
+   *
+   * Without this they would be on two lists at once — their driver record and
+   * the recruit list — and hear about the same demand twice, once as a driver
+   * and once as somebody still being asked to download the app. Best-effort:
+   * an application must not fail over a marketing list.
+   */
+  try {
+    const phone = toWhatsAppNumber((await db.doc(`users/${ctx.uid}`).get()).get('phoneNumber'));
+    const recruit = phone ? db.doc(`${PROSPECTS_COLLECTION}/${phone}`) : null;
+    // Only if they were actually recruited: a plain `set` would leave a stub
+    // record behind for every driver who signed up on their own.
+    if (recruit && (await recruit.get()).exists) {
+      await recruit.set(
+        { whatsappAlerts: { optIn: false }, signedUpAt: FieldValue.serverTimestamp() },
+        { merge: true },
+      );
+    }
+  } catch (err) {
+    logger.warn('Driver recruit retire failed', { uid: ctx.uid, error: err });
   }
 
   // Hand off to the verification engine and return. The vision pass over six

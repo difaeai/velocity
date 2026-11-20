@@ -32,7 +32,15 @@
 import { logger } from 'firebase-functions';
 
 import { db, FieldValue, Timestamp } from '../lib/firebase';
-import { sendTemplate, toWhatsAppNumber, whatsAppConfig, type WhatsAppConfig } from './client';
+import { cityFor } from '../locations/registry';
+import {
+  isAccountHalt,
+  sendTemplate,
+  toWhatsAppNumber,
+  whatsAppConfig,
+  type SendResult,
+  type WhatsAppConfig,
+} from './client';
 import {
   afterSend,
   blockFanout,
@@ -42,6 +50,7 @@ import {
   readAlertSettings,
   type CandidateDriver,
   type DriverAlertState,
+  type FanoutBlock,
   type WhatsAppAlertSettings,
 } from './policy';
 
@@ -49,6 +58,15 @@ const SETTINGS_DOC = 'config/whatsappAlerts';
 const HEALTH_DOC = 'config/whatsappHealth';
 /** Per-PKT-day usage counters — the budget, and the evidence for the admin desk. */
 const USAGE_COLLECTION = 'whatsappUsage';
+/**
+ * Drivers an admin recruited face to face, keyed by their normalised number,
+ * waiting for the account they do not have yet (see `desk.ts`).
+ *
+ * They are told about demand but never about a live ride: a ride alert is an
+ * auction they cannot enter without an approved account, and a message somebody
+ * cannot act on is the kind that earns a Block.
+ */
+export const PROSPECTS_COLLECTION = 'driverProspects';
 
 /** Public site origin. The template's URL button is built from this. */
 const WEB_ORIGIN = process.env.VELOCITY_WEB_ORIGIN ?? 'https://velocityrides.app';
@@ -70,7 +88,7 @@ export interface WhatsAppHealth {
   openedAt?: Timestamp;
 }
 
-async function readSettings(): Promise<WhatsAppAlertSettings> {
+export async function readSettings(): Promise<WhatsAppAlertSettings> {
   try {
     const snap = await db.doc(SETTINGS_DOC).get();
     return readAlertSettings(snap.exists ? snap.data() : null);
@@ -83,7 +101,7 @@ async function readSettings(): Promise<WhatsAppAlertSettings> {
   }
 }
 
-async function readHealth(): Promise<WhatsAppHealth> {
+export async function readHealth(): Promise<WhatsAppHealth> {
   try {
     const snap = await db.doc(HEALTH_DOC).get();
     return { circuitOpen: snap.get('circuitOpen') === true };
@@ -201,6 +219,25 @@ function demandConfig(cfg: WhatsAppConfig | null): WhatsAppConfig | null {
   };
 }
 
+/**
+ * The area template, for the broadcast an admin types on WhatsApp: one
+ * variable, the area, and a static button into the app.
+ *
+ * `urlButtonIndex: null` on purpose — a static button takes no parameter, and
+ * sending one against it is `(#100) Invalid parameter`. Keeping this template
+ * parameter-light is what makes it safe for a one-off human command: there is
+ * one thing to get wrong, not five.
+ */
+function areaConfig(cfg: WhatsAppConfig | null): WhatsAppConfig | null {
+  if (!cfg) return null;
+  return {
+    ...cfg,
+    templateName: (process.env.WHATSAPP_AREA_TEMPLATE_NAME ?? '').trim() || 'driver_area_demand',
+    templateLang: (process.env.WHATSAPP_AREA_TEMPLATE_LANG ?? '').trim() || cfg.templateLang,
+    urlButtonIndex: null,
+  };
+}
+
 /** "Mini", or for a shared car "shared Mini, 3 riders to PIMS" — the template's ride slot. */
 export function rideLabelFor(rideType: string, shared?: OfflineAlertInput['shared']): string {
   const car = RIDE_LABELS[rideType] ?? rideType;
@@ -241,7 +278,14 @@ export async function alertOfflineDriversOnWhatsApp(input: OfflineAlertInput): P
     return;
   }
 
-  const candidates = await findOfflineCandidates(input.pickup, settings);
+  // Demand told ahead of time is the one message a recruited driver can act on
+  // — "there is work here, get on the app" — so the numbers an admin collected
+  // in person join the fan-out for it. A live ride request does not: see
+  // PROSPECTS_COLLECTION.
+  const candidates = [
+    ...(await findOfflineCandidates(input.pickup, settings)),
+    ...(input.demand ? await findProspectCandidates(input.pickup) : []),
+  ];
   if (candidates.length === 0) {
     logger.info('WhatsApp: no eligible offline drivers', { tripId: input.tripId });
     return;
@@ -268,57 +312,24 @@ export async function alertOfflineDriversOnWhatsApp(input: OfflineAlertInput): P
 
   const rideLabel = rideLabelFor(input.rideType, input.shared);
   const area = shortArea(input.pickup.address);
-  let sent = 0;
 
-  // Sequential on purpose. A dozen messages is not worth parallelising, and
-  // serialising means a `halt` from Meta stops the very next send rather than
-  // arriving after eleven others are already in flight.
-  for (const driver of plan.picked) {
+  const { sent } = await fanOut(plan.picked, settings, now, input.tripId, true, (driver) => {
     const firstName = (driver.name ?? 'there').trim().split(/\s+/)[0] || 'there';
-    const res = input.demand
-      ? await sendTemplate(cfg, driver.phone as string, [
+    return input.demand
+      ? sendTemplate(cfg, driver.phone as string, [
         firstName,
         `${input.demand.people} passenger${input.demand.people === 1 ? '' : 's'}`,
         input.demand.from,
         input.demand.time,
         String(Math.round(input.fare)),
       ], input.demand.link)
-      : await sendTemplate(
+      : sendTemplate(
         cfg,
         driver.phone as string,
         [firstName, rideLabel, String(Math.round(input.fare)), area],
         input.tripId,
       );
-
-    if (res.ok) {
-      sent += 1;
-      countUsage('sent', now);
-      await recordAlertSent(driver.uid, driver.alerts, now, input.tripId, res.messageId);
-      continue;
-    }
-
-    countUsage('failed', now);
-    if (res.action === 'halt') {
-      await tripCircuitBreaker(res.detail, res.code);
-      break;
-    }
-    if (res.action === 'back-off') {
-      // Not this driver's fault and not a reason to stop the feature — just a
-      // reason to stop pushing right now.
-      logger.info('WhatsApp: backing off for this trip', { tripId: input.tripId, code: res.code });
-      break;
-    }
-    if (res.action === 'drop-recipient') {
-      await blockDriverNumber(driver.uid, `send error ${res.code}`);
-      countUsage('dropped', now);
-      continue;
-    }
-    if (res.action === 'skip-recipient') {
-      // Meta declined for this person specifically. Burn their allowance for
-      // the day rather than trying again in an hour and being declined again.
-      await exhaustDriverForToday(driver.uid, driver.alerts, now, settings);
-    }
-  }
+  });
 
   logger.info('WhatsApp: offline alerts done', {
     tripId: input.tripId,
@@ -328,8 +339,181 @@ export async function alertOfflineDriversOnWhatsApp(input: OfflineAlertInput): P
   });
 }
 
-/** A candidate plus the fields only the message itself needs. */
-type NamedCandidate = CandidateDriver & { name?: string };
+/**
+ * Sends one planned fan-out and acts on everything Meta says back.
+ *
+ * Shared by the ride/demand fan-out above and the admin's area broadcast
+ * (`alertAreaDemand`) because the *reading* of a failure is the part that
+ * protects the number, and it must be identical whoever started the send:
+ * undeliverable means stop trying this number for ever, a per-user refusal
+ * means burn their allowance rather than retry in an hour, and both are
+ * accounted against the same caps and counters.
+ *
+ * Sequential on purpose. A dozen messages is not worth parallelising, and
+ * serialising means a `halt` from Meta stops the very next send rather than
+ * arriving after eleven others are already in flight.
+ *
+ * `haltStopsPlatform` is false for a send with its own one-off template, where
+ * a template fault is the admin's setup rather than the account's standing —
+ * see `isAccountHalt`.
+ */
+async function fanOut(
+  picked: NamedCandidate[],
+  settings: WhatsAppAlertSettings,
+  nowMs: number,
+  label: string,
+  haltStopsPlatform: boolean,
+  send: (c: NamedCandidate) => Promise<SendResult>,
+): Promise<{ sent: number; failure: { code: number | null; detail: string } | null }> {
+  let sent = 0;
+  let failure: { code: number | null; detail: string } | null = null;
+
+  for (const driver of picked) {
+    const res = await send(driver);
+
+    if (res.ok) {
+      sent += 1;
+      countUsage('sent', nowMs);
+      await recordAlertSent(driver.statePath, driver.alerts, nowMs, label, res.messageId);
+      continue;
+    }
+
+    countUsage('failed', nowMs);
+    failure = { code: res.code, detail: res.detail };
+    if (res.action === 'halt') {
+      if (haltStopsPlatform || isAccountHalt(res.code)) await tripCircuitBreaker(res.detail, res.code);
+      else logger.error('WhatsApp: this send is broken, alerts left running', { label, code: res.code });
+      break;
+    }
+    if (res.action === 'back-off') {
+      // Not this driver's fault and not a reason to stop the feature — just a
+      // reason to stop pushing right now.
+      logger.info('WhatsApp: backing off', { label, code: res.code });
+      break;
+    }
+    if (res.action === 'drop-recipient') {
+      await blockDriverNumber(driver.statePath, `send error ${res.code}`);
+      countUsage('dropped', nowMs);
+      continue;
+    }
+    if (res.action === 'skip-recipient') {
+      // Meta declined for this person specifically. Burn their allowance for
+      // the day rather than trying again in an hour and being declined again.
+      await exhaustDriverForToday(driver.statePath, driver.alerts, nowMs, settings);
+    }
+  }
+
+  return { sent, failure };
+}
+
+export interface AreaAlertOutcome {
+  /** Why nobody was messaged, when that is the answer. */
+  blocked: FanoutBlock | null;
+  /** Opted-in drivers and recruits found near the area. */
+  found: number;
+  /** How many the caps allowed. */
+  planned: number;
+  sent: number;
+  /** Recruits with no account yet, among `found`. */
+  recruits: number;
+  /** What Meta said about the last failed send, for the admin's reply. */
+  failure: { code: number | null; detail: string } | null;
+}
+
+/**
+ * "Tell the drivers near F-7 that there is work there" — the broadcast an admin
+ * types on WhatsApp (`desk.ts`).
+ *
+ * Deliberately NOT a new channel: it goes through the same consent, the same
+ * per-driver caps and quiet hours, the same daily budget and the same circuit
+ * breaker as every automatic alert. The only thing an admin gets to decide is
+ * *when* and *where* — never who, and never how often one driver may be woken.
+ *
+ * What it does lift is the per-trip recipient cap, because "everybody in F-7"
+ * is the whole point of typing it; the day's global budget then becomes the
+ * ceiling, which is the one that protects the number.
+ */
+export async function alertAreaDemand(area: {
+  name: string;
+  lat: number;
+  lng: number;
+}): Promise<AreaAlertOutcome> {
+  const now = Date.now();
+  const cfg = areaConfig(whatsAppConfig());
+  const [settings, health] = await Promise.all([readSettings(), readHealth()]);
+
+  const usageSnap = await db.doc(`${USAGE_COLLECTION}/${pktDayKey(now)}`).get().catch(() => null);
+  const empty = { found: 0, planned: 0, sent: 0, recruits: 0, failure: null };
+
+  const blocked = blockFanout(
+    settings,
+    {
+      // Neither gate applies to a broadcast somebody typed: they exist to
+      // decide whether an AUTOMATIC alert is worth sending at all, and an admin
+      // asking for this one has already made that call.
+      onlineNearby: 0,
+      fare: Number.MAX_SAFE_INTEGER,
+      sentToday: (usageSnap?.get('reserved') as number | undefined) ?? 0,
+      circuitOpen: health.circuitOpen,
+      configured: cfg !== null,
+    },
+    now,
+  );
+  if (blocked || !cfg) return { blocked: blocked ?? 'not-configured', ...empty };
+
+  const drivers = await findOfflineCandidates(area, settings);
+  const recruits = await findProspectCandidates(area);
+  const candidates = [...drivers, ...recruits];
+  if (candidates.length === 0) return { blocked: null, ...empty, recruits: 0 };
+
+  // Plan BEFORE reserving, unlike the ride fan-out, and reserve exactly what
+  // the plan will send. With the per-recipient cap lifted, reserving for
+  // everyone nearby would spend the day's budget on the drivers the per-driver
+  // caps then skip — one command in a busy sector would silence the rest of
+  // the day. The reservation is still transactional and the plan is trimmed to
+  // what it granted, so a concurrent fan-out cannot be overspent either.
+  const remaining = Math.max(
+    0,
+    settings.dailyGlobalCap - ((usageSnap?.get('reserved') as number | undefined) ?? 0),
+  );
+  const plan = planFanout(candidates, { ...settings, maxRecipientsPerTrip: remaining }, now, remaining);
+  const granted = await reserveGlobalBudget(plan.picked.length, settings.dailyGlobalCap, now);
+  if (granted === 0) return { blocked: 'global-cap', ...empty, found: candidates.length };
+
+  const { sent, failure } = await fanOut(
+    plan.picked.slice(0, granted),
+    settings,
+    now,
+    `area:${area.name}`,
+    false,
+    (driver) => sendTemplate(cfg, driver.phone as string, [area.name]),
+  );
+
+  logger.info('WhatsApp: area demand broadcast', {
+    area: area.name,
+    sent,
+    planned: Math.min(plan.picked.length, granted),
+    skipped: plan.skipped.slice(0, 10),
+  });
+  return {
+    blocked: null,
+    found: candidates.length,
+    planned: Math.min(plan.picked.length, granted),
+    sent,
+    recruits: recruits.length,
+    failure,
+  };
+}
+
+/**
+ * A candidate plus the fields only the message and the bookkeeping need.
+ *
+ * `statePath` is the document that carries this recipient's consent and
+ * counters — a driver's own record, or the recruit doc of somebody who has no
+ * account yet. Everything that records a send, blocks a number or burns an
+ * allowance writes there, which is what lets one fan-out serve both.
+ */
+type NamedCandidate = CandidateDriver & { name?: string; statePath: string };
 
 /**
  * Approved, offline, opted-in drivers within the radius.
@@ -371,6 +555,7 @@ async function findOfflineCandidates(
     const appActive = doc.get('appActiveAt') as Timestamp | undefined;
     out.push({
       uid: doc.id,
+      statePath: doc.ref.path,
       name: doc.get('fullName') as string | undefined,
       // The number captured at opt-in is the one consent was given for. Falling
       // back to the profile phone covers a driver whose opt-in predates the
@@ -389,6 +574,45 @@ async function findOfflineCandidates(
   return out;
 }
 
+/**
+ * Recruited drivers with no account yet, for demand inside one of our cities.
+ *
+ * They have no position of their own: a recruit has never driven for us, so
+ * there is no last location to measure a radius against. The honest reading of
+ * "near" for them is therefore the city, which is also the scope the owner
+ * recruits in — Islamabad and Rawalpindi are one labour market, and a driver
+ * living in Bahria will happily take a G-10 fare.
+ *
+ * shortcut: every alert in our cities counts as near a recruit. When recruiting
+ * spreads to a second city, store the area at add time and measure from it.
+ */
+async function findProspectCandidates(pickup: { lat: number; lng: number }): Promise<NamedCandidate[]> {
+  // Demand out in the country reaches nobody we recruited by hand.
+  if (!cityFor(pickup)) return [];
+
+  const snap = await db
+    .collection(PROSPECTS_COLLECTION)
+    .where('whatsappAlerts.optIn', '==', true)
+    .limit(500)
+    .get();
+
+  return snap.docs.map((doc) => {
+    const alerts = (doc.get('whatsappAlerts') as DriverAlertState | undefined) ?? {};
+    return {
+      uid: doc.id,
+      statePath: doc.ref.path,
+      name: doc.get('name') as string | undefined,
+      phone: toWhatsAppNumber(alerts.number ?? doc.id),
+      distanceKm: 0,
+      // Nothing to be stale about and no app to be open: a recruit is reachable
+      // on WhatsApp and nowhere else, which is the entire reason they are here.
+      lastSeenAt: null,
+      appActiveAt: null,
+      alerts: { ...alerts, lastSentAt: toMillis(alerts.lastSentAt) },
+    };
+  });
+}
+
 /** Firestore hands back a Timestamp; the policy layer speaks epoch ms. */
 function toMillis(v: unknown): number | null {
   if (v instanceof Timestamp) return v.toMillis();
@@ -397,7 +621,7 @@ function toMillis(v: unknown): number | null {
 }
 
 async function recordAlertSent(
-  uid: string,
+  statePath: string,
   state: DriverAlertState,
   nowMs: number,
   tripId: string,
@@ -405,7 +629,7 @@ async function recordAlertSent(
 ): Promise<void> {
   const next = afterSend(state, nowMs);
   await db
-    .doc(`drivers/${uid}`)
+    .doc(statePath)
     .set(
       {
         whatsappAlerts: {
@@ -417,18 +641,18 @@ async function recordAlertSent(
       },
       { merge: true },
     )
-    .catch((err) => logger.warn('WhatsApp: could not record send', { uid, err }));
+    .catch((err) => logger.warn('WhatsApp: could not record send', { statePath, err }));
 }
 
 /** Spends the rest of a driver's daily allowance without sending anything. */
 async function exhaustDriverForToday(
-  uid: string,
+  statePath: string,
   state: DriverAlertState,
   nowMs: number,
   settings: WhatsAppAlertSettings,
 ): Promise<void> {
   await db
-    .doc(`drivers/${uid}`)
+    .doc(statePath)
     .set(
       {
         whatsappAlerts: {
@@ -450,10 +674,10 @@ async function exhaustDriverForToday(
  * replies STOP. Both are final until the driver themselves turns alerts back on
  * from the app, which is the only path that re-establishes consent.
  */
-export async function blockDriverNumber(uid: string, reason: string): Promise<void> {
-  logger.info('WhatsApp: driver number blocked', { uid, reason });
+export async function blockDriverNumber(statePath: string, reason: string): Promise<void> {
+  logger.info('WhatsApp: driver number blocked', { statePath, reason });
   await db
-    .doc(`drivers/${uid}`)
+    .doc(statePath)
     .set(
       {
         whatsappAlerts: {
@@ -476,7 +700,7 @@ export async function blockDriverNumber(uid: string, reason: string): Promise<vo
  * text `phone` field on the profile can hold any of a dozen shapes and is not
  * queryable.
  */
-async function findDriverByWhatsAppNumber(phone: string): Promise<string | null> {
+export async function statePathForNumber(phone: string): Promise<string | null> {
   const normalised = toWhatsAppNumber(phone);
   if (!normalised) return null;
   const snap = await db
@@ -484,7 +708,12 @@ async function findDriverByWhatsAppNumber(phone: string): Promise<string | null>
     .where('whatsappAlerts.number', '==', normalised)
     .limit(1)
     .get();
-  return snap.empty ? null : (snap.docs[0]?.id ?? null);
+  if (!snap.empty) return snap.docs[0] ? snap.docs[0].ref.path : null;
+  // Not a driver yet. A recruit's record is keyed by the number itself, so
+  // their STOP is honoured on a number that has no account behind it — which is
+  // the only kind of consent a recruit has given us.
+  const prospect = await db.doc(`${PROSPECTS_COLLECTION}/${normalised}`).get();
+  return prospect.exists ? prospect.ref.path : null;
 }
 
 /**
@@ -497,10 +726,10 @@ async function findDriverByWhatsAppNumber(phone: string): Promise<string | null>
  * not an opt-out.
  */
 export async function optOutDriverByPhone(phone: string, reason: string): Promise<boolean> {
-  const uid = await findDriverByWhatsAppNumber(phone);
-  if (!uid) return false;
+  const statePath = await statePathForNumber(phone);
+  if (!statePath) return false;
 
-  await db.doc(`drivers/${uid}`).set(
+  await db.doc(statePath).set(
     {
       whatsappAlerts: {
         optIn: false,
@@ -512,7 +741,7 @@ export async function optOutDriverByPhone(phone: string, reason: string): Promis
     { merge: true },
   );
   countUsage('optOuts');
-  logger.info('WhatsApp: driver opted out', { uid, reason });
+  logger.info('WhatsApp: driver opted out', { statePath, reason });
   return true;
 }
 
@@ -522,9 +751,9 @@ export async function optOutDriverByPhone(phone: string, reason: string): Promis
  * ever get — so it clears a previous block.
  */
 export async function optInDriverByPhone(phone: string): Promise<boolean> {
-  const uid = await findDriverByWhatsAppNumber(phone);
-  if (!uid) return false;
-  await db.doc(`drivers/${uid}`).set(
+  const statePath = await statePathForNumber(phone);
+  if (!statePath) return false;
+  await db.doc(statePath).set(
     {
       whatsappAlerts: {
         optIn: true,
@@ -536,7 +765,7 @@ export async function optInDriverByPhone(phone: string): Promise<boolean> {
     },
     { merge: true },
   );
-  logger.info('WhatsApp: driver opted back in', { uid });
+  logger.info('WhatsApp: driver opted back in', { statePath });
   return true;
 }
 

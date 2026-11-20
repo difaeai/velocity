@@ -161,6 +161,7 @@ jobs:
           FREE_MODEL_ENV: ${{ secrets.FREE_MODEL_ENV }}
           WHATSAPP_ENV: ${{ secrets.WHATSAPP_ENV }}
           WHATSAPP_OTP_ENV: ${{ secrets.WHATSAPP_OTP_ENV }}
+          WHATSAPP_DESK_ENV: ${{ secrets.WHATSAPP_DESK_ENV }}
           COST_SOURCES_ENV: ${{ secrets.COST_SOURCES_ENV }}
           STRIPE_ENV: ${{ secrets.STRIPE_ENV }}
           VOICE_BRIDGE_URL: ${{ steps.bridge.outputs.url }}
@@ -408,6 +409,21 @@ jobs:
             echo "· whatsapp: sign-in OTP CONFIGURED"
           else
             echo "· whatsapp: no WHATSAPP_OTP_TEMPLATE_NAME — logins stay on Firebase SMS"
+          fi
+          # The admin desk ON WhatsApp: WHATSAPP_DESK_ADMINS (the numbers allowed
+          # to add drivers and broadcast by messaging the business number) and,
+          # optionally, the invite and area template names. Its own secret for
+          # the same reason as the block above, and because this one is an
+          # authentication boundary: whoever is listed can message every
+          # opted-in driver, so it must be somewhere only a deploy can change.
+          #
+          # Absent → the desk is off and an admin's message is treated like
+          # anyone else's. Nothing else changes.
+          if [ -n "$WHATSAPP_DESK_ENV" ]; then
+            printf '%s\n' "$WHATSAPP_DESK_ENV" >> .env.velocity-fe379
+            echo "· whatsapp: admin desk CONFIGURED"
+          else
+            echo "· whatsapp: no WHATSAPP_DESK_ENV — the WhatsApp admin desk stays off"
           fi
           # Vendor billing credentials, so the Cost of Velocity page fills itself
           # in instead of being typed from invoices: BILLING_BQ_TABLE (the

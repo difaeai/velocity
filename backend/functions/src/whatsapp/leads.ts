@@ -23,7 +23,7 @@ import { postMessage, toWhatsAppNumber, whatsAppConfig } from './client';
 // Same links as lib/site.ts (the web app), which the backend cannot import.
 const PLAY_URL = 'https://play.google.com/store/apps/details?id=com.velocityridzpk.app';
 const APP_STORE_URL = 'https://apps.apple.com/pk/app/velocity-rides/id6810774199';
-const APP_LINKS = `Android: ${PLAY_URL}\niPhone: ${APP_STORE_URL}`;
+export const APP_LINKS = `Android: ${PLAY_URL}\niPhone: ${APP_STORE_URL}`;
 
 export type LeadStep = 'pickup' | 'dropoff' | 'timings' | 'done';
 
