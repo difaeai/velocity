@@ -27,6 +27,8 @@ import { db, FieldValue } from '../lib/firebase';
 import { requireAuth } from '../lib/guards';
 import { getSales, seller, SALES_LEADS, type CallAgent, type LeadDoc } from '../sales';
 import { generateJson, modelReady } from '../social/engine';
+import { handlePageFeedEvent } from '../social/engagement';
+import { metaApp } from '../social/meta';
 import { open, seal, tokenVaultReady, type SealedSecret } from '../social/secrets';
 import { getSocialSettings } from '../social/settings';
 import { HOUSE, currentWorkspace } from '../social/scope';
@@ -219,6 +221,34 @@ export const agentWhatsappWebhook = onRequest({ cors: false, invoker: 'public', 
   }
   if (req.method !== 'POST') {
     res.status(405).send('method not allowed');
+    return;
+  }
+
+  // A comment on a connected Page, not a WhatsApp message.
+  //
+  // It arrives here rather than at `whatsappWebhook` because the Page is
+  // connected through Vexa's own Meta app, which signs with that app's secret;
+  // the older WhatsApp app's webhook verifies with its own and would answer
+  // every one of these 401. The workspace comes from the Page id, so nothing
+  // about a phone number applies below.
+  if (req.body?.object === 'page') {
+    const app = await metaApp();
+    if (!app || !verifySignature(req, app.appSecret)) {
+      logger.warn('agents: Page webhook with a bad signature');
+      res.status(401).send('bad signature');
+      return;
+    }
+    const entries = (req.body?.entry ?? []) as { id?: string; changes?: { field?: string; value?: unknown }[] }[];
+    for (const entry of entries) {
+      for (const change of entry.changes ?? []) {
+        if (change.field !== 'feed' || !entry.id || !change.value) continue;
+        // Always 200 to Meta: a throw here only earns the same payload again.
+        await handlePageFeedEvent(entry.id, change.value as Parameters<typeof handlePageFeedEvent>[1]).catch((err) =>
+          logger.error('agents: Page comment failed', { error: String(err) }),
+        );
+      }
+    }
+    res.status(200).send('ok');
     return;
   }
 

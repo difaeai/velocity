@@ -10,7 +10,11 @@
  * webhook, and without it the desk answers itself — forever, billing for a
  * model call every turn.
  */
+import { createHmac } from 'node:crypto';
+
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+
+import { agentWhatsappWebhook } from '../../agents/whatsapp';
 
 import { db } from '../../lib/firebase';
 import { handlePageComment, handlePageFeedEvent } from '../engagement';
@@ -94,5 +98,67 @@ describe('a comment arrives on a connected Page', () => {
       expect(await handlePageComment(feed({ message: '   ' }))).toBe(false);
     });
     expect((await db.collection(`${WS}/socialComments`).get()).size).toBe(0);
+  });
+});
+
+/**
+ * The same comment, arriving the way it really does: as a signed POST to the
+ * desk's public webhook.
+ *
+ * It lands there rather than on the WhatsApp webhook next door because the
+ * Page is connected through Vexa's own Meta app, which signs with that app's
+ * secret. Getting this wrong is silent — Meta keeps delivering, the endpoint
+ * keeps answering, and no comment ever reaches a customer's inbox.
+ */
+describe('the webhook Meta actually posts to', () => {
+  const APP_SECRET = 'f'.repeat(32);
+  const sign = (raw: Buffer) => `sha256=${createHmac('sha256', APP_SECRET).update(raw).digest('hex')}`;
+
+  const post = async (body: unknown, signature?: string) => {
+    const raw = Buffer.from(JSON.stringify(body));
+    const res = {
+      code: 0,
+      body: '',
+      // firebase-functions wraps the handler and listens for the response to
+      // finish; without this the wrapper throws before our code is reached.
+      on() {
+        return this;
+      },
+      setHeader() {
+        return this;
+      },
+      status(c: number) {
+        this.code = c;
+        return this;
+      },
+      send(b: string) {
+        this.body = b;
+        return this;
+      },
+    };
+    await (agentWhatsappWebhook as unknown as (q: unknown, s: unknown) => Promise<void>)(
+      { method: 'POST', body, rawBody: raw, headers: { 'x-hub-signature-256': signature ?? sign(raw) }, query: {} },
+      res,
+    );
+    return res;
+  };
+
+  const pageEvent = () => ({ object: 'page', entry: [{ id: PAGE, changes: [{ field: 'feed', value: feed() }] }] });
+
+  beforeEach(() => {
+    process.env.META_APP_ID = '4719371214988288';
+    process.env.META_APP_SECRET = APP_SECRET;
+  });
+
+  it('takes a signed Page comment and files it in that Page’s workspace', async () => {
+    const res = await post(pageEvent());
+    expect(res.code).toBe(200);
+    expect((await stored())?.text).toBe('Lahore se Islamabad kitna hai?');
+  });
+
+  it('refuses one signed with anything else, and files nothing', async () => {
+    const res = await post(pageEvent(), 'sha256=deadbeef');
+    expect(res.code).toBe(401);
+    expect(await stored()).toBeUndefined();
   });
 });
