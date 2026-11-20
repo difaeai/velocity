@@ -118,9 +118,17 @@ const BROADCAST = /\b(demand|alert|alerts|message|msg|bhejo|bhaijo|bhej|bhejdo|b
 /** "f7", "f 7", "F-7/2" — the shape of a Pakistani sector, and nothing else. */
 const SECTOR = /^([a-z])\s*-?\s*(\d{1,2})(?:\s*\/\s*(\d))?$/i;
 
-/** `F-7`, `G-10/4`, `Blue Area` — how the area is written in the message we send. */
+/**
+ * `F-7`, `G-10/4`, `Blue Area`, `Iqra University H-9` — how the area is written
+ * in the message the drivers get.
+ *
+ * Capped at 60 characters because this becomes a template variable: a long
+ * hydrated template is rejected outright (132005), and a run of spaces or a
+ * newline in a parameter is its own refusal (132007), which is why the
+ * whitespace is collapsed rather than trimmed.
+ */
 export function normaliseArea(raw: string): string {
-  const text = raw.trim().replace(/\s+/g, ' ');
+  const text = raw.trim().replace(/\s+/g, ' ').slice(0, 60).trim();
   const sector = SECTOR.exec(text);
   if (sector) return `${sector[1]!.toUpperCase()}-${sector[2]}${sector[3] ? `/${sector[3]}` : ''}`;
   return text.replace(/(^|[\s-])([a-z])/g, (_m, pre: string, c: string) => pre + c.toUpperCase());

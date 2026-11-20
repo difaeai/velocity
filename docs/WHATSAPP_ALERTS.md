@@ -315,10 +315,17 @@ their own words and it does the thing and says what it did
 | `alerts on` / `alerts off` | The master switch (`config/whatsappAlerts.enabled`) |
 
 Roman Urdu, English or both in one line. The parser is pure and its tests are
-the real phrasings (`whatsapp/__tests__/desk.test.ts`). An area is resolved
-from our own map first and the cached geocoder second, and must land within
-60 km of one of our cities — a name that does not is refused rather than
-guessed at.
+the real phrasings (`whatsapp/__tests__/desk.test.ts`). An area can be a sector
+or a named place — `F-7`, `Blue Area`, `IQRA University H-9 campus` — resolved
+from our own map first and the cached geocoder second, and it must land within
+60 km of one of our cities; a name that does not is refused rather than guessed
+at.
+
+A broadcast reaches **20 km** (`AREA_BROADCAST_RADIUS_KM`), not the 5 km a ride
+alert uses. A driver 20 km away is not worth waking for one 250-rupee fare, but
+"there is work in H-9 this afternoon" is exactly the message somebody across the
+twin cities will act on. Everything else — consent, caps, quiet hours, budget —
+is identical.
 
 **What an admin cannot do.** Every send still goes through the same consent,
 per-driver caps, quiet hours, daily budget and circuit breaker as an automatic

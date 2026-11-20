@@ -68,6 +68,18 @@ const USAGE_COLLECTION = 'whatsappUsage';
  */
 export const PROSPECTS_COLLECTION = 'driverProspects';
 
+/**
+ * How far an admin's area broadcast reaches (owner, 2026-11-20: "chahe woh door
+ * hi kyun na hon, par hon woh Islamabad Rawalpindi ke under 20 km").
+ *
+ * Its own number rather than `settings.radiusKm`, which stays at 5 km: a ride
+ * alert and a broadcast are asking different questions. A driver 20 km away is
+ * not worth waking for one 250-rupee fare, but "there is work in H-9 this
+ * afternoon" is exactly the message somebody across the twin cities will act
+ * on. Clamped by the settings' own ceiling of 25 km.
+ */
+const AREA_BROADCAST_RADIUS_KM = 20;
+
 /** Public site origin. The template's URL button is built from this. */
 const WEB_ORIGIN = process.env.VELOCITY_WEB_ORIGIN ?? 'https://velocityrides.app';
 
@@ -461,10 +473,13 @@ export async function alertAreaDemand(area: {
   );
   if (blocked || !cfg) return { blocked: blocked ?? 'not-configured', ...empty };
 
-  const drivers = await findOfflineCandidates(area, settings);
+  // The broadcast reaches further than a ride alert does, and nothing else
+  // about the rules changes.
+  const wide = { ...settings, radiusKm: Math.max(settings.radiusKm, AREA_BROADCAST_RADIUS_KM) };
+  const drivers = await findOfflineCandidates(area, wide);
   const recruits = await findProspectCandidates(area);
   const candidates = [...drivers, ...recruits];
-  if (candidates.length === 0) return { blocked: null, ...empty, recruits: 0 };
+  if (candidates.length === 0) return { blocked: null, ...empty };
 
   // Plan BEFORE reserving, unlike the ride fan-out, and reserve exactly what
   // the plan will send. With the per-recipient cap lifted, reserving for
@@ -476,7 +491,7 @@ export async function alertAreaDemand(area: {
     0,
     settings.dailyGlobalCap - ((usageSnap?.get('reserved') as number | undefined) ?? 0),
   );
-  const plan = planFanout(candidates, { ...settings, maxRecipientsPerTrip: remaining }, now, remaining);
+  const plan = planFanout(candidates, { ...wide, maxRecipientsPerTrip: remaining }, now, remaining);
   const granted = await reserveGlobalBudget(plan.picked.length, settings.dailyGlobalCap, now);
   if (granted === 0) return { blocked: 'global-cap', ...empty, found: candidates.length };
 
