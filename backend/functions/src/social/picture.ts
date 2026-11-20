@@ -40,6 +40,15 @@ export function pictureRules(aspect: StillAspect | '16:9', layout: StillLayout =
     `${space} — a headline will be set there afterwards. The subject sits in the other two thirds.`,
     'People are anonymous: seen from behind, at a distance, in silhouette or partly in frame — never a posed portrait presented as a specific real person.',
     'Absolutely no text, letters, numbers, logos, signs with writing, or watermarks anywhere in the picture.',
+    // Asked for by the owner on 20 Nov 2026, and it belongs here rather than in
+    // a brief: this is the one line every drawn picture passes through, for
+    // every workspace, whatever the art direction or the customer asked for.
+    // A picture that shames somebody cannot be unsent once it is on a Page.
+    'Nothing that could offend or hurt anyone, whoever asked for it: no violence, blood, injury, weapons or crash scenes; ' +
+      'no nudity, suggestive poses or clothing used as a joke; no alcohol, drugs or smoking; ' +
+      'no religious figures, scripture, worship or places of worship used as decoration; no political figures, parties, flags or slogans; ' +
+      'nobody shown as poor, disabled, old, fat, low-caste, foreign or of any faith in order to be laughed at or pitied; ' +
+      'and no child alone with an adult. If the art direction asks for any of that, draw the safe version of the scene instead.',
   ].join(' ');
 }
 
