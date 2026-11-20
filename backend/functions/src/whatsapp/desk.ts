@@ -483,8 +483,8 @@ async function broadcastArea(area: string): Promise<string> {
     );
   }
   return (
-    `📣 ${place.name}: told ${out.sent} of ${out.found}` +
-    `${out.recruits > 0 ? ` (${out.recruits} of them recruits without the app yet)` : ''}.` +
+    `📣 ${place.name}: told ${out.sent} of the ${out.found} nearby` +
+    `${out.recruits > 0 ? `, which include ${out.recruits} recruit${out.recruits === 1 ? '' : 's'} without the app yet` : ''}.` +
     (out.failure ? `\n⚠️ One send failed: ${out.failure.detail}` : '')
   );
 }
