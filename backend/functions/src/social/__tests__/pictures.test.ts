@@ -51,6 +51,15 @@ describe('the prompt a picture is drawn from', () => {
     expect(prompt).toMatch(/no text, letters, numbers, logos/i);
     expect(prompt).toMatch(/anonymous/i);
     expect(prompt).toMatch(/bottom third calm/);
+    // The owner's line, on every picture for every workspace: a picture that
+    // shames somebody cannot be unsent once it is on a Page.
+    expect(prompt).toMatch(/offend or hurt anyone/i);
+    expect(prompt).toMatch(/no violence, blood, injury, weapons/i);
+    expect(prompt).toMatch(/no child alone with an adult/i);
+    // And it holds even when the art direction asks for the opposite.
+    expect(picturePrompt('a bloody crash scene with a crowd laughing at a beggar', '4:5')).toMatch(
+      /draw the safe version of the scene instead/i,
+    );
     expect(picturePrompt('x', '9:16', 'top')).toMatch(/top third calm/);
   });
 });
