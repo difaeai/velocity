@@ -292,6 +292,138 @@ querying template status by hand, so keep it with your notes rather than here.
 
 ---
 
+## The admin desk ON WhatsApp
+
+> Owner, 2026-11-20: *"I meet a driver in the street. I want to message our own
+> number — '03441563032 isko drivers mein add karo' — and have it add him and
+> send him the app. And 'F-7 mein sab drivers ko demand bhejo' should alert the
+> drivers around F-7."*
+
+The Cloud API number can never have the WhatsApp app on it — a number
+registered for the Cloud API cannot also be registered in the consumer or
+Business app, and Meta will not waive that. So the number has no inbox anybody
+can open, and the number itself becomes the interface: an admin messages it in
+their own words and it does the thing and says what it did
+(`whatsapp/desk.ts`).
+
+| Send it | What happens |
+|---------|--------------|
+| `03441563032 isko drivers mein add karo` | The number goes on the alert list as a **recruit**, and gets the `driver_invite` template — the papers they need and the store links |
+| `03441563032 hatao` | Off the list, permanently |
+| `F-7 mein sab drivers ko demand bhejo` | The `driver_area_demand` template to every opted-in driver and recruit within the radius of F-7 |
+| `status` | Drivers on alerts, recruits waiting, today's sends, budget left, breaker state |
+| `alerts on` / `alerts off` | The master switch (`config/whatsappAlerts.enabled`) |
+
+Roman Urdu, English or both in one line. The parser is pure and its tests are
+the real phrasings (`whatsapp/__tests__/desk.test.ts`). An area is resolved
+from our own map first and the cached geocoder second, and must land within
+60 km of one of our cities — a name that does not is refused rather than
+guessed at.
+
+**What an admin cannot do.** Every send still goes through the same consent,
+per-driver caps, quiet hours, daily budget and circuit breaker as an automatic
+alert; the only thing the command decides is *when* and *where*. A number that
+has replied STOP is refused outright — only that person can undo their own
+opt-out. And the breaker cannot be re-armed from WhatsApp: that decision needs
+the quality panel in WhatsApp Manager in front of you.
+
+**Recruits** live in `driverProspects/{number}` — consent recorded with which
+admin added them and when, which is what makes an in-person opt-in defensible.
+They are told about **demand**, never about a live ride request: a ride alert is
+an auction nobody without an approved account can enter. They have no position
+of their own, so "near" for them means inside one of our cities. When they sign
+up in the app the record is retired (`submitDriverOnboarding`), so nobody hears
+the same demand twice. Anything they write back is kept on their record and
+answered once every six hours with the requirements list — the commute QR bot
+would otherwise greet a driver as a rider and ask for their office pin.
+
+### The recruit invite template
+
+- **Name:** `driver_invite`
+- **Category:** **Marketing** (it is recruitment, not a service message)
+- **Language:** English (`en`)
+- **Variables: none.** Every word is approved, so there is no parameter to get
+  wrong — the reason this template is the safest one we send.
+
+**Body:**
+
+```
+Drive with Velocity Rides and keep what you earn.
+
+What you need to sign up:
+1. CNIC — front and back photo
+2. Driving licence
+3. Vehicle registration book or card
+4. Photos of your car — front, back and inside
+5. A selfie for the face check
+6. 18 years or older, with a smartphone
+
+Sign up free in the app, upload your papers, and we check them the same day.
+You keep every rupee of the fare except our 5% commission.
+```
+
+**Footer:** `Reply STOP to stop these messages.`
+
+**Button:** one static *Visit website* button, label `Download the app`, URL
+`https://play.google.com/store/apps/details?id=com.velocityridzpk.app`. Static,
+so it takes no parameter — the code sends no button component for this one.
+
+### The area demand template
+
+- **Name:** `driver_area_demand`
+- **Category:** **Marketing** (it is a nudge, not a transaction)
+- **Language:** English (`en`)
+- **One variable:** the area.
+
+**Body:**
+
+```
+Riders are looking for a car in {{1}} right now. Open Velocity Rides and go
+online to pick up the trip.
+```
+
+Sample for Meta's review: `F-7`.
+
+**Footer:** `Reply STOP to stop these messages.`
+
+**Button:** one static *Visit website* button, label `Open Velocity`, URL
+`https://velocityrides.app/link/driver/demand`.
+
+### The desk secret
+
+One GitHub Actions secret, `WHATSAPP_DESK_ENV` — its own block for the reason
+every block here is split: GitHub never reads a secret back, so adding a line to
+`WHATSAPP_ENV` would mean retyping a permanent access token nobody can see.
+
+```
+WHATSAPP_DESK_ADMINS=923001234567,923165004013
+```
+
+Comma-separated, any format (`03XX…`, `+92…`); anything that is not a Pakistani
+mobile is dropped. **Absent → the desk is off** and an admin's message is
+treated like anyone else's, which is how this ships.
+
+Deliberately not a Firestore document: this list is an authentication boundary —
+whoever is on it can message every opted-in driver — and a value only a deploy
+can change is worth the inconvenience.
+
+The two template names default to the ones above and need no configuration.
+These override them if Meta's copies are ever renamed:
+
+```
+WHATSAPP_INVITE_TEMPLATE_NAME=driver_invite
+WHATSAPP_INVITE_TEMPLATE_LANG=en
+WHATSAPP_AREA_TEMPLATE_NAME=driver_area_demand
+WHATSAPP_AREA_TEMPLATE_LANG=en
+```
+
+Neither of these two sends can trip the platform circuit breaker on a template
+fault: a mistyped name in a one-off command must not be able to stop ride
+alerts for everybody (`isAccountHalt`). The command replies with Meta's own
+error instead, naming the template to create.
+
+---
+
 ## Tuning
 
 `config/whatsappAlerts` — every value is clamped on read, so a bad edit cannot

@@ -228,6 +228,24 @@ export function classifySendError(code: number | null): SendFailureAction {
   return ERROR_ACTIONS.get(code) ?? 'ignore';
 }
 
+/**
+ * Codes where the ACCOUNT is in trouble, as opposed to the message we just
+ * built being wrong.
+ *
+ * Both halt, but they do not deserve the same blast radius. An account halt is
+ * Meta telling us to stop using the number, so everything stops. A template
+ * halt says the template in THIS send does not exist, is paused, or was handed
+ * the wrong parameters — and a one-off send with its own template (an admin
+ * broadcast, a recruit invite) must not be able to take ride alerts down with
+ * it. The ride fan-out keeps halting on both, because its template is the one
+ * every alert uses: if that is broken, nothing can be delivered anyway.
+ */
+const ACCOUNT_HALTS: ReadonlySet<number> = new Set([131048, 368, 131031, 133004, 133010]);
+
+export function isAccountHalt(code: number | null): boolean {
+  return code !== null && ACCOUNT_HALTS.has(code);
+}
+
 export interface SendSuccess {
   ok: true;
   messageId: string | null;
@@ -268,12 +286,16 @@ export async function sendTemplate(
   bodyParams: string[],
   urlSuffix?: string,
 ): Promise<SendResult> {
-  const components: Record<string, unknown>[] = [
-    {
+  const components: Record<string, unknown>[] = [];
+  // A template whose body has no variables — the driver invite, where every word
+  // was approved by Meta — has nothing to fill, and an empty parameter list
+  // against it is itself a parameter mismatch (132000).
+  if (bodyParams.length > 0) {
+    components.push({
       type: 'body',
       parameters: bodyParams.map((text) => ({ type: 'text', text })),
-    },
-  ];
+    });
+  }
   // No dynamic URL button in the approved template means no button component:
   // sending one against a static button is itself an `(#100) Invalid parameter`.
   if (urlSuffix && cfg.urlButtonIndex !== null) {

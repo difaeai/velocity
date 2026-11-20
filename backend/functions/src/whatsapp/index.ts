@@ -20,9 +20,11 @@ import {
   blockDriverNumber,
   optInDriverByPhone,
   optOutDriverByPhone,
+  statePathForNumber,
   tripCircuitBreaker,
 } from './alerts';
 import { classifySendError, toWhatsAppNumber, whatsAppConfig } from './client';
+import { handleDeskMessage, handleRecruitReply } from './desk';
 import { handleLeadMessage, type InboundMessage } from './leads';
 import { readInboundIntent } from './policy';
 import { handleFailure as handleVexaFailure, handleInbound as handleVexaInbound } from '../social/closer';
@@ -290,6 +292,18 @@ async function handleInbound(msg: InboundMessage, profileName: string | null, ph
   // most drivers will actually use, so it has to be read the same as typing it.
   const text = msg.text?.body ?? msg.button?.text ?? '';
   const intent = readInboundIntent(text);
+  // STOP and START are read before anything else, for admins too: a withdrawal
+  // of consent outranks every other way a message could be understood.
+  if (intent === 'none') {
+    // An admin running the desk by WhatsApp (desk.ts). Claimed before the bots
+    // below, because "F-7 mein demand bhejo" is an instruction, not a lead.
+    try {
+      if (await handleDeskMessage(from, text)) return;
+    } catch (err) {
+      logger.error('WhatsApp desk: command failed', { error: String(err) });
+      return;
+    }
+  }
   if (intent === 'stop') {
     const found = await optOutDriverByPhone(from, 'driver replied STOP');
     if (!found) logger.info('WhatsApp: STOP from an unknown number', { from: from.slice(-4) });
@@ -298,6 +312,15 @@ async function handleInbound(msg: InboundMessage, profileName: string | null, ph
   if (intent === 'start') {
     await optInDriverByPhone(from);
   }
+  // A driver an admin recruited in person, writing back to the invite. They are
+  // not a rider, and the commute bot would ask them for their office pin.
+  try {
+    if (await handleRecruitReply(from, text, profileName)) return;
+  } catch (err) {
+    logger.error('WhatsApp recruit: reply failed', { error: String(err) });
+    return;
+  }
+
   // Everything else goes to the commute QR bot, which decides for itself who is
   // a lead: anyone who sent the QR's words, or a number we have never seen. A
   // driver chatting back to an alert is neither, and is left alone as before.
@@ -345,18 +368,9 @@ async function handleStatus(st: NonNullable<WebhookValue['statuses']>[number], p
     // Undeliverable is asynchronous: the send returned 200 and the failure
     // arrives here minutes later. Without this branch the same dead number gets
     // retried on every ride for ever, and undeliverables are a spam signal.
-    const uid = await uidForNumber(to);
-    if (uid) await blockDriverNumber(uid, `undeliverable (${code})`);
+    // Finds recruits as well as drivers — a number taken down on paper at a
+    // petrol pump is exactly the kind that turns out to have no WhatsApp.
+    const statePath = await statePathForNumber(to);
+    if (statePath) await blockDriverNumber(statePath, `undeliverable (${code})`);
   }
-}
-
-async function uidForNumber(number: string): Promise<string | null> {
-  const normalised = toWhatsAppNumber(number);
-  if (!normalised) return null;
-  const snap = await db
-    .collection('drivers')
-    .where('whatsappAlerts.number', '==', normalised)
-    .limit(1)
-    .get();
-  return snap.empty ? null : (snap.docs[0]?.id ?? null);
 }
