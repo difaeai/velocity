@@ -86,6 +86,15 @@ export type Invoice = { id: string; no: string; date: string; amount: number; st
 export type Card = { id: string; brand: string; last4: string; exp: string; primary: boolean };
 export type Notice = { id: string; title: string; line: string; at: string; read: boolean; agent: Agent };
 export type Agent = 'Research' | 'Content' | 'Ads' | 'Sales' | 'Vexa';
+
+/** What each team is called on screen. */
+export const TEAM: Record<Agent, string> = {
+  Research: 'Research Team',
+  Content: 'Content Team',
+  Ads: 'Ads Expert',
+  Sales: 'Sales Team',
+  Vexa: 'Vexa',
+};
 export type Act = { id: string; agent: Agent; text: string; at: string; day: 'Today' | 'Yesterday' };
 
 export const uid = () => Math.random().toString(36).slice(2, 9);
@@ -416,7 +425,7 @@ export const db = {
 
   notices: [
     { id: uid(), title: 'Winter drop teaser is scheduled', line: 'Going out tonight at 19:30 on Instagram and TikTok.', at: '6 min ago', read: false, agent: 'Content' },
-    { id: uid(), title: 'Ayesha Khan asked about delivery', line: 'Sales Agent answered and held a navy shirt in large.', at: '12 min ago', read: false, agent: 'Sales' },
+    { id: uid(), title: 'Ayesha Khan asked about delivery', line: 'Sales Team answered and held a navy shirt in large.', at: '12 min ago', read: false, agent: 'Sales' },
     { id: uid(), title: 'Winter drop — Lahore has spent PKR 912', line: 'PKR 87 of today’s budget left. It stops itself at PKR 999.', at: '1 h ago', read: true, agent: 'Ads' },
     { id: uid(), title: 'Competitor research is ready', line: '24 sources read. Three things worth copying.', at: '3 h ago', read: true, agent: 'Research' },
   ] as Notice[],

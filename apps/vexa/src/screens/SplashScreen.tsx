@@ -12,8 +12,10 @@ const FIGURE = require('../../assets/vexa.png');
 /** The one thing she says, out loud and on screen. */
 const LINE = 'I am Vexa, your social media manager and Ad Expert for Facebook, Instagram and Google.';
 
-const HOLD = 7200; // long enough for the sentence; tap to skip
-const PER_CHAR = 58;
+// She holds the screen for at least this long, and never leaves mid-sentence.
+const MIN_HOLD = 5000;
+const MAX_HOLD = 13000; // a phone whose voice never reports "done" still moves on
+const PER_CHAR = 55;
 
 /** First frame of the app: the mark, the name, Vexa rising — and saying hello. */
 export default function SplashScreen({ onDone }: { onDone: () => void }) {
@@ -25,12 +27,13 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
 
   const [said, setSaid] = useState(0); // characters of LINE shown so far
   const [talking, setTalking] = useState(true);
+  const [held, setHeld] = useState(false); // the five seconds are up
   const left = useRef(false);
 
   // Out loud, in her own (always female) voice. On-device, no key, and
   // silence is fine — the caption carries the line either way.
   useEffect(() => {
-    const t = setTimeout(() => speak(LINE, () => setTalking(false)), 700);
+    const t = setTimeout(() => speak(LINE, () => setTalking(false)), 600);
     return () => {
       clearTimeout(t);
       hush();
@@ -58,17 +61,32 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
     onDone();
   };
 
+  // The bar runs the five seconds, then waits on her: the splash never cuts
+  // her off mid-sentence, and never outstays MAX_HOLD if a phone forgets to
+  // tell us she finished.
   useEffect(() => {
     const a = Animated.timing(bar, {
-      toValue: 1,
-      duration: HOLD,
+      toValue: 0.88,
+      duration: MIN_HOLD,
       easing: Easing.inOut(Easing.quad),
       useNativeDriver: false,
     });
+    a.start(({ finished }) => finished && setHeld(true));
+    const cap = setTimeout(leave, MAX_HOLD);
+    return () => {
+      a.stop();
+      clearTimeout(cap);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bar]);
+
+  useEffect(() => {
+    if (!held || talking || said < LINE.length) return;
+    const a = Animated.timing(bar, { toValue: 1, duration: 260, easing: Easing.out(Easing.quad), useNativeDriver: false });
     a.start(({ finished }) => finished && leave());
     return () => a.stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bar]);
+  }, [held, talking, said]);
 
   const width = bar.interpolate({ inputRange: [0, 1], outputRange: ['4%', '100%'] });
 

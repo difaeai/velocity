@@ -19,7 +19,7 @@ import {
   useToast,
 } from '../components/kit';
 import { useLoad } from '../net';
-import { commit, db, useDb, type Agent, type Notice } from '../store';
+import { commit, db, TEAM, useDb, type Agent, type Notice } from '../store';
 import { C, R } from '../theme';
 
 const ICON: Record<Agent, React.ReactNode> = {
@@ -42,10 +42,10 @@ export default function NotificationsScreen({ onOpen }: { onOpen?: (title: strin
   const unread = data.notices.filter((n) => !n.read).length;
 
   const WHERE: Record<Agent, string> = {
-    Content: 'Content Agent',
-    Sales: 'Sales Agent',
-    Ads: 'Ads Agent',
-    Research: 'Research Agent',
+    Content: 'Content Team',
+    Sales: 'Sales Team',
+    Ads: 'Ads Expert',
+    Research: 'Research Team',
     Vexa: 'Make me Learn',
   };
 
@@ -119,7 +119,7 @@ export default function NotificationsScreen({ onOpen }: { onOpen?: (title: strin
                     </View>
                     <Text style={st.line}>{n.line}</Text>
                     <Text style={st.at}>
-                      {n.agent} Agent · {n.at}
+                      {TEAM[n.agent]} · {n.at}
                     </Text>
                   </View>
                   <View style={{ gap: 7 }}>

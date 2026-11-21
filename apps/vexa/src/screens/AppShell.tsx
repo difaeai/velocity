@@ -112,9 +112,6 @@ export default function AppShell({ onLogout }: { onLogout?: () => void }) {
           <Text style={st.brand}>
             VE<Text style={{ color: C.lime }}>X</Text>A
           </Text>
-          <View style={st.versionPill}>
-            <Text style={st.versionText}>v2.0.5</Text>
-          </View>
         </View>
 
         <View style={st.headerRight}>
@@ -188,15 +185,6 @@ const st = StyleSheet.create({
   },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   brand: { color: C.text, fontSize: 25, fontWeight: '900', letterSpacing: 3 },
-  versionPill: {
-    borderWidth: 1,
-    borderColor: 'rgba(195,255,55,0.45)',
-    backgroundColor: 'rgba(120,255,120,0.08)',
-    borderRadius: R.pill,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-  },
-  versionText: { color: C.lime, fontSize: 11.5, fontWeight: '700' },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   bellDot: { position: 'absolute', right: -1, top: -1, width: 8, height: 8, borderRadius: 4, backgroundColor: C.lime },
 

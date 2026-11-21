@@ -26,10 +26,10 @@ import { commit, useDb } from '../store';
 import { C, R } from '../theme';
 
 const BY_AGENT = [
-  { name: 'Content Agent', used: 1180, icon: <DocPenIcon size={18} /> },
-  { name: 'Sales Agent', used: 640, icon: <ChartUpIcon size={18} /> },
-  { name: 'Ads Agent', used: 380, icon: <MegaphoneIcon size={18} /> },
-  { name: 'Research Agent', used: 200, icon: <SearchIcon size={18} /> },
+  { name: 'Content Team', used: 1180, icon: <DocPenIcon size={18} /> },
+  { name: 'Sales Team', used: 640, icon: <ChartUpIcon size={18} /> },
+  { name: 'Ads Expert', used: 380, icon: <MegaphoneIcon size={18} /> },
+  { name: 'Research Team', used: 200, icon: <SearchIcon size={18} /> },
 ];
 
 const COSTS = [

@@ -12,13 +12,14 @@ Splash  ->  How it works (3)  ->  Sign in  ->  App shell  ->  every feature
 
 * **Splash** — the mark, the name, Vexa rising, and she *says* one line out
   loud: "I am Vexa, your social media manager and Ad Expert for Facebook,
-  Instagram and Google." The line also types itself out beside a waveform, so
-  a muted phone loses nothing. Tap anywhere to skip.
-* **How it works** — one job a page, and she says each one out loud:
-  **Content** ("I handle your content"), **Ads** ("I am your Ad Expert") and
-  **Sales** ("I manage your sales"). Each page shows a little mock of that
-  work — a scheduled reel and the week, a budget ring with the day's spend, a
-  customer answered and won — and the pill under the text replays her line.
+  Instagram and Google." It holds for **at least five seconds and never cuts
+  her off mid-sentence** (hard cap 13s). The line also types itself out beside
+  a waveform, so a muted phone loses nothing. Tap anywhere to skip.
+* **How it works** — one job a page, spoken aloud as you reach it: "I post
+  for you", "I run your ads", "I sell for you". One picture (a breathing
+  medallion with that team's icon and the platforms it touches), one short
+  line, and a pill that replays her. Nothing to read or work out. Skip sits by
+  the dots, away from anything the phone floats into the top corner.
 * **Sign in** — Continue with Google, or +92 phone then a 6-box OTP.
 * **App shell** — header, tab bar (Home · Activity · Content · Profile), left
   drawer, and a pushed detail that slides in from the right.
@@ -42,10 +43,10 @@ real network has.
 
 | Destination | What works |
 |---|---|
-| **Research Agent** | Ask a question → a four-step job with a progress ring → a saved brief. Open, rename, copy, delete. Market bar chart. |
-| **Content Agent** (also the Content tab) | Week strip, five filters, cards per piece. New/edit piece: format, accounts, caption ("Let Vexa write it"), hashtags, day, time. Approve, schedule, duplicate, delete. Posted pieces show views/likes/comments. |
-| **Ads Agent** | Today's spend ring against the daily budget, blended ROAS, campaign cards with 7-day bars. Four-step build: goal → audience → budget (PKR/day) → creative, then launch. Pause, resume, edit, delete, and a "why it costs what it costs" note. **Its first load fails on purpose** so the retry path is a real screen. |
-| **Sales Agent** | Pipeline stats, stage filters, enquiry cards. One enquiry: call/WhatsApp, stage chips, worth, conversation with a composer, "Let Vexa reply" (typing dots), notes, mark won/lost, delete. Add an enquiry by hand. |
+| **Research Team** | Ask a question → a four-step job with a progress ring → a saved brief. Open, rename, copy, delete. Market bar chart. |
+| **Content Team** (also the Content tab) | Week strip, five filters, cards per piece. New/edit piece: format, accounts, caption ("Let Vexa write it"), hashtags, day, time. Approve, schedule, duplicate, delete. Posted pieces show views/likes/comments. |
+| **Ads Expert** | Today's spend ring against the daily budget, blended ROAS, campaign cards with 7-day bars. Four-step build: goal → audience → budget (PKR/day) → creative, then launch. Pause, resume, edit, delete, and a "why it costs what it costs" note. **Its first load fails on purpose** so the retry path is a real screen. |
+| **Sales Team** | Pipeline stats, stage filters, enquiry cards. One enquiry: call/WhatsApp, stage chips, worth, conversation with a composer, "Let Vexa reply" (typing dots), notes, mark won/lost, delete. Add an enquiry by hand. |
 | **Connected Accounts** | Five platforms, a connect flow that shows the permissions first and then runs a four-step job, sync-all, per-account permissions, disconnect with a warning. **YouTube refuses the first attempt** so the failure and retry are real. |
 | **Make me Learn** | What she knows (ring), train her (job), her voice and always/never chips, add a rule / link / file, edit, delete, and "try her out" — ask a question and she answers using your rules. |
 | **Usage** | Credits ring and meter, per-agent breakdown, 7-day bars, price list, auto top-up switch, buy a pack. |

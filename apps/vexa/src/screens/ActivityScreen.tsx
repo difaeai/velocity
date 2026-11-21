@@ -20,7 +20,7 @@ import {
   useToast,
 } from '../components/kit';
 import { useAction, useLoad } from '../net';
-import { commit, uid, useDb, type Act, type Agent } from '../store';
+import { commit, TEAM, uid, useDb, type Act, type Agent } from '../store';
 import { C, R } from '../theme';
 
 const AGENTS: Agent[] = ['Content', 'Sales', 'Ads', 'Research'];
@@ -69,7 +69,7 @@ export default function ActivityScreen() {
                 <View style={st.actIcon}>{ICON[a.agent]}</View>
                 <View style={{ flex: 1 }}>
                   <View style={st.actHead}>
-                    <Text style={st.actAgent}>{a.agent} Agent</Text>
+                    <Text style={st.actAgent}>{TEAM[a.agent]}</Text>
                     <Text style={st.actAt}>{a.at}</Text>
                   </View>
                   <Text style={st.actText}>{a.text}</Text>

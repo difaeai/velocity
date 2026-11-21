@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Animated, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useEnter } from '../anim';
 import { GoogleMark, InstagramMark, MetaMark, TiktokMark, YoutubeMark } from '../components/BrandMarks';
 import Glass from '../components/Glass';
@@ -19,26 +19,106 @@ import {
 import VexaStage from '../components/VexaStage';
 import { C, R } from '../theme';
 
+/** A loop of its own length, so no two tiles bob together. */
+function useDrift(duration: number) {
+  const t = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(t, { toValue: 1, duration, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(t, { toValue: 0, duration, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [t, duration]);
+
+  return t;
+}
+
 function Tile({
   icon,
   label,
   style,
   delay,
+  drift,
   onPress,
 }: {
   icon: React.ReactNode;
   label: string;
   style: object;
   delay: number;
+  /** How long this tile takes to bob up and back. */
+  drift: number;
   onPress: () => void;
 }) {
   const enter = useEnter(delay, { y: 0, scale: 0.78 });
+  const t = useDrift(drift);
+  const press = useRef(new Animated.Value(0)).current;
+
+  const y = t.interpolate({ inputRange: [0, 1], outputRange: [4, -6] });
+  const halo = t.interpolate({ inputRange: [0, 1], outputRange: [0.16, 0.5] });
+  const haloScale = t.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1.12] });
+  const squeeze = press.interpolate({ inputRange: [0, 1], outputRange: [1, 0.93] });
+
+  const to = (v: number) =>
+    Animated.spring(press, { toValue: v, useNativeDriver: true, friction: 7, tension: 140 }).start();
+
   return (
     <Animated.View style={[st.tileWrap, style, enter]}>
-      <Glass style={st.tile} radius={R.lg} onPress={onPress}>
-        <View style={st.tileInner}>
-          {icon}
-          <Text style={st.tileLabel}>{label}</Text>
+      <Animated.View style={{ transform: [{ translateY: y }, { scale: squeeze }] }}>
+        <Pressable onPress={onPress} onPressIn={() => to(1)} onPressOut={() => to(0)}>
+          <Glass style={st.tile} radius={R.lg} lit>
+            <View style={st.tileInner}>
+              <View style={st.iconDisc}>
+                <Animated.View style={[st.iconHalo, { opacity: halo, transform: [{ scale: haloScale }] }]} />
+                {icon}
+              </View>
+              <Text style={st.tileLabel}>{label}</Text>
+            </View>
+          </Glass>
+        </Pressable>
+      </Animated.View>
+    </Animated.View>
+  );
+}
+
+/** The accounts orb: it breathes, and a ring pushes out of it like a signal. */
+function Orb({ onPress }: { onPress: () => void }) {
+  const t = useDrift(2900);
+  const ping = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(ping, { toValue: 1, duration: 2600, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [ping]);
+
+  const y = t.interpolate({ inputRange: [0, 1], outputRange: [5, -5] });
+  const ringScale = ping.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1.35] });
+  const ringFade = ping.interpolate({ inputRange: [0, 0.2, 1], outputRange: [0, 0.45, 0] });
+
+  return (
+    <Animated.View style={{ transform: [{ translateY: y }] }}>
+      <Animated.View
+        pointerEvents="none"
+        style={[st.orbPing, { opacity: ringFade, transform: [{ scale: ringScale }] }]}
+      />
+      <Glass style={st.orb} radius={56} lit onPress={onPress}>
+        <View style={st.orbInner}>
+          <View style={st.orbRow}>
+            <InstagramMark size={19} />
+            <GoogleMark size={23} />
+            <MetaMark size={21} />
+          </View>
+          <View style={st.orbRow}>
+            <YoutubeMark size={19} />
+            <TiktokMark size={18} />
+          </View>
+          <Text style={st.orbLabel}>{'Connected\nAccounts'}</Text>
         </View>
       </Glass>
     </Animated.View>
@@ -114,45 +194,36 @@ export default function HomeScreen({
           label={'Research\nAgent'}
           style={{ left: '1%', top: '2%' }}
           delay={240}
-          onPress={() => onOpen('Research Agent')}
+          drift={2600}
+          onPress={() => onOpen('Research Team')}
         />
         <Tile
           icon={<DocPenIcon size={26} />}
           label={'Content\nAgent'}
           style={{ right: '1%', top: '2%' }}
           delay={300}
-          onPress={() => onOpen('Content Agent')}
+          drift={3100}
+          onPress={() => onOpen('Content Team')}
         />
         <Tile
           icon={<MegaphoneIcon size={26} />}
           label={'Ads\nAgent'}
           style={{ left: 0, top: '33%' }}
           delay={360}
-          onPress={() => onOpen('Ads Agent')}
+          drift={2850}
+          onPress={() => onOpen('Ads Expert')}
         />
         <Tile
           icon={<ChartUpIcon size={26} />}
           label={'Sales\nAgent'}
           style={{ right: 0, top: '33%' }}
           delay={420}
-          onPress={() => onOpen('Sales Agent')}
+          drift={3350}
+          onPress={() => onOpen('Sales Team')}
         />
 
         <Animated.View style={[st.orbWrap, orb]}>
-          <Glass style={st.orb} radius={56} onPress={() => onOpen('Connected Accounts')}>
-            <View style={st.orbInner}>
-              <View style={st.orbRow}>
-                <InstagramMark size={19} />
-                <GoogleMark size={23} />
-                <MetaMark size={21} />
-              </View>
-              <View style={st.orbRow}>
-                <YoutubeMark size={19} />
-                <TiktokMark size={18} />
-              </View>
-              <Text style={st.orbLabel}>{'Connected\nAccounts'}</Text>
-            </View>
-          </Glass>
+          <Orb onPress={() => onOpen('Connected Accounts')} />
         </Animated.View>
 
         <Tile
@@ -160,6 +231,7 @@ export default function HomeScreen({
           label="Subscription"
           style={{ right: '1%', top: '66%' }}
           delay={540}
+          drift={2450}
           onPress={() => onOpen('Subscription')}
         />
       </View>
@@ -238,12 +310,37 @@ const st = StyleSheet.create({
 
   stage: { height: 380, marginTop: 4 },
   tileWrap: { position: 'absolute', width: 96, height: 88 },
-  tile: { width: '100%', height: '100%' },
-  tileInner: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 7 },
-  tileLabel: { color: C.text, fontSize: 12, fontWeight: '600', textAlign: 'center', lineHeight: 15 },
+  tile: { width: 96, height: 88 },
+  tileInner: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6 },
+  iconDisc: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(195,255,55,0.10)',
+  },
+  iconHalo: {
+    position: 'absolute',
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(195,255,55,0.3)',
+  },
+  tileLabel: { color: C.text, fontSize: 12, fontWeight: '700', textAlign: 'center', lineHeight: 15 },
 
   orbWrap: { position: 'absolute', left: '2%', top: '62%', width: 112, height: 112 },
-  orb: { width: '100%', height: '100%' },
+  orb: { width: 112, height: 112 },
+  orbPing: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    borderWidth: 1.4,
+    borderColor: C.lime,
+  },
   orbInner: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3 },
   orbRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   orbLabel: { color: C.text, fontSize: 10.5, fontWeight: '600', textAlign: 'center', lineHeight: 13, marginTop: 2 },

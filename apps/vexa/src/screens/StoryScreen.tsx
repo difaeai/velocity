@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  Animated,
   Dimensions,
+  Easing,
   Image,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -10,11 +12,13 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useEnter, useLoop } from '../anim';
 import Avatar from '../components/Avatar';
 import Backdrop from '../components/Backdrop';
+import { GoogleMark, InstagramMark, MetaMark, TiktokMark } from '../components/BrandMarks';
 import Glass from '../components/Glass';
-import { CheckIcon, ChevronRight, ClockIcon, PlayIcon } from '../components/Icons';
-import { Bars, MarkRow, Ring, Stagger, Tag, Waveform } from '../components/kit';
+import { ChartUpIcon, ChevronRight, DocPenIcon, MegaphoneIcon } from '../components/Icons';
+import { Waveform } from '../components/kit';
 import { hush, speak } from '../voice';
 import { C, R, TOP_INSET } from '../theme';
 
@@ -23,153 +27,189 @@ const FIGURE = require('../../assets/vexa.png');
 const W = Dimensions.get('window').width;
 const PAGE_H = Dimensions.get('window').height - TOP_INSET - 150;
 
-/** What she does, one job a page — and she says each one out loud. */
+/**
+ * Three pages, one job each. One picture, one line, her voice — nothing on
+ * these screens to read or work out.
+ */
 const PAGES = [
   {
     key: 'content',
-    kicker: 'Content',
-    title: 'I handle your\ncontent.',
-    body: 'Reels, photos and stories, written in your voice and put out at the hour your customers are actually awake. Thirty days planned at a time.',
+    title: 'I post for you.',
+    line: 'Reels, photos and stories — written and put out on time.',
+    icon: (size: number) => <DocPenIcon size={size} />,
+    marks: ['instagram', 'tiktok'] as const,
     said: 'I handle your content. I write your reels, photos and stories, and I post them when your customers are awake.',
   },
   {
     key: 'ads',
-    kicker: 'Ads',
-    title: 'I am your\nAd Expert.',
-    body: 'Facebook, Instagram and Google. I build the campaign, choose who sees it, and never spend one rupee past the daily budget you set.',
+    title: 'I run your ads.',
+    line: 'Facebook, Instagram and Google — inside your daily budget.',
+    icon: (size: number) => <MegaphoneIcon size={size} />,
+    marks: ['facebook', 'instagram', 'google'] as const,
     said: 'I am your Ad Expert. I run your Facebook, Instagram and Google ads, and I never spend past the budget you set.',
   },
   {
     key: 'sales',
-    kicker: 'Sales',
-    title: 'I manage\nyour sales.',
-    body: 'Every enquiry answered in minutes, followed up until it becomes an order, and handed to you the moment it needs a human.',
+    title: 'I sell for you.',
+    line: 'Every customer answered, every order followed up.',
+    icon: (size: number) => <ChartUpIcon size={size} />,
+    marks: [] as const,
     said: 'And I manage your sales. I answer every customer in minutes and follow up until the order is yours.',
   },
 ];
 
-/** A little mock of the work, so the words have something to point at. */
-function Demo({ which }: { which: string }) {
-  if (which === 'content') {
-    return (
-      <View style={st.demo}>
-        <Stagger>
-          <Glass style={{ alignSelf: 'stretch' }} radius={R.lg} lit>
-            <View style={st.postCard}>
-              <View style={st.thumb}>
-                <PlayIcon size={20} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={st.postTitle}>Winter drop teaser</Text>
-                <View style={st.postMeta}>
-                  <ClockIcon size={13} color={C.textDim} />
-                  <Text style={st.postMetaText}>Today · 19:30</Text>
-                  <MarkRow list={['instagram', 'tiktok']} size={13} />
-                </View>
-              </View>
-              <Tag text="Scheduled" tone="lime" />
-            </View>
-          </Glass>
-        </Stagger>
+const MARK: Record<string, (size: number) => React.ReactNode> = {
+  instagram: (s) => <InstagramMark size={s} />,
+  facebook: (s) => <MetaMark size={s} />,
+  tiktok: (s) => <TiktokMark size={s} />,
+  google: (s) => <GoogleMark size={s} />,
+};
 
-        <Stagger index={1}>
-          <Glass style={{ alignSelf: 'stretch' }} radius={R.lg}>
-            <View style={st.weekCard}>
-              {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
-                <View key={i} style={st.dayCell}>
-                  <Text style={st.dayName}>{d}</Text>
-                  <View style={[st.dayDisc, i < 5 && st.dayDiscOn]}>
-                    {i < 5 ? <CheckIcon size={12} color="#0A1206" /> : null}
-                  </View>
-                </View>
-              ))}
-            </View>
-          </Glass>
-        </Stagger>
+/** Fade-and-rise that starts when this page becomes the one you are looking at. */
+function In({
+  delay = 0,
+  y = 18,
+  scale,
+  children,
+  style,
+}: {
+  delay?: number;
+  y?: number;
+  scale?: number;
+  children: React.ReactNode;
+  style?: object;
+}) {
+  const enter = useEnter(delay, { y, scale, duration: 520 });
+  return <Animated.View style={[style, enter]}>{children}</Animated.View>;
+}
 
-        <Stagger index={2}>
-          <Text style={st.caption}>“The winter drop lands Friday. Three shirts, one coat, nothing repeated.”</Text>
-        </Stagger>
-      </View>
+/** The one picture on the page: her icon, breathing, with a signal going out. */
+function Medallion({ icon, marks }: { icon: (size: number) => React.ReactNode; marks: readonly string[] }) {
+  const t = useLoop(2800);
+  const ping = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(ping, { toValue: 1, duration: 2400, easing: Easing.out(Easing.quad), useNativeDriver: true }),
     );
-  }
+    loop.start();
+    return () => loop.stop();
+  }, [ping]);
 
-  if (which === 'ads') {
-    return (
-      <View style={st.demo}>
-        <Stagger>
-          <Glass style={{ alignSelf: 'stretch' }} radius={R.lg} lit>
-            <View style={st.adCard}>
-              <Ring pct={0.91} size={86} label="91%" sub="of today" />
-              <View style={{ flex: 1, gap: 6 }}>
-                <Text style={st.adLabel}>SPENT TODAY</Text>
-                <Text style={st.adValue}>PKR 912</Text>
-                <Text style={st.adSub}>Daily budget PKR 999 — she stops there</Text>
-                <MarkRow list={['facebook', 'instagram', 'google']} size={16} />
-              </View>
-            </View>
-          </Glass>
-        </Stagger>
-
-        <Stagger index={1}>
-          <Glass style={{ alignSelf: 'stretch' }} radius={R.lg}>
-            <View style={st.barCard}>
-              <Text style={st.barTitle}>Leads this week</Text>
-              <Bars data={[4, 7, 6, 9, 12, 8, 15]} labels={['M', 'T', 'W', 'T', 'F', 'S', 'S']} height={66} />
-            </View>
-          </Glass>
-        </Stagger>
-      </View>
-    );
-  }
+  const float = t.interpolate({ inputRange: [0, 1], outputRange: [5, -7] });
+  const glow = t.interpolate({ inputRange: [0, 1], outputRange: [0.2, 0.55] });
+  const ringScale = ping.interpolate({ inputRange: [0, 1], outputRange: [1, 1.5] });
+  const ringFade = ping.interpolate({ inputRange: [0, 0.15, 1], outputRange: [0, 0.5, 0] });
 
   return (
-    <View style={st.demo}>
-      <Stagger>
-        <View style={st.bubbleRow}>
-          <Glass style={st.bubble} radius={16}>
-            <View style={st.bubbleInner}>
-              <Text style={st.bubbleText}>Is the navy shirt available in large?</Text>
-              <Text style={st.bubbleAt}>12 min ago</Text>
-            </View>
-          </Glass>
-        </View>
-      </Stagger>
+    <View style={st.medalWrap}>
+      <Animated.View style={{ transform: [{ translateY: float }] }}>
+        <Animated.View pointerEvents="none" style={[st.ping, { opacity: ringFade, transform: [{ scale: ringScale }] }]} />
+        <Animated.View pointerEvents="none" style={[st.halo, { opacity: glow }]} />
 
-      <Stagger index={1}>
-        <View style={[st.bubbleRow, { justifyContent: 'flex-end' }]}>
-          <Glass style={st.bubble} radius={16} lit>
-            <View style={st.bubbleInner}>
-              <Text style={st.bubbleText}>It is — large is in stock. Shall I hold one for you?</Text>
-              <Text style={st.bubbleAt}>Vexa · 10 min ago</Text>
-            </View>
+        <In scale={0.7}>
+          <Glass style={st.medal} radius={76} lit>
+            <View style={st.medalInner}>{icon(52)}</View>
           </Glass>
-          <Avatar size={28} online={false} />
-        </View>
-      </Stagger>
+        </In>
+      </Animated.View>
 
-      <Stagger index={2}>
-        <Glass style={{ alignSelf: 'stretch' }} radius={R.lg} lit>
-          <View style={st.wonCard}>
-            <View style={st.wonMark}>
-              <CheckIcon size={18} color="#0A1206" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={st.wonTitle}>Ayesha Khan — order placed</Text>
-              <Text style={st.wonSub}>PKR 12,000 · answered, followed up, closed</Text>
-            </View>
-            <Tag text="Won" tone="green" />
-          </View>
-        </Glass>
-      </Stagger>
+      {marks.length ? (
+        <View style={st.marks}>
+          {marks.map((m, i) => (
+            <In key={m} delay={420 + i * 130} y={0} scale={0.3}>
+              <Glass style={st.markChip} radius={R.pill}>
+                <View style={st.markInner}>{MARK[m](20)}</View>
+              </Glass>
+            </In>
+          ))}
+        </View>
+      ) : (
+        <View style={st.marks}>
+          <In delay={420} y={0} scale={0.3}>
+            <Glass style={st.markChip} radius={R.pill}>
+              <View style={st.markInner}>
+                <Avatar size={22} online={false} />
+              </View>
+            </Glass>
+          </In>
+        </View>
+      )}
     </View>
   );
+}
+
+/** One page: the picture and the words drift at different speeds as you swipe. */
+function Page({
+  p,
+  i,
+  live,
+  scrollX,
+  talking,
+  onReplay,
+}: {
+  p: (typeof PAGES)[number];
+  i: number;
+  live: boolean;
+  scrollX: Animated.Value;
+  talking: boolean;
+  onReplay: () => void;
+}) {
+  const range = [(i - 1) * W, i * W, (i + 1) * W];
+  const picShift = scrollX.interpolate({ inputRange: range, outputRange: [W * 0.25, 0, -W * 0.25], extrapolate: 'clamp' });
+  const textShift = scrollX.interpolate({ inputRange: range, outputRange: [W * 0.55, 0, -W * 0.55], extrapolate: 'clamp' });
+  const fade = scrollX.interpolate({ inputRange: range, outputRange: [0, 1, 0], extrapolate: 'clamp' });
+
+  return (
+    <View style={[st.page, { width: W, height: PAGE_H }]}>
+      <Animated.View style={{ opacity: fade, transform: [{ translateX: picShift }] }}>
+        {/* keyed on `live`, so the picture arrives again every time you land here */}
+        <Medallion key={`${p.key}-${live ? 'on' : 'off'}`} icon={p.icon} marks={p.marks} />
+      </Animated.View>
+
+      <Animated.View style={[st.words, { opacity: fade, transform: [{ translateX: textShift }] }]}>
+        <View key={live ? 'live' : 'idle'} style={{ alignItems: 'center' }}>
+          <In delay={160}>
+            <Text style={st.title}>{p.title}</Text>
+          </In>
+          <In delay={280}>
+            <Text style={st.line}>{p.line}</Text>
+          </In>
+          <In delay={400}>
+            <Pressable onPress={onReplay} style={({ pressed }) => [pressed && { opacity: 0.75 }]}>
+              <Glass style={st.sayPill} radius={R.pill} lit={talking}>
+                <View style={st.sayInner}>
+                  <Waveform live={talking} height={18} />
+                  <Text style={st.sayText}>{talking ? 'Vexa is speaking…' : 'Hear it again'}</Text>
+                </View>
+              </Glass>
+            </Pressable>
+          </In>
+        </View>
+      </Animated.View>
+    </View>
+  );
+}
+
+/** The page dot that stretches when it is yours. */
+function Dot({ on }: { on: boolean }) {
+  const t = useRef(new Animated.Value(on ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.timing(t, { toValue: on ? 1 : 0, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
+  }, [on, t]);
+
+  const width = t.interpolate({ inputRange: [0, 1], outputRange: [7, 24] });
+  const backgroundColor = t.interpolate({ inputRange: [0, 1], outputRange: ['rgba(255,255,255,0.22)', C.lime] });
+
+  return <Animated.View style={[st.dot, { width, backgroundColor }]} />;
 }
 
 export default function StoryScreen({ onDone }: { onDone: () => void }) {
   const [page, setPage] = useState(0);
   const [talking, setTalking] = useState(false);
-  const scroller = useRef<ScrollView>(null);
+  const scroller = useRef<ScrollView | null>(null);
+  const scrollX = useRef(new Animated.Value(0)).current;
   const gone = useRef(false);
 
   // She introduces each job as you reach it.
@@ -199,10 +239,13 @@ export default function StoryScreen({ onDone }: { onDone: () => void }) {
     onDone();
   };
 
-  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const i = Math.round(e.nativeEvent.contentOffset.x / W);
-    if (i !== page) setPage(i);
-  };
+  const onScroll = Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], {
+    useNativeDriver: true,
+    listener: (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const i = Math.round(e.nativeEvent.contentOffset.x / W);
+      if (i !== page) setPage(i);
+    },
+  });
 
   const next = () => {
     if (page >= PAGES.length - 1) return leave();
@@ -216,18 +259,17 @@ export default function StoryScreen({ onDone }: { onDone: () => void }) {
       <Backdrop />
       <Image source={FIGURE} style={st.watermark} resizeMode="contain" />
 
-      <View style={st.skipRow}>
-        <View style={st.her}>
-          <Avatar size={30} />
-          <Text style={st.herName}>VEXA</Text>
-        </View>
-        <Glass style={st.skip} radius={R.pill} onPress={leave}>
-          <Text style={st.skipText}>Skip</Text>
-        </Glass>
+      {/* Only her mark up here. Skip sits by the dots, clear of whatever the
+          phone (or a dev build) floats into the top corner. */}
+      <View style={st.topRow}>
+        <Avatar size={30} />
+        <Text style={st.herName}>VEXA</Text>
       </View>
 
-      <ScrollView
-        ref={scroller}
+      <Animated.ScrollView
+        ref={(r) => {
+          scroller.current = r as unknown as ScrollView | null;
+        }}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
@@ -236,38 +278,30 @@ export default function StoryScreen({ onDone }: { onDone: () => void }) {
         style={st.pager}
       >
         {PAGES.map((p, i) => (
-          <View key={p.key} style={[st.page, { width: W, height: PAGE_H }]}>
-            {/* each page is mounted from the start; the mock animates in anyway */}
-            <Demo which={p.key} />
-
-            <View style={st.kicker}>
-              <Text style={st.kickerText}>{p.kicker.toUpperCase()}</Text>
-            </View>
-            <Text style={st.title}>{p.title}</Text>
-            <Text style={st.body}>{p.body}</Text>
-
-            <Pressable onPress={() => say(i)} style={({ pressed }) => [pressed && { opacity: 0.75 }]}>
-              <Glass style={st.sayPill} radius={R.pill} lit={talking && page === i}>
-                <View style={st.sayInner}>
-                  <Waveform live={talking && page === i} height={20} />
-                  <Text style={st.sayText}>
-                    {talking && page === i ? 'Vexa is speaking…' : 'Tap to hear her again'}
-                  </Text>
-                </View>
-              </Glass>
-            </Pressable>
-          </View>
+          <Page
+            key={p.key}
+            p={p}
+            i={i}
+            live={page === i}
+            scrollX={scrollX}
+            talking={talking && page === i}
+            onReplay={() => say(i)}
+          />
         ))}
-      </ScrollView>
+      </Animated.ScrollView>
 
       <View style={st.footer}>
+        <Pressable onPress={leave} hitSlop={10} style={({ pressed }) => [st.skip, pressed && { opacity: 0.6 }]}>
+          <Text style={st.skipText}>Skip</Text>
+        </Pressable>
+
         <View style={st.dots}>
           {PAGES.map((p, i) => (
-            <View key={p.key} style={[st.dot, i === page && st.dotOn]} />
+            <Dot key={p.key} on={i === page} />
           ))}
         </View>
 
-        <Pressable onPress={next} style={({ pressed }) => [st.cta, pressed && { opacity: 0.85 }]}>
+        <Pressable onPress={next} style={({ pressed }) => [st.cta, pressed && { transform: [{ scale: 0.96 }] }]}>
           <Text style={st.ctaText}>{last ? 'Get started' : 'Next'}</Text>
           <ChevronRight size={18} color="#0A1206" />
         </Pressable>
@@ -278,90 +312,47 @@ export default function StoryScreen({ onDone }: { onDone: () => void }) {
 
 const st = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
+  watermark: { position: 'absolute', right: -90, bottom: -46, width: 320, height: 320, opacity: 0.09 },
 
-  skipRow: {
-    paddingTop: TOP_INSET,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  her: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  topRow: { paddingTop: TOP_INSET, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: 9 },
   herName: { color: C.text, fontSize: 15, fontWeight: '900', letterSpacing: 2.5 },
-  skip: {},
-  skipText: { color: C.text, fontSize: 13, fontWeight: '700', paddingHorizontal: 16, paddingVertical: 8 },
 
   pager: { flex: 1 },
-  page: { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 4, justifyContent: 'center' },
+  page: { paddingHorizontal: 26, justifyContent: 'center', alignItems: 'center' },
 
-  watermark: { position: 'absolute', right: -86, bottom: -40, width: 330, height: 330, opacity: 0.1 },
-
-  demo: { gap: 10, marginBottom: 6 },
-
-  postCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 13 },
-  thumb: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: 'rgba(120,255,140,0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
+  medalWrap: { alignItems: 'center', justifyContent: 'center' },
+  medal: { width: 152, height: 152 },
+  medalInner: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  halo: {
+    position: 'absolute',
+    left: -14,
+    top: -14,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: 'rgba(195,255,55,0.16)',
   },
-  postTitle: { color: C.text, fontSize: 14, fontWeight: '800' },
-  postMeta: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 4 },
-  postMetaText: { color: C.textDim, fontSize: 11.5, fontWeight: '600' },
-
-  weekCard: { flexDirection: 'row', paddingVertical: 11, paddingHorizontal: 6 },
-  dayCell: { flex: 1, alignItems: 'center', gap: 5 },
-  dayName: { color: C.textDim, fontSize: 10.5, fontWeight: '800' },
-  dayDisc: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    alignItems: 'center',
-    justifyContent: 'center',
+  ping: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    width: 152,
+    height: 152,
+    borderRadius: 76,
+    borderWidth: 1.4,
+    borderColor: C.lime,
   },
-  dayDiscOn: { backgroundColor: C.lime, borderColor: C.lime },
 
-  caption: { color: C.textDim, fontSize: 12.5, fontStyle: 'italic', lineHeight: 18 },
+  marks: { flexDirection: 'row', gap: 10, marginTop: 22 },
+  markChip: {},
+  markInner: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
 
-  adCard: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14 },
-  adLabel: { color: C.textDim, fontSize: 10, fontWeight: '800', letterSpacing: 1 },
-  adValue: { color: C.text, fontSize: 21, fontWeight: '900' },
-  adSub: { color: C.textDim, fontSize: 11.5 },
-  barCard: { padding: 14, gap: 8 },
-  barTitle: { color: C.text, fontSize: 13, fontWeight: '800' },
+  words: { alignItems: 'center', marginTop: 34 },
+  title: { color: C.text, fontSize: 30, fontWeight: '900', textAlign: 'center' },
+  line: { color: C.textDim, fontSize: 14.5, lineHeight: 21, textAlign: 'center', marginTop: 12, maxWidth: 300 },
 
-  bubbleRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
-  bubble: { maxWidth: '84%' },
-  bubbleInner: { paddingHorizontal: 13, paddingVertical: 10 },
-  bubbleText: { color: C.text, fontSize: 13, lineHeight: 18 },
-  bubbleAt: { color: C.textFaint, fontSize: 10, marginTop: 4 },
-
-  wonCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 13 },
-  wonMark: { width: 34, height: 34, borderRadius: 17, backgroundColor: C.lime, alignItems: 'center', justifyContent: 'center' },
-  wonTitle: { color: C.text, fontSize: 13.5, fontWeight: '800' },
-  wonSub: { color: C.textDim, fontSize: 11.5, marginTop: 3 },
-
-  kicker: {
-    alignSelf: 'flex-start',
-    marginTop: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: R.pill,
-    borderWidth: 1,
-    borderColor: 'rgba(195,255,55,0.4)',
-    backgroundColor: 'rgba(120,255,120,0.08)',
-  },
-  kickerText: { color: C.lime, fontSize: 11, fontWeight: '900', letterSpacing: 1.2 },
-
-  title: { color: C.text, fontSize: 30, fontWeight: '900', lineHeight: 35, marginTop: 12 },
-  body: { color: C.textDim, fontSize: 13.5, lineHeight: 20, marginTop: 10 },
-
-  sayPill: { alignSelf: 'flex-start', marginTop: 14 },
-  sayInner: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 9 },
+  sayPill: { alignSelf: 'center', marginTop: 20 },
+  sayInner: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 15, paddingVertical: 9 },
   sayText: { color: C.text, fontSize: 12, fontWeight: '700' },
 
   footer: {
@@ -371,10 +362,13 @@ const st = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 30,
     paddingTop: 10,
+    gap: 12,
   },
-  dots: { flexDirection: 'row', gap: 7 },
-  dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.22)' },
-  dotOn: { width: 22, backgroundColor: C.lime },
+  skip: { paddingVertical: 10, paddingRight: 6 },
+  skipText: { color: C.textDim, fontSize: 13.5, fontWeight: '700' },
+
+  dots: { flexDirection: 'row', gap: 7, flex: 1, justifyContent: 'center' },
+  dot: { height: 7, borderRadius: 4 },
 
   cta: {
     flexDirection: 'row',

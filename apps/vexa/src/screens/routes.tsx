@@ -29,14 +29,14 @@ export type Ctx = {
  */
 export function screenFor(title: string, ctx: Ctx): React.ReactNode {
   switch (title) {
-    case 'Research Agent':
+    case 'Research Team':
       return <ResearchAgent />;
-    case 'Content Agent':
+    case 'Content Team':
     case 'Content':
       return <ContentAgent />;
-    case 'Ads Agent':
+    case 'Ads Expert':
       return <AdsAgent />;
-    case 'Sales Agent':
+    case 'Sales Team':
       return <SalesAgent />;
     case 'Connected Accounts':
       return <ConnectedAccounts />;

@@ -208,7 +208,7 @@ export default function ResearchAgent() {
               icon={<SparkleIcon size={17} color="#0A1206" />}
               onPress={() => {
                 setOpen(null);
-                say('Sent to the Content Agent');
+                say('Sent to the Content Team');
               }}
               full
             />

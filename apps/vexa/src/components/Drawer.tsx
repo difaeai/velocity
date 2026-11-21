@@ -166,10 +166,10 @@ export default function Drawer({
           <VexaProgress open={open} />
 
           <Text style={st.section}>MAIN FEATURES</Text>
-          <Row index={next()} open={open} icon={<SearchIcon size={21} />} label={'Research\nAgent'} onPress={() => go('Research Agent')} />
-          <Row index={next()} open={open} icon={<DocIcon size={21} />} label={'Content\nAgent'} onPress={() => go('Content Agent')} />
-          <Row index={next()} open={open} icon={<MegaphoneIcon size={21} />} label="Ads Agent" onPress={() => go('Ads Agent')} />
-          <Row index={next()} open={open} icon={<ChartUpIcon size={21} />} label="Sales Agent" onPress={() => go('Sales Agent')} />
+          <Row index={next()} open={open} icon={<SearchIcon size={21} />} label={'Research\nAgent'} onPress={() => go('Research Team')} />
+          <Row index={next()} open={open} icon={<DocIcon size={21} />} label={'Content\nAgent'} onPress={() => go('Content Team')} />
+          <Row index={next()} open={open} icon={<MegaphoneIcon size={21} />} label="Ads Expert" onPress={() => go('Ads Expert')} />
+          <Row index={next()} open={open} icon={<ChartUpIcon size={21} />} label="Sales Team" onPress={() => go('Sales Team')} />
           <Row index={next()} open={open} icon={<AccountsMark />} label={'Connected\nAccounts'} onPress={() => go('Connected Accounts')} />
           <Row
             index={next()}

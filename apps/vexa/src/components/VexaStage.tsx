@@ -1,5 +1,5 @@
-import React from 'react';
-import { Animated, Image, StyleSheet } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Animated, Easing, Image, StyleSheet } from 'react-native';
 import Svg, { Circle, Defs, Ellipse, LinearGradient, Path, RadialGradient, Stop } from 'react-native-svg';
 import { useLoop } from '../anim';
 import { C } from '../theme';
@@ -33,10 +33,24 @@ const DUST: Array<[number, number, number]> = [
  * Vexa herself on the holo pedestal: the light, rings and beam are SVG, she is
  * the cut-out PNG floating a little above the disc.
  */
+const AnimatedPath = Animated.createAnimatedComponent(Path);
+
 export default function VexaStage() {
   const t = useLoop(3400);
   const float = t.interpolate({ inputRange: [0, 1], outputRange: [5, -7] });
   const breathe = t.interpolate({ inputRange: [0, 1], outputRange: [0.86, 1] });
+
+  // Light runs down the wires from her out to the six tiles, so the stage is
+  // never a still picture.
+  const flow = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(flow, { toValue: 1, duration: 1600, easing: Easing.linear, useNativeDriver: false }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [flow]);
+  const dash = flow.interpolate({ inputRange: [0, 1], outputRange: [0, -14] });
 
   return (
     <>
@@ -62,7 +76,16 @@ export default function VexaStage() {
         <Ellipse cx="180" cy="236" rx="146" ry="124" stroke={C.green} strokeWidth={0.9} opacity={0.08} />
 
         {LINKS.map((d, i) => (
-          <Path key={`l${i}`} d={d} stroke={C.green} strokeWidth={0.9} opacity={0.38} fill="none" />
+          <AnimatedPath
+            key={`l${i}`}
+            d={d}
+            stroke={C.lime}
+            strokeWidth={1.2}
+            strokeDasharray="5 9"
+            strokeDashoffset={dash}
+            opacity={0.55}
+            fill="none"
+          />
         ))}
         {DUST.map(([x, y, r], i) => (
           <Circle key={`d${i}`} cx={x} cy={y} r={r} fill={C.glow} opacity={0.55} />
