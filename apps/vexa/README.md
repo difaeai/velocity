@@ -14,16 +14,25 @@ Splash  ->  How it works (3)  ->  Sign in  ->  App shell  ->  every feature
   loud: "I am Vexa, your social media manager and Ad Expert for Facebook,
   Instagram and Google." The line also types itself out beside a waveform, so
   a muted phone loses nothing. Tap anywhere to skip.
-* **How it works** — three films, swipe or Next, Skip on every page.
+* **How it works** — one job a page, and she says each one out loud:
+  **Content** ("I handle your content"), **Ads** ("I am your Ad Expert") and
+  **Sales** ("I manage your sales"). Each page shows a little mock of that
+  work — a scheduled reel and the week, a budget ring with the day's spend, a
+  customer answered and won — and the pill under the text replays her line.
 * **Sign in** — Continue with Google, or +92 phone then a 6-box OTP.
 * **App shell** — header, tab bar (Home · Activity · Content · Profile), left
   drawer, and a pushed detail that slides in from the right.
 
 ## Her voice
 
-`src/voice.ts` picks a **female** system voice by name and never falls back to
-a male one — if the phone has no female voice she stays silent and the caption
-carries the line. On-device (`expo-speech`), no key, nothing leaves the phone.
+`src/voice.ts` scores every system voice and always picks a **female** one.
+The trap it solves: the voice list is empty on the first call and every
+platform's *default* voice may be male — on this machine it is "Microsoft
+George" — which is exactly how she ended up sounding male. It now waits for
+the list, scores it (female names up, male names heavily down, English
+preferred), and caches only a successful pick. She never goes silent: a phone
+with nothing but male voices still gets her line, pitched up. On-device
+(`expo-speech`), no key, nothing leaves the phone.
 
 ## The screens behind the drawer
 
@@ -76,7 +85,7 @@ src/store.ts                   the in-memory data and every mutation
 src/net.ts                     fake loads: loading / slow / failed / retry
 src/voice.ts                   her voice — female only
 src/screens/SplashScreen.tsx   the mark, the bar, and her one spoken line
-src/screens/StoryScreen.tsx    the three films
+src/screens/StoryScreen.tsx    Content / Ads / Sales, each spoken aloud
 src/screens/AuthScreen.tsx     Google + phone OTP
 src/screens/AppShell.tsx       header, tabs, drawer, pushed detail
 src/screens/HomeScreen.tsx     the agent stage and the goal box

@@ -560,6 +560,39 @@ export function Empty({
   );
 }
 
+/** Bars that jump while Vexa is talking. */
+export function Waveform({ live, height = 24, color = C.lime }: { live: boolean; height?: number; color?: string }) {
+  const bars = useRef([0, 1, 2, 3, 4].map(() => new Animated.Value(0.3))).current;
+
+  useEffect(() => {
+    if (!live) {
+      bars.forEach((b) => b.setValue(0.3));
+      return;
+    }
+    const loops = bars.map((b, i) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(b, { toValue: 1, duration: 260 + i * 70, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+          Animated.timing(b, { toValue: 0.3, duration: 260 + i * 70, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        ]),
+      ),
+    );
+    loops.forEach((l) => l.start());
+    return () => loops.forEach((l) => l.stop());
+  }, [bars, live]);
+
+  return (
+    <View style={[st.wave, { height }]}>
+      {bars.map((b, i) => (
+        <Animated.View
+          key={i}
+          style={[st.waveBar, { height: height - 4, backgroundColor: color, transform: [{ scaleY: b }] }]}
+        />
+      ))}
+    </View>
+  );
+}
+
 /** The dots Vexa thinks with. */
 export function TypingDots() {
   const t = useRef(new Animated.Value(0)).current;
@@ -1095,6 +1128,9 @@ const st = StyleSheet.create({
 
   dots: { flexDirection: 'row', gap: 5, alignItems: 'center', paddingVertical: 4 },
   dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: C.lime },
+
+  wave: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  waveBar: { width: 3, borderRadius: 2 },
 
   ringText: { position: 'absolute', alignItems: 'center' },
   ringLabel: { color: C.text, fontWeight: '900' },

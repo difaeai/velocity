@@ -3,6 +3,7 @@ import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from 'reac
 import { useEnter } from '../anim';
 import Backdrop from '../components/Backdrop';
 import Glass from '../components/Glass';
+import { Waveform } from '../components/kit';
 import { hush, speak } from '../voice';
 import { C, R } from '../theme';
 
@@ -13,33 +14,6 @@ const LINE = 'I am Vexa, your social media manager and Ad Expert for Facebook, I
 
 const HOLD = 7200; // long enough for the sentence; tap to skip
 const PER_CHAR = 58;
-
-/** Five bars that jump while she talks. */
-function Waveform({ live }: { live: boolean }) {
-  const bars = useRef([0, 1, 2, 3, 4].map(() => new Animated.Value(0.3))).current;
-
-  useEffect(() => {
-    if (!live) return;
-    const loops = bars.map((b, i) =>
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(b, { toValue: 1, duration: 260 + i * 70, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-          Animated.timing(b, { toValue: 0.3, duration: 260 + i * 70, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        ]),
-      ),
-    );
-    loops.forEach((l) => l.start());
-    return () => loops.forEach((l) => l.stop());
-  }, [bars, live]);
-
-  return (
-    <View style={st.wave}>
-      {bars.map((b, i) => (
-        <Animated.View key={i} style={[st.waveBar, { transform: [{ scaleY: b }] }]} />
-      ))}
-    </View>
-  );
-}
 
 /** First frame of the app: the mark, the name, Vexa rising — and saying hello. */
 export default function SplashScreen({ onDone }: { onDone: () => void }) {
@@ -152,9 +126,6 @@ const st = StyleSheet.create({
   caption: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 15, paddingVertical: 13 },
   captionText: { color: C.text, fontSize: 13.5, lineHeight: 19.5, flex: 1, fontWeight: '600' },
   skip: { color: C.textFaint, fontSize: 10.5, marginTop: 9, letterSpacing: 0.6 },
-
-  wave: { flexDirection: 'row', alignItems: 'center', gap: 3, height: 26 },
-  waveBar: { width: 3, height: 22, borderRadius: 2, backgroundColor: C.lime },
 
   // Whole cut-out on screen — nothing clipped by the bottom or the sides.
   figureWrap: { position: 'absolute', left: 0, right: 0, bottom: 0, alignItems: 'center' },
