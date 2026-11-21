@@ -15,11 +15,13 @@ Splash  ->  How it works (3)  ->  Sign in  ->  App shell  ->  every feature
   Instagram and Google." It holds for **at least five seconds and never cuts
   her off mid-sentence** (hard cap 13s). The line also types itself out beside
   a waveform, so a muted phone loses nothing. Tap anywhere to skip.
-* **How it works** — one job a page, spoken aloud as you reach it: "I post
-  for you", "I run your ads", "I sell for you". One picture (a breathing
-  medallion with that team's icon and the platforms it touches), one short
-  line, and a pill that replays her. Nothing to read or work out. Skip sits by
-  the dots, away from anything the phone floats into the top corner.
+* **How it works** — one job a page, spoken aloud as you reach it: "I create
+  your content and manage your social media", "I run your ads on Facebook,
+  Instagram and Google", "I answer your customers and close your sales". Each
+  page is a drawn scene (`components/Scenes.tsx`) inside a glass arena, with
+  the platforms she works through orbiting the rim, one short line, and a pill
+  that replays her voice. Skip is top right, facing her mark; Get started is
+  bottom right under it.
 * **Sign in** — Continue with Google, or +92 phone then a 6-box OTP.
 * **App shell** — header, tab bar (Home · Activity · Content · Profile), left
   drawer, and a pushed detail that slides in from the right.
@@ -103,6 +105,7 @@ src/screens/NotificationsScreen.tsx
 src/screens/GoalPlan.tsx       the goal box answered with a plan
 src/screens/Pane.tsx           stand-in for anything not yet designed
 src/components/kit.tsx         every shared piece, all animated
+src/components/Scenes.tsx      the three drawn welcome scenes
 src/components/Glass.tsx       the frosted pane
 src/components/VexaProgress.tsx  the drawer's live ring + bar
 src/components/Backdrop.tsx    ambient light

@@ -191,7 +191,7 @@ export default function HomeScreen({
 
         <Tile
           icon={<RobotIcon size={26} />}
-          label={'Research\nAgent'}
+          label={'Research\nTeam'}
           style={{ left: '1%', top: '2%' }}
           delay={240}
           drift={2600}
@@ -199,7 +199,7 @@ export default function HomeScreen({
         />
         <Tile
           icon={<DocPenIcon size={26} />}
-          label={'Content\nAgent'}
+          label={'Content\nTeam'}
           style={{ right: '1%', top: '2%' }}
           delay={300}
           drift={3100}
@@ -207,7 +207,7 @@ export default function HomeScreen({
         />
         <Tile
           icon={<MegaphoneIcon size={26} />}
-          label={'Ads\nAgent'}
+          label={'Ads\nExpert'}
           style={{ left: 0, top: '33%' }}
           delay={360}
           drift={2850}
@@ -215,7 +215,7 @@ export default function HomeScreen({
         />
         <Tile
           icon={<ChartUpIcon size={26} />}
-          label={'Sales\nAgent'}
+          label={'Sales\nTeam'}
           style={{ right: 0, top: '33%' }}
           delay={420}
           drift={3350}
