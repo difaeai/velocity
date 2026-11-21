@@ -124,10 +124,21 @@ async function ownState(state: string, uid: string) {
   return s;
 }
 
-async function exchange(url: string, form: Record<string, string>) {
+/** Exported for its one test: the header here is what made TikTok work. */
+export async function exchange(url: string, form: Record<string, string>) {
   let res: Response;
   try {
-    res = await fetch(url, { method: 'POST', body: new URLSearchParams(form), signal: AbortSignal.timeout(20_000) });
+    res = await fetch(url, {
+      method: 'POST',
+      // Set by hand, because fetch labels a URLSearchParams body
+      // "application/x-www-form-urlencoded;charset=UTF-8" and TikTok answers
+      // that with "The request parameters are malformed" — the same body with
+      // the plain type is read fine. It is why no TikTok account could ever be
+      // connected. Google accepts either.
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(form).toString(),
+      signal: AbortSignal.timeout(20_000),
+    });
   } catch (e) {
     throw new HttpsError('unavailable', `The sign-in could not be finished: ${(e as Error).message}`);
   }
