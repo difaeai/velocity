@@ -49,6 +49,13 @@ const LOOKBACK_DAYS = 14;
 /** How many comments one drafting call handles. Enough context, one bill. */
 const DRAFT_BATCH = 12;
 
+/**
+ * How long one send may be in flight before another caller is allowed to try.
+ * Longer than the network call takes, so a second press cannot overtake the
+ * first; short enough that a crashed send does not lock the comment forever.
+ */
+const SEND_LEASE_MS = 60_000;
+
 const commentId = (platform: Platform, id: string) => `${platform}_${id.replace(/\//g, '-')}`;
 const commentRef = (platform: Platform, id: string) => sdb.doc(`socialComments/${commentId(platform, id)}`);
 
@@ -358,9 +365,30 @@ export async function sendReply(
   text: string,
 ): Promise<{ ok: boolean; error?: string }> {
   const ref = commentRef(platform, networkCommentId);
+
+  // One reply per comment, whoever asks and however often. Defensive: no user
+  // has reported a double reply, and the 2026-11-25 case that prompted this
+  // turned out to be the demo recorder clicking a card the list had re-rendered
+  // under it. The guard stays because the damage is public and irreversible — a
+  // second reply lands under a customer's comment, where nobody can take it
+  // back — and this is reachable by anything holding a session.
+  //
+  // Checking the status without a transaction would not help: the network call
+  // takes seconds, so two callers a moment apart both read `drafted` before
+  // either finished.
+  const claimed = await db.runTransaction(async (tx) => {
+    const row = (await tx.get(ref)).data() as SocialComment | undefined;
+    if (row?.status === 'replied') return false;
+    if (row?.sendingAtMs && Date.now() - row.sendingAtMs < SEND_LEASE_MS) return false;
+    tx.set(ref, { sendingAtMs: Date.now() }, { merge: true });
+    return true;
+  });
+  // Already answered is what the caller wanted, so it is not an error.
+  if (!claimed) return { ok: true };
+
   const credentials = await loadCredentials(platform);
   if (!credentials) {
-    await ref.set({ error: 'That account is not connected.' }, { merge: true });
+    await ref.set({ error: 'That account is not connected.', sendingAtMs: null }, { merge: true });
     return { ok: false, error: 'That account is not connected.' };
   }
 
@@ -371,6 +399,7 @@ export async function sendReply(
         status: 'replied' as CommentStatus,
         sentReply: text,
         sentAtMs: Date.now(),
+        sendingAtMs: null,
         error: null,
         repliedAt: FieldValue.serverTimestamp(),
       },
@@ -380,7 +409,8 @@ export async function sendReply(
   } catch (e) {
     const message = e instanceof PlatformError ? e.message : (e as Error).message;
     logger.error('social: reply failed', { platform, message });
-    await ref.set({ error: message.slice(0, 400) }, { merge: true });
+    // Clear the lease, or a reply that failed could never be tried again.
+    await ref.set({ error: message.slice(0, 400), sendingAtMs: null }, { merge: true });
     await flagIfDead(platform, credentials, message);
     return { ok: false, error: message };
   }
