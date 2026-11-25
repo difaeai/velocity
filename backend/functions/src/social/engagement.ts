@@ -366,13 +366,16 @@ export async function sendReply(
 ): Promise<{ ok: boolean; error?: string }> {
   const ref = commentRef(platform, networkCommentId);
 
-  // One reply per comment, whoever asks and however often. On 2026-11-25 a
-  // single press of Send in the console reached this function three times in
-  // eighteen seconds, and a second reply does not land in a draft — it lands
-  // under a customer's comment in public, where nobody can take it back.
+  // One reply per comment, whoever asks and however often. Defensive: no user
+  // has reported a double reply, and the 2026-11-25 case that prompted this
+  // turned out to be the demo recorder clicking a card the list had re-rendered
+  // under it. The guard stays because the damage is public and irreversible — a
+  // second reply lands under a customer's comment, where nobody can take it
+  // back — and this is reachable by anything holding a session.
+  //
   // Checking the status without a transaction would not help: the network call
-  // takes seconds, so every caller would read `drafted` before the first one
-  // finished.
+  // takes seconds, so two callers a moment apart both read `drafted` before
+  // either finished.
   const claimed = await db.runTransaction(async (tx) => {
     const row = (await tx.get(ref)).data() as SocialComment | undefined;
     if (row?.status === 'replied') return false;

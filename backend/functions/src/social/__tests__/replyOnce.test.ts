@@ -1,11 +1,14 @@
 /**
  * The one property answering a comment must never lose: it is answered once.
  *
- * On 2026-11-25 a single press of "Send reply" in the console reached
- * `adminReplySocialComment` three times in eighteen seconds, and the duplicate
- * does not land in a draft — it lands under a customer's comment in public.
- * Checking the status first would not have stopped it: the network call takes
- * seconds, so all three callers read `drafted` before any of them finished.
+ * No user has reported a double reply; the 2026-11-25 case that prompted this
+ * was the demo recorder clicking a card the list had re-rendered under it. The
+ * property is worth holding anyway, because a duplicate does not land in a
+ * draft — it lands under a customer's comment in public, where nobody can take
+ * it back.
+ *
+ * Checking the status first would not hold it: the network call takes seconds,
+ * so two callers a moment apart both read `drafted` before either finishes.
  * Hence a transaction, and hence this test against the emulator, where the
  * transaction is real.
  */
@@ -39,7 +42,7 @@ vi.mock('../platforms', async (importOriginal) => {
   };
 });
 
-const { sendReply } = await import('../engagement');
+import { sendReply } from '../engagement';
 
 const ID = 'youtube_c1';
 const ref = () => db().doc(`socialComments/${ID}`);
