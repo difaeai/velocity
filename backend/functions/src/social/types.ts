@@ -808,6 +808,8 @@ export interface SocialComment {
   draftedBy: string | null;
   sentReply: string | null;
   sentAtMs: number | null;
+  /** Set while a reply is being sent, so two callers cannot both send one. */
+  sendingAtMs?: number | null;
   error: string | null;
 }
 
