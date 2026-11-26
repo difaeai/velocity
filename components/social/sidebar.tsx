@@ -46,6 +46,14 @@ export interface SideItem {
   icon: NavIconName;
   /** Other paths that should light this row up — a page and its sub-pages. */
   also?: string[];
+  /**
+   * A live number on the right of the row. The overview used to be boxes of
+   * these; now the nav carries them, so you can see what is waiting without
+   * opening anything (owner, 2026-11-26). Zero draws nothing.
+   */
+  count?: number | null;
+  /** `warn` for a number that is asking you for something. */
+  tone?: 'warn' | 'ok';
 }
 
 export interface SideGroup {
@@ -67,6 +75,7 @@ export function Sidebar({
   pathname,
   brand,
   top,
+  status,
   footer,
   storageKey,
 }: {
@@ -76,6 +85,8 @@ export function Sidebar({
   brand: React.ReactNode;
   /** Anything between the brand and the nav (the section switcher, the plan line). */
   top?: React.ReactNode;
+  /** What the desk is doing this minute — drawn under the nav, hidden on a rail. */
+  status?: React.ReactNode;
   /** The account menu and the help launcher. */
   footer?: React.ReactNode;
   storageKey: string;
@@ -186,6 +197,11 @@ export function Sidebar({
                       >
                         <NavIcon name={item.icon} />
                         <span className="sb-label">{item.label}</span>
+                        {item.count ? (
+                          <span className={`sb-count${item.tone === 'warn' ? ' warn' : ''}`} aria-label={`${item.count} waiting`}>
+                            {item.count > 99 ? '99+' : item.count}
+                          </span>
+                        ) : null}
                       </Link>
                     );
                   })}
@@ -195,6 +211,8 @@ export function Sidebar({
           );
         })}
       </nav>
+
+      {rail || !status ? null : <div className="sb-status">{status}</div>}
 
       <div className="sb-foot">{footer}</div>
     </aside>
@@ -262,7 +280,29 @@ export const SIDEBAR_CSS = `
 .sb-row .ni { color: var(--muted); transition: color .25s ease, transform .3s cubic-bezier(.3,1.5,.5,1); }
 .sb-row:hover .ni, .sb-row.open .ni { color: var(--tint); }
 .sb-row.open .ni { transform: scale(1.06); }
-.sb-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: opacity .26s ease; }
+.sb-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: opacity .26s ease; flex: 1; }
+
+/* The number on a row. It is the old overview tile, shrunk to the one thing
+   it was ever read for: how many, and is it asking me for something. */
+.sb-count { flex: none; min-width: 20px; height: 19px; padding: 0 6px; border-radius: 9px; display: grid; place-items: center;
+  font-size: 11.5px; font-weight: 800; letter-spacing: .2px; color: var(--tint);
+  background: color-mix(in srgb, var(--tint) 12%, transparent); transition: transform .3s cubic-bezier(.3,1.5,.5,1); }
+.sb-count.warn { color: #8a5300; background: #ffeec2; }
+.sb-row:hover .sb-count { transform: scale(1.06); }
+.sb.rail .sb-count { position: absolute; top: 5px; right: 8px; min-width: 0; width: 7px; height: 7px; padding: 0; border-radius: 4px;
+  font-size: 0; background: var(--tint); }
+.sb.rail .sb-count.warn { background: #f0a500; }
+
+/* What she is doing this minute, under the nav. Rail hides it. */
+.sb-status { margin-top: 12px; padding: 11px 12px; border-radius: 14px; border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--forest) 4%, #fff); display: grid; gap: 6px; }
+.sb-status .t { display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 800; letter-spacing: .7px; text-transform: uppercase; color: var(--muted); }
+.sb-status .dot { width: 7px; height: 7px; border-radius: 4px; background: #16a34a; box-shadow: 0 0 0 0 rgba(22,163,74,.5); animation: sbPulse 2.4s ease-out infinite; }
+.sb-status .dot.off { background: #c3ccc7; animation: none; }
+.sb-status p { margin: 0; font-size: 12.5px; line-height: 1.5; color: #14321f; }
+.sb-status a { font-size: 12px; font-weight: 800; color: #8a5300; text-decoration: none; }
+.sb-status a:hover { text-decoration: underline; }
+@keyframes sbPulse { to { box-shadow: 0 0 0 9px rgba(22,163,74,0); } }
 
 /* the rail: icons only, with the label as a tooltip that slides out */
 .sb.rail .sb-row { justify-content: center; padding: 11px 0; gap: 0; }

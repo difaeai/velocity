@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "Vexa",
+    "slug": "vexa",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "vexa",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#000000",
+    "icon": "./assets/icon.png",
+    "newArchEnabled": true,
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#030806"
+      }
+    },
+    "web": { "bundler": "metro", "favicon": "./assets/icon.png" }
+  }
+}

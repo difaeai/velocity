@@ -35,6 +35,7 @@ import { SUPPORT_EMAIL } from '@/lib/site';
 import { STUDIO_PLAN_IDS, STUDIO_PLANS, planIncludes, type StudioNeed, type StudioNeeds } from '@/lib/studio';
 import { WorkspaceProvider, useWorkspace } from '@/lib/workspace';
 import { colors } from '@/lib/config';
+import { useDeskStatus } from '@/lib/deskStatus';
 import { Button, glass } from '@/components/ui';
 import { VelocityIcon } from '@/components/BrandMark';
 import { Sidebar, type SideGroup } from '@/components/social/sidebar';
@@ -267,18 +268,13 @@ const SECTIONS = [
  */
 const VEXA_TOUR: TourStep[] = [
   {
-    // The welcome and the circle are one step, so there is something lit up
-    // from the very first card. A tour that opens on a dimmed screen with
-    // nothing pointed at reads as a mistake (owner, 2026-11-15).
-    target: 'pulse',
+    // The tour opens on the one thing the dashboard now is, so there is
+    // something lit up from the very first card. A tour that opens on a dimmed
+    // screen with nothing pointed at reads as a mistake (owner, 2026-11-15).
+    target: 'area-brain',
     title: 'This is Vexa',
-    say: 'Think of it as a small marketing team that works for you all day. This circle is the whole of it. Your content team, your ads, the agent on WhatsApp, the voice agents. A light means that part is working this minute. A dark one means it is not, and it tells you why. Let me show you the rest. It takes about two minutes.',
+    say: 'Think of it as a small marketing team that works for you all day, and this is how you talk to it. Type what you want in plain words. Make a reel about our weekend offer. Email everyone about Eid. It works out which part of the team should do it, and sends the job there. Let me show you the rest. It takes about a minute.',
     goto: '/dashboard/social',
-  },
-  {
-    target: 'brain',
-    title: 'Start by asking',
-    say: 'This is the quickest way to use Vexa. Type what you want in plain words. Make a reel about our weekend offer. Email everyone about Eid. It works out which part of the team should do it, and sends the job there.',
   },
   {
     target: 'approval',
@@ -286,24 +282,9 @@ const VEXA_TOUR: TourStep[] = [
     say: 'This is the one decision that matters. Either every piece waits for you to approve it, or Vexa posts on its own every day. Start by approving them yourself. When you trust what it writes, switch it over.',
   },
   {
-    target: 'area-content',
-    title: 'Your content',
-    say: 'Everything that goes out in your name is in this area. What has been posted, what is waiting for you, and how far each piece travelled.',
-  },
-  {
-    target: 'area-ads',
-    title: 'Your ads',
-    say: 'This area is your money buying reach on Facebook, Instagram and Google. The Ad Expert plans the campaign with you first, and you set the daily limit. It never spends more than you allow.',
-  },
-  {
-    target: 'funnel',
-    title: 'Your sales',
-    say: 'This is the part most people never see. Somebody watches a reel, asks the price underneath, Vexa answers and gives them your WhatsApp. Then it talks to them there until they buy. Every step of that journey is counted here, and underneath you can read exactly what Vexa said to each person.',
-  },
-  {
     target: 'nav',
-    title: 'The five departments',
-    say: 'The menu is grouped the same way. Content, Ads, Sales, Research, and the things you set up once. Each one says what it does, so you never have to guess which page you want.',
+    title: 'Everything else is in here',
+    say: 'The dashboard is only the asking. The rest of the business is this menu, grouped the way you think about it: Content is what goes out, Ads is your money buying reach, Sales is Vexa talking to people and closing them, then Research and the things you set up once. The number on a row is what is waiting there — pieces to approve, comments nobody has answered, campaigns running. Underneath, it says what she is doing this minute.',
   },
   {
     target: 'accounts-list',
@@ -469,6 +450,7 @@ function StudioShell({ email, name, signOut, children }: ShellProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { ws, includes } = useWorkspace();
+  const status = useDeskStatus();
 
   // The wall clock is subscribed to, not read during render.
   const [nowMs, setNowMs] = useState(0);
@@ -499,6 +481,9 @@ function StudioShell({ email, name, signOut, children }: ShellProps) {
 
   // A customer opens only their desk's own pages — never Velocity's admin ones — and only billing while locked.
   const need = NEED_OF[pathname];
+  // What the desk last told us about itself. Published by the pages that read
+  // it anyway, so the nav costs nothing extra.
+  const desk = status;
   const misplaced =
     !need || (locked && !ACCOUNT_PAGES.includes(pathname)) || (pathname === '/dashboard/social' && home !== pathname);
   // Paid for, never described: the workspace is opened the moment the money
@@ -515,17 +500,29 @@ function StudioShell({ email, name, signOut, children }: ShellProps) {
   if (!ws) return <Center>Loading your workspace…</Center>;
   if (unfinished) return <Center>Finishing your sign-up…</Center>;
 
+  /** The overview's numbers, now on the rows they were always about. */
+  const countOf: Record<string, { count: number | null; tone?: 'warn' | 'ok' }> = desk
+    ? {
+        '/dashboard/social/queue': { count: desk.waiting, tone: 'warn' },
+        '/dashboard/social/inbox': { count: desk.comments, tone: 'warn' },
+        '/dashboard/social/ads': { count: desk.liveAds },
+        '/dashboard/social/whatsapp': { count: desk.chats },
+      }
+    : {};
+
   const nav = locked
     ? [ACCOUNT_NAV]
     : [
         ...SOCIAL_NAV.map((g) => ({
           ...g,
           // The old Sales agents plan has nothing on Connected accounts: its mailbox is set on the Sales page.
-          items: g.items.filter(
-            (i) =>
-              includes(NEED_OF[i.href] ?? 'any') &&
-              (i.href !== '/dashboard/social/accounts' || includes(['content', 'ads', 'research'])),
-          ),
+          items: g.items
+            .filter(
+              (i) =>
+                includes(NEED_OF[i.href] ?? 'any') &&
+                (i.href !== '/dashboard/social/accounts' || includes(['content', 'ads', 'research'])),
+            )
+            .map((i) => ({ ...i, ...(countOf[i.href] ?? {}) })),
         })),
         ACCOUNT_NAV,
       ].filter((g) => g.items.length);
@@ -554,6 +551,31 @@ function StudioShell({ email, name, signOut, children }: ShellProps) {
             <div style={{ fontSize: 12, color: colors.muted, margin: '0 0 2px 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {ws.name} · {STUDIO_PLANS[ws.plan].name} plan
             </div>
+          }
+          status={
+            desk ? (
+              <>
+                <span className="t">
+                  <span className={`dot${desk.running ? '' : ' off'}`} aria-hidden />
+                  {desk.running ? 'Working' : 'Paused'}
+                </span>
+                <p>
+                  {desk.doing ??
+                    (desk.running
+                      ? desk.nextRun
+                        ? `Next run ${desk.nextRun}.`
+                        : 'Waiting for the next run.'
+                      : 'The daily run is off. Ask for something and she starts.')}
+                </p>
+                {desk.blockers ? (
+                  <Link href={desk.blockerHref ?? '/dashboard/social/accounts'}>
+                    {desk.blockers === 1 && desk.blocker
+                      ? `${desk.blocker} →`
+                      : `${desk.blockers} things need you →`}
+                  </Link>
+                ) : null}
+              </>
+            ) : null
           }
           footer={
             <AccountMenu
