@@ -21,7 +21,6 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { collection, doc, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase';
@@ -36,7 +35,6 @@ import {
   type SocialAccountDoc,
   type SocialEmployee,
   type SocialFormat,
-  type SocialPlatform,
   type SalesChatDoc,
   type SocialCommentDoc,
   type SocialPostDoc,
@@ -44,8 +42,6 @@ import {
   type SocialSettings,
 } from '@/lib/api';
 import { PLATFORM_META, longDate } from '@/components/social/shared';
-import { InstagramConnect } from '@/components/social/instagramConnect';
-import { VideoConnect } from '@/components/social/videoConnect';
 import { readBlockers } from '@/components/social/blockers';
 import { localHourLabel } from '@/components/social/launch';
 import { ApprovalBox, readDesk } from '@/components/social/dashboard';
@@ -76,7 +72,7 @@ const FIRST_PAINT = {
 } as SocialSettings;
 
 export default function SocialOverview() {
-  const { path, includes, ws } = useWorkspace();
+  const { path, includes } = useWorkspace();
   const [accounts, setAccounts] = useState<SocialAccountDoc[]>([]);
   const [posts, setPosts] = useState<SocialPostDoc[]>([]);
   const [settings, setSettings] = useState<SocialSettings | null>(null);
@@ -345,6 +341,8 @@ export default function SocialOverview() {
       liveAds: campaigns.filter((c) => c.status === 'active').length,
       chats: chats.filter((c) => !['won', 'lost', 'stopped'].includes(c.stage)).length,
       blockers: blockers.length,
+      blocker: blockers[0]?.label ?? null,
+      blockerHref: blockers[0]?.href ?? null,
       running: Boolean(settings?.enabled),
       nextRun,
       doing,
@@ -355,30 +353,16 @@ export default function SocialOverview() {
     <div className="fx fx-brain-page">
       <style>{FX_CSS + BRAIN_CSS + SEARCH_CSS + PAGE_CSS}</style>
 
-      {/* The dashboard is the ask and nothing else. Everything that used to be
-          stacked under it — content, ads, sales, the numbers — is in the menu,
-          with its count on the row (owner, 2026-11-26). */}
-      <header className="bp-head fx-rise">
-        <h1>
-          Tell Vexa what you want<span>.</span>
-        </h1>
-        <p>
-          In your own words. She works out which part of the team should do it — and down there you choose who presses
-          send.
-        </p>
-      </header>
-
+      {/* The Brain, and nothing else. No heading, no boxes, no prompts: the
+          whole of the rest of the console is the menu beside it (owner,
+          2026-11-26, twice). The only thing that ever appears here besides it
+          is the one line saying whether what you just asked for worked. */}
       {error ? <p style={{ color: colors.danger, marginBottom: 14 }}>{error}</p> : null}
       {notice ? (
         <p className="fx-rise" style={{ color: colors.success, fontWeight: 700, marginBottom: 14 }}>
           {notice}
         </p>
       ) : null}
-
-      {/* Nothing can go out until an account is connected, so the one blocker
-          that stops the ask working stays on this page rather than only in the
-          menu. It disappears the moment they are all in. */}
-      {ws?.platforms?.length ? <ChosenPlatforms platforms={ws.platforms} accounts={accounts} /> : null}
 
       {settings ? (
         <div id="make" style={{ scrollMarginTop: 16 }} data-tour="area-brain">
@@ -427,35 +411,7 @@ export default function SocialOverview() {
 }
 
 const PAGE_CSS = `
-/* The page is one thing now, so it can breathe: the ask sits where the eye
-   lands, and nothing competes with it down the page. */
+/* One thing on the page, so it gets the room. */
 .fx-brain-page { max-width: 1180px; }
-.bp-head { margin: 2px 0 18px; }
-.bp-head h1 { margin: 0; font-size: clamp(26px, 3.4vw, 38px); font-weight: 900; letter-spacing: -.5px; color: #0c2418; }
-.bp-head h1 span { color: #16a34a; }
-.bp-head p { margin: 8px 0 0; max-width: 62ch; font-size: 14.5px; line-height: 1.6; color: #5d6b63; }
 `;
 
-function ChosenPlatforms({ platforms, accounts }: { platforms: SocialPlatform[]; accounts: SocialAccountDoc[] }) {
-  const by = (p: SocialPlatform) => accounts.find((x) => x.platform === p);
-  const open = platforms.filter((p) => by(p)?.status !== 'connected');
-  if (!open.length) return null;
-  // Instagram and Facebook share one Facebook sign-in; the rest are pasted on Connected accounts.
-  const pasted = open.filter((p) => !['instagram', 'facebook', 'youtube', 'tiktok'].includes(p));
-  return (
-    <section className="fx-rise" style={{ marginBottom: 16 }}>
-      <strong style={{ fontSize: 14 }}>Connect where you post</strong>
-      <p className="fx-muted" style={{ fontSize: 13, margin: '4px 0 12px', lineHeight: 1.55 }}>
-        You chose {open.map((p) => PLATFORM_META[p].label).join(', ')} at sign-up. Nothing goes out until an account is connected.
-      </p>
-      {open.includes('instagram') || open.includes('facebook') ? <InstagramConnect account={by('instagram')} /> : null}
-      {open.includes('youtube') ? <VideoConnect provider="youtube" account={by('youtube')} /> : null}
-      {open.includes('tiktok') ? <VideoConnect provider="tiktok" account={by('tiktok')} /> : null}
-      {pasted.length ? (
-        <Link href="/dashboard/social/accounts" style={{ color: colors.secondary, fontWeight: 800, fontSize: 13.5 }}>
-          Connect {pasted.map((p) => PLATFORM_META[p].label).join(', ')} on Connected accounts →
-        </Link>
-      ) : null}
-    </section>
-  );
-}

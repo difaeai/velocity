@@ -568,8 +568,10 @@ function StudioShell({ email, name, signOut, children }: ShellProps) {
                       : 'The daily run is off. Ask for something and she starts.')}
                 </p>
                 {desk.blockers ? (
-                  <Link href="/dashboard/social/accounts">
-                    {desk.blockers} thing{desk.blockers === 1 ? '' : 's'} need you →
+                  <Link href={desk.blockerHref ?? '/dashboard/social/accounts'}>
+                    {desk.blockers === 1 && desk.blocker
+                      ? `${desk.blocker} →`
+                      : `${desk.blockers} things need you →`}
                   </Link>
                 ) : null}
               </>

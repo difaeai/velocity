@@ -26,6 +26,10 @@ export interface DeskStatus {
   chats: number;
   /** Things stopping the team working at all. */
   blockers: number;
+  /** The first of them, named — "Nowhere to post". */
+  blocker: string | null;
+  /** Where that one is fixed. */
+  blockerHref: string | null;
   /** Is the daily run on? */
   running: boolean;
   /** "today, 10:00" — when she next makes the day's pieces. */
