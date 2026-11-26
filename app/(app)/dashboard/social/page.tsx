@@ -1,18 +1,23 @@
 'use client';
 
 /**
- * Manage social → Dashboard.
+ * Manage social → Dashboard. One thing: the Brain.
  *
- * A glance, not a read: tell the brain what you want and it sends the work to
- * the right agent, wired into the Approval box that decides how it goes out;
- * then the numbers, how the ads are running and how the sales agents are
- * doing. Everything the team made lives on the content page with the calendar;
- * each section here links to its own page for the detail.
+ * It used to be four boxes stacked down the page — ask, content, ads, sales —
+ * each a summary of a page that already exists in the menu. The owner asked
+ * (2026-11-26) for the dashboard to be the Brain and nothing else, with
+ * everything else in the sidebar, so:
  *
- * Kept from the page before it, because each is load-bearing:
- *  - **asked once**: should the desk ask before posting? (`autoPublish`) — now
- *    the Approval box, which says "Choose one" until it is answered
- *  - **one box** for everything the desk makes, posts and ads alike — the brain
+ *  • this page is the ask, the map of where the work goes, and the one
+ *    decision that matters — who presses send;
+ *  • the numbers that were in the tiles are now counts on the nav rows they
+ *    were always about, and what she is doing this minute is the status block
+ *    under the menu. Both are fed by `publishDeskStatus` below, from the reads
+ *    this page already makes — the sidebar costs no extra call.
+ *
+ * Load-bearing, and kept: **asked once** — should the desk ask before posting
+ * (`autoPublish`), which is the Approval box, and stays unanswered until you
+ * answer it.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -27,12 +32,10 @@ import {
   socialApi,
   type AdCampaignDoc,
   type AdsConfigDoc,
-  type SalesLeadDoc,
   type SalesSettingsDoc,
   type SocialAccountDoc,
   type SocialEmployee,
   type SocialFormat,
-  type SocialPageRead,
   type SocialPlatform,
   type SalesChatDoc,
   type SocialCommentDoc,
@@ -43,15 +46,13 @@ import {
 import { PLATFORM_META, longDate } from '@/components/social/shared';
 import { InstagramConnect } from '@/components/social/instagramConnect';
 import { VideoConnect } from '@/components/social/videoConnect';
-import { Blockers, readBlockers } from '@/components/social/blockers';
-import { LaunchSequence, localHourLabel } from '@/components/social/launch';
-import { AREA_CSS, AdsSection, ApprovalBox, Area, KpiTile, SalesSection, readDesk } from '@/components/social/dashboard';
-import { PULSE_CSS, VexaPulse } from '@/components/social/pulse';
+import { readBlockers } from '@/components/social/blockers';
+import { localHourLabel } from '@/components/social/launch';
+import { ApprovalBox, readDesk } from '@/components/social/dashboard';
 import { SEARCH_CSS } from '@/components/social/search';
-import { SalesFunnel } from '@/components/social/funnel';
 import { BRAIN_CSS, Brain } from '@/components/social/brain';
-import { AreaSpark, FX_CSS } from '@/components/social/fx';
-import { compact } from '@/components/charts';
+import { FX_CSS } from '@/components/social/fx';
+import { publishDeskStatus } from '@/lib/deskStatus';
 import { useDraft } from '@/lib/draft';
 
 /** Every switch the daily run needs; pausing touches `enabled` and nothing else — a stop, not a reset. */
@@ -75,7 +76,7 @@ const FIRST_PAINT = {
 } as SocialSettings;
 
 export default function SocialOverview() {
-  const { path, house, includes, ws } = useWorkspace();
+  const { path, includes, ws } = useWorkspace();
   const [accounts, setAccounts] = useState<SocialAccountDoc[]>([]);
   const [posts, setPosts] = useState<SocialPostDoc[]>([]);
   const [settings, setSettings] = useState<SocialSettings | null>(null);
@@ -85,13 +86,11 @@ export default function SocialOverview() {
   const [ads, setAds] = useState<AdsConfigDoc | null>(null);
   const [campaigns, setCampaigns] = useState<AdCampaignDoc[]>([]);
   const [sales, setSales] = useState<SalesSettingsDoc | null>(null);
-  const [leads, setLeads] = useState<SalesLeadDoc[]>([]);
   const [chats, setChats] = useState<SalesChatDoc[]>([]);
   const [comments, setComments] = useState<SocialCommentDoc[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
-  const [pageRead, setPageRead] = useState<SocialPageRead | null>(null);
   const [want, setWant] = useState<SocialFormat>('reel');
   const { workspaceId } = useAuth();
   // Held here so "Make one like this" on the content page can fill the box — and kept in
@@ -147,16 +146,6 @@ export default function SocialOverview() {
   useEffect(
     () =>
       onSnapshot(
-        doc(db, path('socialInsights/latest')),
-        (snap) => setPageRead(snap.exists() ? (snap.data() as SocialPageRead) : null),
-        () => setPageRead(null),
-      ),
-    [path],
-  );
-
-  useEffect(
-    () =>
-      onSnapshot(
         doc(db, path('system/socialAds')),
         (snap) => setAds(snap.exists() ? (snap.data() as AdsConfigDoc) : null),
         () => setAds(null),
@@ -184,15 +173,7 @@ export default function SocialOverview() {
       },
       () => setSales(null),
     );
-    const stopLeads = onSnapshot(
-      query(collection(db, path('salesLeads')), orderBy('createdAtMs', 'desc'), limit(300)),
-      (snap) => setLeads(snap.docs.map((d) => ({ ...(d.data() as SalesLeadDoc), id: d.id }))),
-      () => setLeads([]),
-    );
-    return () => {
-      stopSettings();
-      stopLeads();
-    };
+    return stopSettings;
   }, [path, showSales]);
 
   // The funnel's two halves: what people asked in public under a post, and the
@@ -344,31 +325,48 @@ export default function SocialOverview() {
     );
 
   const desk = useMemo(() => readDesk(posts, nowMs), [posts, nowMs]);
-  const followers = connected.reduce((n, a) => n + (a.followers ?? 0), 0);
   const networks = connected.length
     ? connected.map((a) => PLATFORM_META[a.platform].label.replace(' Page', '')).join(' and ')
     : 'your accounts';
 
-  return (
-    <div className="fx">
-      <style>{FX_CSS + BRAIN_CSS + AREA_CSS + PULSE_CSS + SEARCH_CSS}</style>
+  // One read, shared: the counts the nav rows show and the line under the menu
+  // come from what this page already watches.
+  const doing = useMemo(() => {
+    const live = [...desk.doing.values()].filter((d) => d.now);
+    if (!live.length) return null;
+    const one = live[0];
+    return `${one.stage.replace(/_/g, ' ')} — “${one.post.angle?.slice(0, 46) || 'a piece'}”`;
+  }, [desk]);
 
-      {/* Down the page, never across it (owner, 2026-11-16): what Vexa is doing
-          this minute, then the four named boxes, each one a box you open. */}
-      <div style={{ marginBottom: 18 }}>
-        <VexaPulse
-          desk={desk}
-          settings={settings}
-          ads={ads}
-          campaigns={campaigns}
-          sales={sales}
-          chats={chats}
-          leads={leads}
-          pageRead={pageRead}
-          nowMs={nowMs}
-          has={includes}
-        />
-      </div>
+  useEffect(() => {
+    publishDeskStatus({
+      waiting: desk.waiting.length,
+      comments: comments.filter((c) => c.status === 'new' || c.status === 'drafted').length,
+      liveAds: campaigns.filter((c) => c.status === 'active').length,
+      chats: chats.filter((c) => !['won', 'lost', 'stopped'].includes(c.stage)).length,
+      blockers: blockers.length,
+      running: Boolean(settings?.enabled),
+      nextRun,
+      doing,
+    });
+  }, [desk, comments, campaigns, chats, blockers, settings, nextRun, doing]);
+
+  return (
+    <div className="fx fx-brain-page">
+      <style>{FX_CSS + BRAIN_CSS + SEARCH_CSS + PAGE_CSS}</style>
+
+      {/* The dashboard is the ask and nothing else. Everything that used to be
+          stacked under it — content, ads, sales, the numbers — is in the menu,
+          with its count on the row (owner, 2026-11-26). */}
+      <header className="bp-head fx-rise">
+        <h1>
+          Tell Vexa what you want<span>.</span>
+        </h1>
+        <p>
+          In your own words. She works out which part of the team should do it — and down there you choose who presses
+          send.
+        </p>
+      </header>
 
       {error ? <p style={{ color: colors.danger, marginBottom: 14 }}>{error}</p> : null}
       {notice ? (
@@ -377,28 +375,13 @@ export default function SocialOverview() {
         </p>
       ) : null}
 
-      {/* a Studio workspace's first days: market read → content → posting → funnel → close */}
-      {!house ? <LaunchSequence settings={settings} /> : null}
-      {/* the networks picked at sign-up, each connected from right here */}
+      {/* Nothing can go out until an account is connected, so the one blocker
+          that stops the ask working stays on this page rather than only in the
+          menu. It disappears the moment they are all in. */}
       {ws?.platforms?.length ? <ChosenPlatforms platforms={ws.platforms} accounts={accounts} /> : null}
 
-      {/* what is actually stopping it, if anything */}
-      {readiness ? <Blockers blockers={blockers} /> : null}
-
-      {/* Four boxes, in the order the work happens: you ask for something, it
-          goes out in your name, you pay to put it in front of more people,
-          somebody answers and buys. Each one is a name you press to open — the
-          whole page at once was the thing that was confusing (owner,
-          2026-11-15), so only the first is open to begin with. */}
       {settings ? (
-        <Area
-          n={1}
-          tour="area-brain"
-          tint="#004c31"
-          title="Brain"
-          says="Tell Vexa what you want, in your own words. It works out which agent should do it — and this is where you choose who presses send."
-        >
-          <div id="make" style={{ scrollMarginTop: 16 }}>
+        <div id="make" style={{ scrollMarginTop: 16 }} data-tour="area-brain">
           <Brain
             settings={settings}
             accounts={accounts}
@@ -435,104 +418,23 @@ export default function SocialOverview() {
               onRunning={setRunning}
             />
           </Brain>
-          </div>
-        </Area>
-      ) : (
-        <div className="fx-skel" style={{ height: 120, borderRadius: 28, marginBottom: 18 }} />
-      )}
-
-      <Area
-        n={2}
-        tour="area-content"
-        tint="#0058bb"
-        title="Content"
-        says="Everything that goes out in your name: what was posted, how far it travelled, and what is waiting for your Approve."
-        href="/dashboard/social/queue"
-        cta="Open content & calendar"
-        open={false}
-      >
-        <div className="fx-grid-kpi">
-          <KpiTile
-            i={3}
-            icon="📤"
-            tint="#e3f4ea"
-            label="Posted this week"
-            value={desk.postedThisWeek}
-            delta={nowMs ? desk.postedThisWeek - desk.postedLastWeek : null}
-            hint="vs last week"
-            href="/dashboard/social/queue"
-          >
-            <AreaSpark values={desk.perDay} height={34} />
-          </KpiTile>
-          <KpiTile
-            i={4}
-            icon="👥"
-            tint="#e6eefc"
-            label="Followers"
-            value={followers || null}
-            format={(n) => compact(Math.round(n))}
-            hint={
-              connected.length
-                ? connected.map((a) => PLATFORM_META[a.platform].label.split(' ')[0]).join(' + ')
-                : 'No account connected'
-            }
-            href="/dashboard/social/accounts"
-          />
-          <KpiTile
-            i={5}
-            icon="👁"
-            tint="#fde8ea"
-            label="Usual reach per post"
-            value={pageRead?.medianReach || null}
-            format={(n) => compact(Math.round(n))}
-            hint={pageRead?.medianReach ? 'From your own page' : 'Shows after the first posts'}
-            href="/dashboard/social/performance"
-          />
-          <KpiTile
-            i={6}
-            icon="🔔"
-            tint={desk.waiting.length ? '#fff1c7' : '#eef2ef'}
-            label="Waiting for you"
-            value={desk.waiting.length}
-            hint={desk.waiting.length ? 'Open them and press Approve' : 'All clear'}
-            href="/dashboard/social/queue"
-          />
         </div>
-      </Area>
-
-      {showAds ? (
-        <Area
-          n={3}
-          tour="area-ads"
-          tint="#b45309"
-          title="Ads"
-          says="Your money buying reach on Facebook, Instagram and Google. The Ad Expert plans it with you, and never spends past the limit you set."
-          href="/dashboard/social/ads"
-          cta="Open the Ad Expert"
-          open={false}
-        >
-          <AdsSection ads={ads} campaigns={campaigns} nowMs={nowMs} house={house} i={7} />
-        </Area>
-      ) : null}
-
-      {showSales ? (
-        <Area
-          n={showAds ? 4 : 3}
-          tour="area-sales"
-          tint="#11794c"
-          title="Sales"
-          says="Vexa talking to people and closing them — from someone asking the price under a post, to the money."
-          href="/dashboard/social/whatsapp"
-          cta="Open the conversations"
-          open={false}
-        >
-          <SalesFunnel chats={chats} comments={comments} nowMs={nowMs} autoReply={Boolean(settings?.autoReply)} i={7} />
-          <SalesSection sales={sales} leads={leads} nowMs={nowMs} i={8} />
-        </Area>
-      ) : null}
+      ) : (
+        <div className="fx-skel" style={{ height: 420, borderRadius: 28 }} />
+      )}
     </div>
   );
 }
+
+const PAGE_CSS = `
+/* The page is one thing now, so it can breathe: the ask sits where the eye
+   lands, and nothing competes with it down the page. */
+.fx-brain-page { max-width: 1180px; }
+.bp-head { margin: 2px 0 18px; }
+.bp-head h1 { margin: 0; font-size: clamp(26px, 3.4vw, 38px); font-weight: 900; letter-spacing: -.5px; color: #0c2418; }
+.bp-head h1 span { color: #16a34a; }
+.bp-head p { margin: 8px 0 0; max-width: 62ch; font-size: 14.5px; line-height: 1.6; color: #5d6b63; }
+`;
 
 function ChosenPlatforms({ platforms, accounts }: { platforms: SocialPlatform[]; accounts: SocialAccountDoc[] }) {
   const by = (p: SocialPlatform) => accounts.find((x) => x.platform === p);
