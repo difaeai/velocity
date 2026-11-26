@@ -8,7 +8,8 @@
     "web": "expo start --web",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check": "tsc --noEmit && node scripts/check-intent.mjs"
   },
   "dependencies": {
     "@expo/metro-runtime": "~56.0.15",

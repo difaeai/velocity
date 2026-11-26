@@ -38,7 +38,7 @@ import {
   useToast,
 } from '../components/kit';
 import { useAction } from '../net';
-import { commit, useDb } from '../store';
+import { APP_VERSION, commit, OWNER, useDb } from '../store';
 import { C, R } from '../theme';
 
 const FIGURE = require('../../assets/vexa.png');
@@ -201,7 +201,9 @@ export default function ProfileScreen({
         <Row icon={<LogoutIcon size={19} />} label="Log out" right={null} onPress={() => setBye(true)} index={4} />
 
         <Btn label="Delete my account" kind="danger" icon={<TrashIcon size={16} />} onPress={() => setWipe(true)} full style={{ marginTop: 14 }} />
-        <Text style={st.version}>Vexa v2.0.5 · Berreto (Private) Limited</Text>
+        <Text style={st.version}>
+          Vexa v{APP_VERSION} · {OWNER}
+        </Text>
       </Page>
 
       {/* update the business */}

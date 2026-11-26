@@ -39,7 +39,21 @@ import {
   useToast,
 } from '../components/kit';
 import { useAction, useLoad } from '../net';
-import { commit, db, PLATFORMS, PLATFORM_NAME, uid, useDb, type Campaign, type Platform } from '../store';
+import {
+  audienceOf,
+  COST,
+  commit,
+  costPerLead,
+  cpmPkr,
+  db,
+  PLATFORMS,
+  PLATFORM_NAME,
+  record,
+  uid,
+  useDb,
+  type Campaign,
+  type Platform,
+} from '../store';
 import { C, R } from '../theme';
 
 type View_ = 'live' | 'all' | 'ended';
@@ -118,8 +132,18 @@ export default function AdsAgent() {
     if (step < 3) return setStep(step + 1);
 
     launch.run(1700, () => {
-      data.campaigns.unshift({ ...wizard, id: uid(), status: 'live' });
-      commit();
+      const made = { ...wizard, id: uid(), status: 'live' as const };
+      data.campaigns.unshift(made);
+      record({
+        agent: 'Ads',
+        text: `Launched “${made.name}” at PKR ${made.budget.toLocaleString('en-US')} a day in ${made.city}.`,
+        credits: COST.campaign,
+        what: made.name,
+        notice: {
+          title: `“${made.name}” is live`,
+          line: `PKR ${made.budget.toLocaleString('en-US')} a day, ${made.city}. She stops at the budget.`,
+        },
+      });
       setWizard(null);
       setStep(0);
       say('Campaign is live');
@@ -234,7 +258,10 @@ export default function AdsAgent() {
                         small
                         onPress={() => {
                           c.status = c.status === 'live' ? 'paused' : 'live';
-                          commit();
+                          record({
+                            agent: 'Ads',
+                            text: `${c.status === 'live' ? 'Restarted' : 'Paused'} “${c.name}”.`,
+                          });
                           say(c.status === 'live' ? 'Back on' : 'Paused — no further spend');
                         }}
                       />
@@ -310,9 +337,9 @@ export default function AdsAgent() {
                   <Text style={st.blockTitle}>Why it costs what it costs</Text>
                 </View>
                 <Text style={st.blockNote}>
-                  You are paying PKR 114 per thousand people reached. Half your budget goes to Instagram reels, where
-                  it is cheapest for you. The Friday rise is everyone else bidding for the same evening — Vexa moves
-                  the spend to Saturday morning if it stays expensive.
+                  You are paying PKR {cpmPkr().toLocaleString('en-US')} per thousand people reached, and PKR{' '}
+                  {costPerLead().toLocaleString('en-US')} for each enquiry that comes of it. The evening rise is everyone
+                  else bidding for the same hours — she moves the spend to the morning if it stays expensive.
                 </Text>
               </View>
             </Glass>
@@ -390,7 +417,10 @@ export default function AdsAgent() {
                     set('interests', wizard.interests.includes(i) ? wizard.interests.filter((x) => x !== i) : [...wizard.interests, i])
                   }
                 />
-                <Text style={st.hint}>Vexa estimates 180,000 people match this in {wizard.city}.</Text>
+                <Text style={st.hint}>
+                  Vexa estimates {audienceOf(wizard.city, wizard.interests).toLocaleString('en-US')} people match this in{' '}
+                  {wizard.city}.
+                </Text>
               </>
             ) : null}
 
@@ -409,8 +439,8 @@ export default function AdsAgent() {
                   <View style={st.block}>
                     <Text style={st.blockTitle}>What that buys</Text>
                     <Text style={st.blockNote}>
-                      About {Math.round((wizard.budget / 114) * 1000).toLocaleString('en-US')} people reached a day, and
-                      roughly {Math.max(1, Math.round(wizard.budget / 115))} enquiries. PKR{' '}
+                      About {Math.round((wizard.budget / cpmPkr()) * 1000).toLocaleString('en-US')} people reached a day, and
+                      roughly {Math.max(1, Math.round(wizard.budget / Math.max(1, costPerLead())))} enquiries. PKR{' '}
                       {(wizard.budget * 30).toLocaleString('en-US')} a month at this rate.
                     </Text>
                     <Text style={st.blockNote}>

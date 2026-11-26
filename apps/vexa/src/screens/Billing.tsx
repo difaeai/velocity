@@ -31,15 +31,8 @@ import {
   useToast,
 } from '../components/kit';
 import { useAction, useLoad } from '../net';
-import { commit, db, uid, useDb, type Card } from '../store';
+import { BANK, commit, db, PLANS, uid, useDb, type Card } from '../store';
 import { C, R } from '../theme';
-
-const BANK = [
-  ['Title', 'Berreto'],
-  ['Bank', 'Meezan Bank'],
-  ['Account', 'PK36 MEZN 0001 2345 6789 0123'],
-  ['Branch', 'Gulberg III, Lahore'],
-];
 
 export default function Billing({ onOpen }: { onOpen?: (title: string) => void }) {
   const data = useDb();
@@ -106,13 +99,13 @@ export default function Billing({ onOpen }: { onOpen?: (title: string) => void }
                 <View style={{ flex: 1 }}>
                   <Text style={st.planName}>Vexa {data.me.plan}</Text>
                   <Text style={st.planSub}>
-                    ${data.me.plan === 'Starter' ? 20 : data.me.plan === 'Pro' ? 26 : 32} a month ·{' '}
+                    ${PLANS.find((p) => p.key === data.me.plan)?.month ?? 26} a month ·{' '}
                     {data.me.yearly ? 'billed yearly' : 'billed monthly'}
                   </Text>
                 </View>
                 <Tag text="Active" tone="green" />
               </View>
-              <Text style={st.planNote}>Renews 1 Dec 2026. Cancel any time; it runs to the end of the month you paid for.</Text>
+              <Text style={st.planNote}>Renews {new Date(data.me.renews).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}. Cancel any time; it runs to the end of the month you paid for.</Text>
               <Btn label="Change plan" kind="ghost" small onPress={() => onOpen?.('Vexa Pro')} full />
             </View>
           </Glass>
@@ -221,7 +214,7 @@ export default function Billing({ onOpen }: { onOpen?: (title: string) => void }
                 <View style={st.inv}>
                   <View style={{ flex: 1 }}>
                     <Text style={st.invNo}>{inv.no}</Text>
-                    <Text style={st.invDate}>{inv.date}</Text>
+                    <Text style={st.invDate}>{new Date(inv.at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</Text>
                   </View>
                   <Text style={st.invAmount}>${inv.amount}</Text>
                   {inv.state === 'paid' ? <CheckCircleIcon size={18} /> : <Tag text="Due" tone="warn" />}

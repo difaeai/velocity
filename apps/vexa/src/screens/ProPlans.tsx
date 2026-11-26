@@ -15,31 +15,8 @@ import {
   useToast,
 } from '../components/kit';
 import { useAction } from '../net';
-import { commit, useDb } from '../store';
+import { commit, PLANS, record, useDb, type Plan } from '../store';
 import { C, R } from '../theme';
-
-type Plan = 'Starter' | 'Pro' | 'Business';
-
-const PLANS: Array<{ key: Plan; month: number; line: string; has: string[] }> = [
-  {
-    key: 'Starter',
-    month: 20,
-    line: 'One account, posts written and scheduled for you.',
-    has: ['1 connected account', '40 pieces a month', 'Answers your DMs', '1,500 credits'],
-  },
-  {
-    key: 'Pro',
-    month: 26,
-    line: 'Every account, ads included, and she answers customers herself.',
-    has: ['5 connected accounts', 'Unlimited pieces', 'Runs your ads', '3,500 credits', 'Research briefs', 'Learns your rules'],
-  },
-  {
-    key: 'Business',
-    month: 32,
-    line: 'For a team: more hands, more accounts, someone to call.',
-    has: ['15 connected accounts', 'Everything in Pro', '10,000 credits', 'Three people on the account', 'A human to call'],
-  },
-];
 
 const FAQ = [
   ['Can I stop whenever I like?', 'Yes. It runs to the end of the month you have paid for, then stops.'],
@@ -71,7 +48,8 @@ export default function ProPlans() {
               <View style={{ flex: 1 }}>
                 <Text style={st.nowTitle}>You are on Vexa {data.me.plan}</Text>
                 <Text style={st.nowSub}>
-                  ${PLANS.find((p) => p.key === data.me.plan)?.month ?? 26} a month · renews 1 Dec
+                  ${PLANS.find((p) => p.key === data.me.plan)?.month ?? 26} a month · renews{' '}
+                  {new Date(data.me.renews).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                 </Text>
               </View>
               <Tag text="Active" tone="green" />
@@ -175,6 +153,10 @@ export default function ProPlans() {
             if (pick) data.me.plan = pick;
             data.me.yearly = yearly;
             commit();
+            record({
+              agent: 'Vexa',
+              text: `You moved to Vexa ${data.me.plan}${yearly ? ', billed yearly' : ''}.`,
+            });
             setPick(null);
             say(`You are on Vexa ${data.me.plan}`);
           })
@@ -184,13 +166,14 @@ export default function ProPlans() {
       <Confirm
         open={cancel}
         title="Cancel your plan?"
-        line="Vexa finishes what is already scheduled, then stops writing, answering and running ads on 1 Dec."
+        line={`Vexa finishes what is already scheduled, then stops writing, answering and running ads on ${new Date(data.me.renews).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}.`}
         cta="Cancel plan"
         danger
         onCancel={() => setCancel(false)}
         onConfirm={() => {
           setCancel(false);
-          say('Cancelled — she works until 1 Dec');
+          record({ agent: 'Vexa', text: 'You cancelled the plan — she works to the end of the month you paid for.' });
+          say('Cancelled — she works to the end of the month');
         }}
       />
 

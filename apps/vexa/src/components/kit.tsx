@@ -24,26 +24,27 @@ import {
 import Svg, { Circle, Path } from 'react-native-svg';
 import { useEnter } from '../anim';
 import { C, R } from '../theme';
-import { GoogleMark, InstagramMark, MetaMark, TiktokMark, WhatsappMark, YoutubeMark } from './BrandMarks';
+import { GmailMark, GoogleMark, InstagramMark, MetaMark, TiktokMark, WhatsappMark, YoutubeMark } from './BrandMarks';
 import Glass from './Glass';
 import { CheckIcon, CloseIcon, PlusIcon, RefreshIcon, WifiOffIcon } from './Icons';
-import type { Platform } from '../store';
+import type { Channel } from '../store';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 const SCREEN = Dimensions.get('window');
 
 /* ───────────────────────── brand marks ───────────────────────── */
 
-export function PlatformMark({ k, size = 18 }: { k: Platform | 'whatsapp'; size?: number }) {
+export function PlatformMark({ k, size = 18 }: { k: Channel; size?: number }) {
   if (k === 'instagram') return <InstagramMark size={size} />;
   if (k === 'facebook') return <MetaMark size={size} />;
   if (k === 'tiktok') return <TiktokMark size={size} />;
   if (k === 'youtube') return <YoutubeMark size={size} />;
   if (k === 'whatsapp') return <WhatsappMark size={size} />;
+  if (k === 'gmail') return <GmailMark size={size} />;
   return <GoogleMark size={size} />;
 }
 
-export function MarkRow({ list, size = 16 }: { list: Array<Platform | 'whatsapp'>; size?: number }) {
+export function MarkRow({ list, size = 16 }: { list: Channel[]; size?: number }) {
   return (
     <View style={st.markRow}>
       {list.map((k) => (

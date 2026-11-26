@@ -32,8 +32,9 @@ import {
   TypingDots,
   useToast,
 } from '../components/kit';
+import { answer } from '../intent';
 import { useAction, useLoad, useSteps } from '../net';
-import { commit, db, uid, useDb, type Lesson } from '../store';
+import { commit, COST, db, record, timeAgo, uid, useDb, type Lesson } from '../store';
 import { C, R } from '../theme';
 
 const JOB = ['Reading what you added', 'Fitting it to your voice', 'Testing her answers', 'Saving what she learned'];
@@ -47,7 +48,7 @@ const KINDS: Array<{ key: Lesson['kind']; label: string }> = [
 const DOS = ['Short sentences', 'Warm', 'Prices up front', 'Urdu words are fine'];
 const DONTS = ['No ALL CAPS', 'Never beg for a sale', 'No emoji storms', 'Never promise next day'];
 
-const blank = (): Lesson => ({ id: '', kind: 'note', title: '', body: '', at: 'Just now', trained: false });
+const blank = (): Lesson => ({ id: '', kind: 'note', title: '', body: '', at: Date.now(), trained: false });
 
 export default function MakeMeLearn() {
   const data = useDb();
@@ -65,7 +66,7 @@ export default function MakeMeLearn() {
   const [dos, setDos] = useState<string[]>([DOS[0], DOS[2]]);
   const [donts, setDonts] = useState<string[]>([DONTS[0], DONTS[3]]);
   const [q, setQ] = useState('');
-  const [answer, setAnswer] = useState<string | null>(null);
+  const [said, setSaid] = useState<{ text: string; rule?: string } | null>(null);
 
   const trained = data.lessons.filter((l) => l.trained).length;
   const pending = data.lessons.length - trained;
@@ -84,6 +85,7 @@ export default function MakeMeLearn() {
       if (i >= 0) data.lessons[i] = { ...row, trained: false };
     }
     commit();
+    record({ agent: 'Vexa', text: isNew ? `You taught her: ${row.title}.` : `You changed the rule “${row.title}”.` });
     setEdit(null);
     setErr('');
     say(isNew ? 'Saved — train her when you are ready' : 'Updated');
@@ -125,11 +127,19 @@ export default function MakeMeLearn() {
                     small
                     onPress={() =>
                       job.start(() => {
+                        const learned = data.lessons.filter((l) => !l.trained).length;
                         data.lessons.forEach((l) => {
                           l.trained = true;
                         });
-                        commit();
                         job.reset();
+                        record({
+                          agent: 'Vexa',
+                          text: learned
+                            ? `Learned ${learned} new ${learned === 1 ? 'thing' : 'things'} you taught her.`
+                            : 'Went over everything you have taught her again.',
+                          credits: Math.max(1, learned) * COST.lesson,
+                          what: 'Training',
+                        });
                         say('Vexa has learned it');
                       })
                     }
@@ -181,7 +191,7 @@ export default function MakeMeLearn() {
                       {l.trained ? <Tag text="Learned" tone="green" /> : <Tag text="Waiting" tone="warn" />}
                     </View>
                     <Text style={st.body}>{l.body}</Text>
-                    <Text style={st.at}>{l.at}</Text>
+                    <Text style={st.at}>{timeAgo(l.at)}</Text>
                   </View>
                   <View style={{ gap: 7 }}>
                     <IconBtn
@@ -232,21 +242,27 @@ export default function MakeMeLearn() {
                 busy={ask.busy}
                 small
                 onPress={() =>
-                  ask.run(1400, () =>
-                    setAnswer(
-                      'Delivery is 2–4 working days anywhere in Pakistan, so tomorrow is not something I can promise. I can post it today so it is with you as early as possible.',
-                    ),
-                  )
+                  ask.run(1400, () => {
+                    setSaid(answer(q));
+                    record({
+                      agent: 'Sales',
+                      text: `You tried her out: “${q.trim() || 'a customer question'}”.`,
+                      credits: COST.reply,
+                      what: 'Practice answer',
+                    });
+                  })
                 }
                 style={{ alignSelf: 'flex-start' }}
               />
               {ask.busy ? <View style={{ marginTop: 12 }}><TypingDots /></View> : null}
-              {answer && !ask.busy ? (
+              {said && !ask.busy ? (
                 <Stagger style={{ marginTop: 12 }}>
                   <Glass style={{ alignSelf: 'stretch' }} radius={R.md}>
                     <View style={st.answer}>
-                      <Text style={st.answerText}>{answer}</Text>
-                      <Text style={st.answerWhy}>Used your rule: never promise next-day delivery.</Text>
+                      <Text style={st.answerText}>{said.text}</Text>
+                      <Text style={st.answerWhy}>
+                        {said.rule ? `Used your rule: ${said.rule.toLowerCase()}.` : 'You have taught her nothing about this yet, so she handed it to you.'}
+                      </Text>
                     </View>
                   </Glass>
                 </Stagger>

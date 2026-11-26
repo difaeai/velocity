@@ -88,9 +88,15 @@ export default function AppShell({ onLogout }: { onLogout?: () => void }) {
 
   const unread = data.notices.filter((n) => !n.read).length;
 
+  const ask = (text: string) => {
+    setGoal(text);
+    setRoute('Ask Vexa');
+  };
+
   const ctx: Ctx = {
     onOpen: (title) => setRoute(title),
     onLogout: () => onLogout?.(),
+    onAsk: ask,
     goal,
   };
 
@@ -130,10 +136,7 @@ export default function AppShell({ onLogout }: { onLogout?: () => void }) {
           {tab === 'home' ? (
             <HomeScreen
               onOpen={setRoute}
-              onGoal={(text) => {
-                setGoal(text);
-                setRoute('Your plan');
-              }}
+              onGoal={ask}
             />
           ) : (
             screenFor(TAB_TITLE[tab], ctx)

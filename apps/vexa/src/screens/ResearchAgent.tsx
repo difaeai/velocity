@@ -37,7 +37,7 @@ import {
   useToast,
 } from '../components/kit';
 import { useLoad, useSteps } from '../net';
-import { commit, db, uid, useDb, type Report } from '../store';
+import { COST, commit, day, db, record, timeAgo, uid, useDb, type Report } from '../store';
 import { C, R } from '../theme';
 
 const IDEAS = ['What my competitors posted this week', 'Best posting times for Lahore', 'Why my reach dropped', 'What my customers complain about'];
@@ -70,6 +70,7 @@ export default function ResearchAgent() {
   const job = useSteps(JOB, 950);
 
   const head = useEnter(40, { y: 14 });
+  const rivalTotal = data.market.rivalPosts.reduce((n, d) => n + d, 0);
 
   const run = () => {
     const asked = topic.trim() || IDEAS[0];
@@ -77,12 +78,18 @@ export default function ResearchAgent() {
       const made: Report = {
         id: uid(),
         topic: asked,
-        at: 'Just now',
+        at: Date.now(),
         sources: 18 + Math.floor(Math.random() * 20),
         findings: FOUND.default,
       };
       data.reports.unshift(made);
-      commit();
+      record({
+        agent: 'Research',
+        text: `Read ${made.sources} sources on “${asked}” and wrote the brief.`,
+        credits: COST.brief,
+        what: asked,
+        notice: { title: 'Your brief is ready', line: `${made.sources} sources read. ${made.findings.length} things worth doing.` },
+      });
       job.reset();
       setTopic('');
       say('Brief ready — 3 findings');
@@ -140,12 +147,17 @@ export default function ResearchAgent() {
             <Glass style={st.watch} radius={R.lg}>
               <View style={st.watchInner}>
                 <View style={st.statRow}>
-                  <Stat label="Rival posts" value={126} delta="+18 vs last week" index={0} />
-                  <Stat label="Avg discount" value={22} suffix="%" index={1} />
-                  <Stat label="Your share of voice" value={14} suffix="%" index={2} />
+                  <Stat
+                    label="Rival posts"
+                    value={rivalTotal}
+                    delta={`${rivalTotal - data.market.lastWeekPosts >= 0 ? '+' : ''}${rivalTotal - data.market.lastWeekPosts} vs last week`}
+                    index={0}
+                  />
+                  <Stat label="Avg discount" value={data.market.avgDiscount} suffix="%" index={1} />
+                  <Stat label="Your share of voice" value={data.market.shareOfVoice} suffix="%" index={2} />
                 </View>
                 <Text style={st.watchNote}>Posts your four closest rivals put out, day by day</Text>
-                <Bars data={[14, 18, 11, 22, 26, 19, 16]} labels={['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']} />
+                <Bars data={data.market.rivalPosts} labels={['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']} />
               </View>
             </Glass>
           </Stagger>
@@ -170,7 +182,7 @@ export default function ResearchAgent() {
               index={i}
               icon={<BulbIcon size={20} />}
               label={r.topic}
-              sub={`${r.at} · ${r.sources} sources · ${r.findings.length} findings`}
+              sub={`${timeAgo(r.at)} · ${r.sources} sources · ${r.findings.length} findings`}
               right={<ChevronRight size={18} />}
               onPress={() => setOpen(r)}
             />
@@ -184,7 +196,7 @@ export default function ResearchAgent() {
           <View style={{ gap: 12 }}>
             <View style={st.sheetMeta}>
               <Tag text={`${open.sources} sources`} tone="green" />
-              <Tag text={open.at} />
+              <Tag text={timeAgo(open.at)} />
             </View>
 
             {open.findings.map((f, i) => (
@@ -207,8 +219,26 @@ export default function ResearchAgent() {
               label="Turn this into a content plan"
               icon={<SparkleIcon size={17} color="#0A1206" />}
               onPress={() => {
+                const made = open.findings.slice(0, 3).map((f, i) => ({
+                  id: uid(),
+                  title: f.head,
+                  caption: f.body,
+                  kind: (i === 0 ? 'reel' : 'post') as 'reel' | 'post',
+                  platforms: ['instagram' as const],
+                  day: day(i + 1),
+                  time: '19:30',
+                  status: 'draft' as const,
+                  hashtags: [],
+                }));
+                data.posts.unshift(...made);
+                record({
+                  agent: 'Content',
+                  text: `Turned “${open.topic}” into ${made.length} drafts in your calendar.`,
+                  credits: COST.reel + 2 * COST.post,
+                  what: open.topic,
+                });
                 setOpen(null);
-                say('Sent to the Content Team');
+                say(`${made.length} drafts added to the calendar`);
               }}
               full
             />

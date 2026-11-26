@@ -36,7 +36,8 @@ import {
   useToast,
 } from '../components/kit';
 import { useAction, useLoad } from '../net';
-import { commit, db, PLATFORM_NAME, uid, useDb, type Lead } from '../store';
+import { answer } from '../intent';
+import { CHANNEL_NAME, COST, commit, db, record, timeAgo, uid, useDb, type Lead } from '../store';
 import { C, R } from '../theme';
 
 type Stage = Lead['stage'];
@@ -53,12 +54,6 @@ const STAGE_TONE: Record<Stage, Tone> = { new: 'lime', talking: 'green', quoted:
 
 const SOURCES = ['instagram', 'facebook', 'tiktok', 'whatsapp', 'youtube'] as const;
 
-const REPLIES = [
-  'Yes, we have it in large. Want me to hold one for you?',
-  'Delivery is 2–4 working days anywhere in Pakistan.',
-  'I can do PKR 32,000 for four — that is the most we discount.',
-  'Thank you! Your order goes out tomorrow morning.',
-];
 
 const blank = (): Lead => ({
   id: '',
@@ -68,7 +63,7 @@ const blank = (): Lead => ({
   stage: 'new',
   value: 0,
   city: 'Lahore',
-  at: 'Just now',
+  at: Date.now(),
   notes: [],
   thread: [],
 });
@@ -102,7 +97,7 @@ export default function SalesAgent() {
 
   const send = (text: string, from: 'us' | 'them' = 'us') => {
     if (!current || !text.trim()) return;
-    current.thread.push({ from, text: text.trim(), at: 'Just now' });
+    current.thread.push({ from, text: text.trim(), at: Date.now() });
     if (current.stage === 'new') current.stage = 'talking';
     commit();
   };
@@ -177,7 +172,7 @@ export default function SalesAgent() {
                       {l.thread.length ? l.thread[l.thread.length - 1].text : 'No messages yet'}
                     </Text>
                     <Text style={st.meta}>
-                      {l.city} · {l.at}
+                      {l.city} · {timeAgo(l.at)}
                       {l.value ? ` · PKR ${l.value.toLocaleString('en-US')}` : ''}
                     </Text>
                   </View>
@@ -199,7 +194,7 @@ export default function SalesAgent() {
                 <View style={{ flex: 1 }}>
                   <Text style={st.headLine}>{current.phone}</Text>
                   <Text style={st.headSub}>
-                    {current.city} · came from {current.source === 'whatsapp' ? 'WhatsApp' : PLATFORM_NAME[current.source]}
+                    {current.city} · came from {CHANNEL_NAME[current.source]}
                   </Text>
                 </View>
                 <IconBtn tone="lime" onPress={() => say('Calling…')}>
@@ -241,7 +236,20 @@ export default function SalesAgent() {
               <SectionTitle
                 text="CONVERSATION"
                 right={
-                  <Pressable onPress={() => think.run(1500, () => send(REPLIES[Math.floor(Math.random() * REPLIES.length)]))}>
+                  <Pressable
+                    onPress={() =>
+                      think.run(1500, () => {
+                        const said = answer(current.thread[current.thread.length - 1]?.text ?? '');
+                        send(said.text);
+                        record({
+                          agent: 'Sales',
+                          text: `Answered ${current.name} on ${CHANNEL_NAME[current.source]}.`,
+                          credits: COST.reply,
+                          what: `Answer to ${current.name}`,
+                        });
+                      })
+                    }
+                  >
                     <View style={st.vexaReply}>
                       <SparkleIcon size={14} />
                       <Text style={st.vexaReplyText}>Let Vexa reply</Text>
@@ -257,7 +265,7 @@ export default function SalesAgent() {
                       <Glass style={st.bubble} radius={16} lit={m.from === 'us'}>
                         <View style={st.bubbleInner}>
                           <Text style={st.bubbleText}>{m.text}</Text>
-                          <Text style={st.bubbleAt}>{m.at}</Text>
+                          <Text style={st.bubbleAt}>{timeAgo(m.at)}</Text>
                         </View>
                       </Glass>
                     </View>
@@ -328,7 +336,10 @@ export default function SalesAgent() {
                 style={{ flex: 1 }}
                 onPress={() => {
                   current.stage = 'won';
-                  commit();
+                  record({
+                    agent: 'Sales',
+                    text: `${current.name} became an order worth PKR ${current.value.toLocaleString('en-US')}.`,
+                  });
                   setOpen(null);
                   say('Marked won');
                 }}
@@ -387,10 +398,10 @@ export default function SalesAgent() {
             <Text style={st.lab}>CAME FROM</Text>
             <View style={{ marginBottom: 14 }}>
               <Chips
-                items={SOURCES.map((s) => (s === 'whatsapp' ? 'WhatsApp' : PLATFORM_NAME[s]))}
-                on={[make.source === 'whatsapp' ? 'WhatsApp' : PLATFORM_NAME[make.source]]}
+                items={SOURCES.map((s) => CHANNEL_NAME[s])}
+                on={[CHANNEL_NAME[make.source]]}
                 onToggle={(v) => {
-                  const k = v === 'WhatsApp' ? 'whatsapp' : SOURCES.find((s) => s !== 'whatsapp' && PLATFORM_NAME[s] === v);
+                  const k = SOURCES.find((s) => CHANNEL_NAME[s] === v);
                   if (k) setMake({ ...make, source: k });
                 }}
               />

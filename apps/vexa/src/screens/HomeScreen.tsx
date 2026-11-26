@@ -17,6 +17,7 @@ import {
   UsersIcon,
 } from '../components/Icons';
 import VexaStage from '../components/VexaStage';
+import { connected, useDb } from '../store';
 import { C, R } from '../theme';
 
 /** A loop of its own length, so no two tiles bob together. */
@@ -156,6 +157,7 @@ export default function HomeScreen({
   onOpen: (title: string) => void;
   onGoal: (text: string) => void;
 }) {
+  const data = useDb();
   const [goalText, setGoalText] = useState('');
   const welcome = useEnter(60);
   const heading = useEnter(140);
@@ -171,8 +173,10 @@ export default function HomeScreen({
               <SparkleIcon size={20} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={st.welcomeTitle}>Welcome back, Hassan Zahir!</Text>
-              <Text style={st.welcomeSub}>Let&apos;s grow your business with VEXA.</Text>
+              <Text style={st.welcomeTitle}>Welcome back, {data.me.name}!</Text>
+              <Text style={st.welcomeSub}>
+                {data.me.business} · {connected().length} accounts connected
+              </Text>
             </View>
             <ChevronRight size={20} />
           </View>
@@ -246,7 +250,7 @@ export default function HomeScreen({
               </View>
               <TextInput
                 style={st.goalInput}
-                placeholder={'e.g. I want to increase my sales by 30%,\nor automate my content strategy...'}
+                placeholder={'e.g. find me investors on Instagram and email them,\nor write to 50 shops in Karachi...'}
                 placeholderTextColor={C.textFaint}
                 multiline
                 value={goalText}
@@ -266,22 +270,28 @@ export default function HomeScreen({
 
       <View style={st.chipRow}>
         <Chip
-          icon={<BarsIcon size={15} />}
-          label="Grow my audience"
+          icon={<UsersIcon size={15} />}
+          label="Find investors"
           delay={700}
-          onPress={() => setGoalText('I want to grow my audience on Instagram and TikTok.')}
+          onPress={() => setGoalText('Find me 50 investors on Instagram and email them from Gmail.')}
         />
         <Chip
-          icon={<UsersIcon size={15} />}
-          label="Get more leads"
+          icon={<SendIcon size={15} />}
+          label="Write to customers"
           delay={760}
-          onPress={() => setGoalText('I want more enquiries from Lahore without spending more.')}
+          onPress={() => setGoalText('Write to 100 customers in Lahore on WhatsApp about the winter drop.')}
+        />
+        <Chip
+          icon={<BarsIcon size={15} />}
+          label="Grow my audience"
+          delay={820}
+          onPress={() => setGoalText('Grow my audience on Instagram and TikTok.')}
         />
         <Chip
           icon={<BoltIcon size={15} />}
-          label="Automate tasks"
-          delay={820}
-          onPress={() => setGoalText('Take the posting and the replies off my hands.')}
+          label="Run my ads"
+          delay={880}
+          onPress={() => setGoalText('Run ads in Lahore on Facebook and Instagram for the winter drop.')}
         />
       </View>
     </ScrollView>

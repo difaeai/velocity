@@ -20,9 +20,10 @@ import {
   MegaphoneIcon,
   SearchIcon,
   SparkleIcon,
+  UsersIcon,
 } from './Icons';
 import VexaProgress from './VexaProgress';
-import { useDb } from '../store';
+import { creditsTotal, creditsUsed, useDb } from '../store';
 import { C, IS_PRO, R, TOP_INSET } from '../theme';
 
 const WIDTH = Math.min(332, Dimensions.get('window').width * 0.86);
@@ -170,6 +171,15 @@ export default function Drawer({
           <Row index={next()} open={open} icon={<DocIcon size={21} />} label={'Content\nTeam'} onPress={() => go('Content Team')} />
           <Row index={next()} open={open} icon={<MegaphoneIcon size={21} />} label="Ads Expert" onPress={() => go('Ads Expert')} />
           <Row index={next()} open={open} icon={<ChartUpIcon size={21} />} label="Sales Team" onPress={() => go('Sales Team')} />
+          <Row
+            index={next()}
+            open={open}
+            icon={<UsersIcon size={21} />}
+            label="Outreach"
+            sub="Find people & write to them"
+            badge="New"
+            onPress={() => go('Outreach')}
+          />
           <Row index={next()} open={open} icon={<AccountsMark />} label={'Connected\nAccounts'} onPress={() => go('Connected Accounts')} />
           <Row
             index={next()}
@@ -186,7 +196,7 @@ export default function Drawer({
             open={open}
             icon={<ActivityIcon size={21} color={C.green} />}
             label="Usage"
-            sub={`${(data.me.credits.used / 1000).toFixed(1)}k / ${(data.me.credits.total / 1000).toFixed(1)}k credits used`}
+            sub={`${(creditsUsed() / 1000).toFixed(1)}k / ${(creditsTotal() / 1000).toFixed(1)}k credits used`}
             onPress={() => go('Usage')}
           />
           <Row

@@ -39,13 +39,16 @@ import {
   useToast,
 } from '../components/kit';
 import { useAction, useLoad } from '../net';
+import { writeCaption } from '../intent';
 import {
+  COST,
   commit,
   day,
   db,
   PLATFORMS,
   PLATFORM_NAME,
   prettyDay,
+  record,
   uid,
   useDb,
   type Platform,
@@ -80,13 +83,6 @@ const STATUS: Record<PostStatus, { text: string; tone: Tone }> = {
 
 const TIMES = ['09:00', '13:00', '17:30', '19:30', '21:00'];
 
-/** Vexa's stand-in copywriter: no API, so the caption comes from here. */
-const WRITTEN = [
-  'New in today. Three colours, one fit, nothing shouty.',
-  'We only made 40 of these. When they go, they go.',
-  'This is the shirt three customers came back for. Here is why.',
-  'Free delivery this week on anything over PKR 5,000.',
-];
 
 const blank = (): Post => ({
   id: '',
@@ -156,6 +152,14 @@ export default function ContentAgent() {
         if (i >= 0) data.posts[i] = row;
       }
       commit();
+      record({
+        agent: 'Content',
+        text: isNew
+          ? `Wrote “${row.title}” for ${prettyDay(row.day)} at ${row.time}.`
+          : `Changed “${row.title}”.`,
+        credits: isNew ? (row.kind === 'reel' ? COST.reel : COST.post) : undefined,
+        what: row.title,
+      });
       setEdit(null);
       say(isNew ? 'Post added to the queue' : 'Changes saved');
     });
@@ -275,7 +279,10 @@ export default function ContentAgent() {
                           small
                           onPress={() => {
                             p.status = 'scheduled';
-                            commit();
+                            record({
+                              agent: 'Content',
+                              text: `You approved “${p.title}” — it goes out ${prettyDay(p.day).toLowerCase()} at ${p.time}.`,
+                            });
                             say('Approved — it goes out as planned');
                           }}
                         />
@@ -287,7 +294,10 @@ export default function ContentAgent() {
                           small
                           onPress={() => {
                             p.status = 'scheduled';
-                            commit();
+                            record({
+                              agent: 'Content',
+                              text: `Scheduled “${p.title}” for ${prettyDay(p.day).toLowerCase()} at ${p.time}.`,
+                            });
                             say(`Scheduled for ${prettyDay(p.day)}, ${p.time}`);
                           }}
                         />
@@ -361,7 +371,11 @@ export default function ContentAgent() {
               label={write.busy ? 'Vexa is writing…' : 'Let Vexa write it'}
               icon={<SparkleIcon size={16} color="#0A1206" />}
               busy={write.busy}
-              onPress={() => write.run(1600, () => set('caption', WRITTEN[Math.floor(Math.random() * WRITTEN.length)]))}
+              onPress={() =>
+                write.run(1600, () =>
+                  set('caption', writeCaption(data.me.business, data.me.trade, edit.kind, data.lessons)),
+                )
+              }
               full
               small
               style={{ marginBottom: 6 }}

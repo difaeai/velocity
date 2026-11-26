@@ -20,7 +20,19 @@ import {
   useToast,
 } from '../components/kit';
 import { useAction, useLoad } from '../net';
-import { commit, TEAM, uid, useDb, type Act, type Agent } from '../store';
+import {
+  DAY,
+  TEAM,
+  clockOf,
+  dayBucket,
+  prettyDay,
+  sameDay,
+  spentSince,
+  todayProgress,
+  useDb,
+  type Act,
+  type Agent,
+} from '../store';
 import { C, R } from '../theme';
 
 const AGENTS: Agent[] = ['Content', 'Sales', 'Ads', 'Research'];
@@ -33,13 +45,6 @@ const ICON: Record<Agent, React.ReactNode> = {
   Vexa: <SparkleIcon size={17} />,
 };
 
-const EARLIER: Act[] = [
-  { id: uid(), agent: 'Ads', text: 'Moved PKR 400 from Facebook to Instagram — cheaper reach.', at: '16:20', day: 'Yesterday' },
-  { id: uid(), agent: 'Content', text: 'Wrote three captions for the winter drop and kept the best.', at: '14:02', day: 'Yesterday' },
-  { id: uid(), agent: 'Sales', text: 'Chased two enquiries that had gone quiet for a day.', at: '11:15', day: 'Yesterday' },
-  { id: uid(), agent: 'Research', text: 'Found a rival cutting prices 25% in Karachi.', at: '09:40', day: 'Yesterday' },
-];
-
 export default function ActivityScreen() {
   const data = useDb();
   const load = useLoad(800);
@@ -48,38 +53,47 @@ export default function ActivityScreen() {
   const [toast, say] = useToast();
 
   const [only, setOnly] = useState<Agent | null>(null);
-  const [loadedMore, setLoadedMore] = useState(false);
+  const [back, setBack] = useState(2); // how many days back the list goes
 
-  const rows = data.acts.filter((a) => (only ? a.agent === only : true));
-  const today = rows.filter((a) => a.day === 'Today');
-  const yesterday = rows.filter((a) => a.day === 'Yesterday');
+  const rows = data.acts
+    .filter((a) => (only ? a.agent === only : true))
+    .filter((a) => a.at >= Date.now() - back * DAY)
+    .slice()
+    .sort((a, b) => b.at - a.at);
 
-  const group = (label: string, list: Act[], from: number) =>
-    list.length === 0 ? null : (
-      <View>
-        <SectionTitle text={label.toUpperCase()} right={<Tag text={`${list.length}`} tone="lime" />} />
-        {list.map((a, i) => (
-          <Stagger key={a.id} index={from + i} style={st.line}>
-            <View style={st.rail}>
-              <View style={st.railDot} />
-              <View style={st.railLine} />
-            </View>
-            <Glass style={{ flex: 1 }} radius={R.md}>
-              <View style={st.act}>
-                <View style={st.actIcon}>{ICON[a.agent]}</View>
-                <View style={{ flex: 1 }}>
-                  <View style={st.actHead}>
-                    <Text style={st.actAgent}>{TEAM[a.agent]}</Text>
-                    <Text style={st.actAt}>{a.at}</Text>
-                  </View>
-                  <Text style={st.actText}>{a.text}</Text>
-                </View>
-              </View>
-            </Glass>
-          </Stagger>
-        ))}
-      </View>
-    );
+  const older = data.acts.filter((a) => a.at < Date.now() - back * DAY).length;
+
+  /** The list, cut into the days it happened on. */
+  const groups: Array<{ label: string; items: Act[] }> = [];
+  rows.forEach((a) => {
+    const label = dayBucket(a.at);
+    const last = groups[groups.length - 1];
+    if (last && last.label === label) last.items.push(a);
+    else groups.push({ label, items: [a] });
+  });
+
+  // Every number here is counted, not written down.
+  const jobsToday = data.acts.filter((a) => sameDay(a.at, Date.now())).length;
+  const answersToday = data.leads.reduce(
+    (n, l) => n + l.thread.filter((m) => m.from === 'us' && sameDay(m.at, Date.now())).length,
+    0,
+  );
+  const creditsToday = spentSince(DAY);
+  const progress = todayProgress();
+
+  // What she is on right now: the next thing due, and what is waiting on her.
+  // the soonest piece that has not gone out yet
+  const stamp = (p: { day: string; time: string }) => new Date(`${p.day}T${p.time}:00`).getTime();
+  const next = data.posts
+    .filter((p) => (p.status === 'scheduled' || p.status === 'approve') && stamp(p) >= Date.now())
+    .sort((a, b) => stamp(a) - stamp(b))[0];
+  const waiting = data.leads.filter((l) => l.stage === 'new').length;
+  const workingLine = next
+    ? `Finishing “${next.title}” for ${prettyDay(next.day).toLowerCase()} at ${next.time}` +
+      (waiting ? `, and ${waiting} ${waiting === 1 ? 'enquiry is' : 'enquiries are'} waiting on her.` : '.')
+    : waiting
+      ? `Answering ${waiting} ${waiting === 1 ? 'enquiry' : 'enquiries'} that came in.`
+      : 'Nothing in hand — she is watching your accounts.';
 
   return (
     <>
@@ -100,26 +114,32 @@ export default function ActivityScreen() {
                   <Text style={st.liveTitle}>Working now</Text>
                   <View style={st.liveDot} />
                 </View>
-                <Text style={st.liveText}>{'Writing tomorrow’s reel script and answering two comments.'}</Text>
+                <Text style={st.liveText}>{workingLine}</Text>
                 <TypingDots />
-                <Meter pct={0.68} h={5} />
+                <Meter pct={progress.pct} h={5} />
+                <Text style={st.liveSub}>
+                  {progress.done} done today · {progress.waiting} waiting on you
+                </Text>
               </View>
             </View>
           </Glass>
         </Stagger>
 
         <View style={st.statRow}>
-          <Stat label="Jobs today" value={data.acts.filter((a) => a.day === 'Today').length} index={0} />
-          <Stat label="Answers sent" value={13} index={1} />
-          <Stat label="Hours saved" value={6} index={2} />
+          <Stat label="Jobs today" value={jobsToday} index={0} />
+          <Stat label="Answers sent" value={answersToday} index={1} />
+          <Stat label="Credits today" value={creditsToday} index={2} />
         </View>
 
         <View style={{ marginTop: 14 }}>
           <Chips
-            items={AGENTS}
-            on={only ? [only] : []}
-            onToggle={(v) => setOnly(v === only ? null : (v as Agent))}
-            icons={Object.fromEntries(AGENTS.map((a) => [a, ICON[a]]))}
+            items={AGENTS.map((a) => TEAM[a])}
+            on={only ? [TEAM[only]] : []}
+            onToggle={(label) => {
+              const k = AGENTS.find((a) => TEAM[a] === label) ?? null;
+              setOnly(k === only ? null : k);
+            }}
+            icons={Object.fromEntries(AGENTS.map((a) => [TEAM[a], ICON[a]]))}
           />
         </View>
 
@@ -130,27 +150,51 @@ export default function ActivityScreen() {
         ) : rows.length === 0 ? (
           <Empty
             icon={<ActivityIcon size={24} color={C.lime} />}
-            title="Nothing from this agent yet"
+            title={only ? `Nothing from the ${TEAM[only]} yet` : 'Nothing yet today'}
             line="Clear the filter to see everything Vexa has done."
             cta="Show everything"
-            onCta={() => setOnly(null)}
+            onCta={() => {
+              setOnly(null);
+              setBack(30);
+            }}
           />
         ) : (
           <>
-            {group('Today', today, 0)}
-            {group(loadedMore ? 'Yesterday' : 'Earlier', yesterday, today.length)}
+            {groups.map((g, gi) => (
+              <View key={g.label}>
+                <SectionTitle text={g.label.toUpperCase()} right={<Tag text={`${g.items.length}`} tone="lime" />} />
+                {g.items.map((a, i) => (
+                  <Stagger key={a.id} index={gi * 2 + i} style={st.line}>
+                    <View style={st.rail}>
+                      <View style={st.railDot} />
+                      <View style={st.railLine} />
+                    </View>
+                    <Glass style={{ flex: 1 }} radius={R.md}>
+                      <View style={st.act}>
+                        <View style={st.actIcon}>{ICON[a.agent]}</View>
+                        <View style={{ flex: 1 }}>
+                          <View style={st.actHead}>
+                            <Text style={st.actAgent}>{TEAM[a.agent]}</Text>
+                            <Text style={st.actAt}>{clockOf(a.at)}</Text>
+                          </View>
+                          <Text style={st.actText}>{a.text}</Text>
+                        </View>
+                      </View>
+                    </Glass>
+                  </Stagger>
+                ))}
+              </View>
+            ))}
 
-            {!loadedMore ? (
+            {older ? (
               <Btn
-                label={more.busy ? 'Loading…' : 'Load earlier'}
+                label={more.busy ? 'Loading…' : `Load ${older} earlier`}
                 kind="ghost"
                 busy={more.busy}
                 onPress={() =>
-                  more.run(1400, () => {
-                    data.acts.push(...EARLIER);
-                    commit();
-                    setLoadedMore(true);
-                    say('Four more jobs loaded');
+                  more.run(1200, () => {
+                    setBack((d) => d + 5);
+                    say('Earlier jobs loaded');
                   })
                 }
                 full
@@ -193,6 +237,7 @@ const st = StyleSheet.create({
   liveTitle: { color: C.text, fontSize: 15, fontWeight: '900' },
   liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: C.lime },
   liveText: { color: C.textDim, fontSize: 12, lineHeight: 17 },
+  liveSub: { color: C.textFaint, fontSize: 10.5, fontWeight: '700' },
 
   statRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
 

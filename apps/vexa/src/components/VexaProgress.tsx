@@ -3,13 +3,13 @@ import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import Glass from './Glass';
+import { todayProgress, useDb } from '../store';
 import { C, R } from '../theme';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 const RADIUS = 20;
 const CIRC = 2 * Math.PI * RADIUS;
-const PERCENT = 0.68;
 const BAR_WIDTH = 150;
 
 /**
@@ -18,6 +18,8 @@ const BAR_WIDTH = 150;
  * so the box reads as work happening rather than a static number.
  */
 export default function VexaProgress({ open }: { open: boolean }) {
+  useDb();
+  const { done, all, pct } = todayProgress();
   const draw = useRef(new Animated.Value(0)).current;
   const pulse = useRef(new Animated.Value(0)).current;
   const sweep = useRef(new Animated.Value(0)).current;
@@ -56,10 +58,10 @@ export default function VexaProgress({ open }: { open: boolean }) {
     };
   }, [pulse, sweep]);
 
-  const offset = draw.interpolate({ inputRange: [0, 1], outputRange: [CIRC, CIRC * (1 - PERCENT)] });
+  const offset = draw.interpolate({ inputRange: [0, 1], outputRange: [CIRC, CIRC * (1 - pct)] });
   const glow = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.25, 0.7] });
   const dotScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1.25] });
-  const fill = draw.interpolate({ inputRange: [0, 1], outputRange: ['0%', `${PERCENT * 100}%`] });
+  const fill = draw.interpolate({ inputRange: [0, 1], outputRange: ['0%', `${Math.round(pct * 100)}%`] });
   const shine = sweep.interpolate({ inputRange: [0, 1], outputRange: [-70, BAR_WIDTH + 20] });
 
   return (
@@ -82,7 +84,7 @@ export default function VexaProgress({ open }: { open: boolean }) {
               transform="rotate(-90 26 26)"
             />
           </Svg>
-          <Text style={st.ringText}>68%</Text>
+          <Text style={st.ringText}>{Math.round(pct * 100)}%</Text>
         </View>
 
         <View style={{ flex: 1 }}>
@@ -90,7 +92,9 @@ export default function VexaProgress({ open }: { open: boolean }) {
             <Text style={st.title}>Vexa Progress</Text>
             <Animated.View style={[st.liveDot, { transform: [{ scale: dotScale }] }]} />
           </View>
-          <Text style={st.sub}>3 of 5 jobs done today</Text>
+          <Text style={st.sub}>
+            {done} of {all} jobs done today
+          </Text>
 
           <View style={st.track}>
             <Animated.View style={[st.fill, { width: fill }]} />

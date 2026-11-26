@@ -1,8 +1,21 @@
 # Vexa app — UI only
 
 Expo app for the Vexa mobile client. It is **frontend only**: nothing is wired
-to an API, auth or Firebase. Sign-in, OTP, every drawer destination and every
-save, edit and delete are screens over an in-memory store, not behaviour.
+to an API, auth or Firebase — but nothing is faked inside a screen either.
+
+**The rule: no screen holds data.** Everything shown is derived from
+`src/store.ts` — real timestamps rendered through `timeAgo()`, credits counted
+out of a ledger, ad estimates worked out from your own campaign history, the
+drawer ring counted from today's jobs. Every feature books its work through
+one function, `record()`, which spends the credits, writes the Activity line
+and raises the notification, so Activity, Usage and Notifications can never
+drift from what actually happened. Ask her for content on the home screen and
+the drafts really appear in the Content Team calendar; ask for ads and a draft
+campaign is really waiting in Ads Expert.
+
+What is *not* real: the outside world. She does not send a Gmail, search
+Instagram or post to an account — that needs a backend and the platform
+approvals that are still pending.
 
 ## The flow
 
@@ -45,6 +58,8 @@ real network has.
 
 | Destination | What works |
 |---|---|
+| **Ask Vexa** (the home box) | Type what you want in your own words, English or Roman Urdu — "find me 60 investors on instagram and gmail se email bhejo in Karachi". She shows what she understood (who, where, how many, which city — each tappable to change), her plan, then does it: finds the people, drafts the message, sends on your word. Content, ads and research asks make real drafts, draft campaigns and briefs instead. |
+| **Outreach** | Everyone she found, what state each is in, the messages she reuses, and every search she has run. Add people by hand, move them through found → written to → replied → won, turn one into an enquiry for the Sales Team. |
 | **Research Team** | Ask a question → a four-step job with a progress ring → a saved brief. Open, rename, copy, delete. Market bar chart. |
 | **Content Team** (also the Content tab) | Week strip, five filters, cards per piece. New/edit piece: format, accounts, caption ("Let Vexa write it"), hashtags, day, time. Approve, schedule, duplicate, delete. Posted pieces show views/likes/comments. |
 | **Ads Expert** | Today's spend ring against the daily budget, blended ROAS, campaign cards with 7-day bars. Four-step build: goal → audience → budget (PKR/day) → creative, then launch. Pause, resume, edit, delete, and a "why it costs what it costs" note. **Its first load fails on purpose** so the retry path is a real screen. |
@@ -84,7 +99,10 @@ still there when you come back from another.
 App.tsx                        splash -> story -> auth -> app, cross-faded
 src/theme.ts                   colours, glass tokens, IS_PRO
 src/anim.ts                    useEnter (fade/rise/pop), useLoop (float/breathe)
-src/store.ts                   the in-memory data and every mutation
+src/store.ts                   the data, the credit ledger, record(), and
+                               every derived number the screens show
+src/intent.ts                  what she makes of a sentence, who she finds,
+                               what she writes
 src/net.ts                     fake loads: loading / slow / failed / retry
 src/voice.ts                   her voice — female only
 src/screens/SplashScreen.tsx   the mark, the bar, and her one spoken line
@@ -123,7 +141,13 @@ npm install
 npm run web      # the UI in a browser via react-native-web
 npm start        # Expo dev server for a device
 npm run typecheck
+npm run check     # typecheck + the intent reader's own cases
 ```
+
+`scripts/check-intent.mjs` is the one real test: it feeds fourteen sentences
+to `src/intent.ts` and asserts what she takes from each, because the words
+overlap in traps ("research" contains "search", "boost my post" is an ad not a
+post, "write my content" is the calendar but "write to shops" is outreach).
 
 Metro's file watcher does not pick up edits in a git worktree on this machine —
 restart the dev server after changing a file.

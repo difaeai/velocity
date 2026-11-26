@@ -4,9 +4,10 @@ import AdsAgent from './AdsAgent';
 import Billing from './Billing';
 import ConnectedAccounts from './ConnectedAccounts';
 import ContentAgent from './ContentAgent';
-import GoalPlan from './GoalPlan';
+import AskVexa from './AskVexa';
 import MakeMeLearn from './MakeMeLearn';
 import NotificationsScreen from './NotificationsScreen';
+import Outreach from './Outreach';
 import Pane from './Pane';
 import ProfileScreen from './ProfileScreen';
 import ProPlans from './ProPlans';
@@ -18,7 +19,9 @@ export type Ctx = {
   /** Push another destination from inside a screen. */
   onOpen: (title: string) => void;
   onLogout: () => void;
-  /** What the home box was asked for, when the destination is the plan. */
+  /** Hand her a new sentence and open Ask Vexa on it. */
+  onAsk: (text: string) => void;
+  /** What the home box was asked for, when the destination is Ask Vexa. */
   goal?: string;
 };
 
@@ -57,8 +60,11 @@ export function screenFor(title: string, ctx: Ctx): React.ReactNode {
       return <ProfileScreen onOpen={ctx.onOpen} onLogout={ctx.onLogout} />;
     case 'Notifications':
       return <NotificationsScreen onOpen={ctx.onOpen} />;
+    case 'Ask Vexa':
     case 'Your plan':
-      return <GoalPlan goal={ctx.goal} />;
+      return <AskVexa goal={ctx.goal} onOpen={ctx.onOpen} />;
+    case 'Outreach':
+      return <Outreach onAsk={ctx.onAsk} onOpen={ctx.onOpen} />;
     default:
       return <Pane title={title} line="This screen is next — the drawer already takes you here." />;
   }

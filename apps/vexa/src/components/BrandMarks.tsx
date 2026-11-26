@@ -65,6 +65,16 @@ export const TiktokMark = ({ size = 18 }: P) => (
   </Svg>
 );
 
+export const GmailMark = ({ size = 18 }: P) => (
+  <Svg {...box(size)} fill="none">
+    <Path d="M3 6.2a1.7 1.7 0 0 1 1.7-1.7h.6L12 10l6.7-5.5h.6A1.7 1.7 0 0 1 21 6.2v11.6a1.7 1.7 0 0 1-1.7 1.7h-2V9.9L12 14.3 6.7 9.9v9.6h-2A1.7 1.7 0 0 1 3 17.8Z" fill="#FFFFFF" />
+    <Path d="M3 6.2A1.7 1.7 0 0 1 5.3 4.6L6.7 5.7v13.8h-2A1.7 1.7 0 0 1 3 17.8Z" fill="#4285F4" />
+    <Path d="M21 6.2a1.7 1.7 0 0 0-2.3-1.6L17.3 5.7v13.8h2A1.7 1.7 0 0 0 21 17.8Z" fill="#34A853" />
+    <Path d="M6.7 5.7 12 10l5.3-4.3V9L12 13.4 6.7 9Z" fill="#EA4335" />
+    <Path d="M3 6.2c0-1.4 1.6-2.2 2.7-1.3L6.7 5.7V9L3 6.2Z" fill="#C5221F" />
+  </Svg>
+);
+
 export const WhatsappMark = ({ size = 18 }: P) => (
   <Svg {...box(size)} fill="none">
     <Path

@@ -22,7 +22,7 @@ import {
   useToast,
 } from '../components/kit';
 import { useAction, useLoad, useSteps } from '../net';
-import { commit, useDb, type Account } from '../store';
+import { commit, record, timeAgo, useDb, type Account } from '../store';
 import { C, R } from '../theme';
 
 const JOB = ['Opening the account page', 'Waiting for your permission', 'Checking what Vexa may do', 'Saving the connection'];
@@ -58,9 +58,13 @@ export default function ConnectedAccounts() {
       if (row) {
         row.state = 'connected';
         row.followers = row.followers ?? 1200 + Math.floor(Math.random() * 9000);
-        row.synced = 'Just now';
+        row.synced = Date.now();
       }
-      commit();
+      record({
+        agent: 'Vexa',
+        text: `${a.name} connected — she can work through it now.`,
+        notice: { title: `${a.name} is connected`, line: 'She can post and answer there from now on.' },
+      });
       setConnect(null);
       say(`${a.name} connected`);
     });
@@ -86,7 +90,7 @@ export default function ConnectedAccounts() {
                     <Text style={st.heroTitle}>{on.length} accounts connected</Text>
                     <Text style={st.heroSub}>
                       {on.reduce((n, a) => n + (a.followers ?? 0), 0).toLocaleString('en-US')} followers reachable. Last
-                      sync {on[0]?.synced ?? '—'}.
+                      sync {on[0]?.synced ? timeAgo(on[0].synced) : '—'}.
                     </Text>
                     <Btn
                       label={refresh.busy ? 'Syncing…' : 'Sync all'}
@@ -96,7 +100,7 @@ export default function ConnectedAccounts() {
                       onPress={() =>
                         refresh.run(1500, () => {
                           on.forEach((a) => {
-                            a.synced = 'Just now';
+                            a.synced = Date.now();
                           });
                           commit();
                           say('All accounts synced');
@@ -131,7 +135,7 @@ export default function ConnectedAccounts() {
                           ? `${a.handle} · ${(a.followers ?? 0).toLocaleString('en-US')} followers`
                           : 'Vexa cannot post here yet'}
                       </Text>
-                      {a.state === 'connected' ? <Text style={st.synced}>Synced {a.synced}</Text> : null}
+                      {a.state === 'connected' ? <Text style={st.synced}>Synced {a.synced ? timeAgo(a.synced) : '—'}</Text> : null}
                     </View>
 
                     {a.state === 'connected' ? (
@@ -263,7 +267,7 @@ export default function ConnectedAccounts() {
             row.state = 'off';
             row.synced = undefined;
           }
-          commit();
+          record({ agent: 'Vexa', text: `${cut?.name} disconnected — she has stopped there.` });
           setCut(null);
           say(`${cut?.name} disconnected`);
         }}
