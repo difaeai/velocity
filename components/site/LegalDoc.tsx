@@ -73,7 +73,19 @@ export function LegalDoc({
           {clauses.map((c) => (
             <li key={c.t}>
               <h2>{c.t}</h2>
-              <p>{c.d}</p>
+              <p>
+                {c.d}
+                {/* YouTube's developer policy wants a clickable link to their terms, not the
+                    address written out, so a clause may end in one. */}
+                {c.link ? (
+                  <>
+                    {' '}
+                    <a href={c.link.href} target="_blank" rel="noreferrer">
+                      {c.link.label}
+                    </a>
+                  </>
+                ) : null}
+              </p>
             </li>
           ))}
         </ol>

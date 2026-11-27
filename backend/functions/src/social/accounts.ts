@@ -268,6 +268,34 @@ export const adminVerifySocialAccount = deskCall('any', async (req) => {
   }
 });
 
+/**
+ * Everything we hold that came from the YouTube Data API, gone.
+ *
+ * The YouTube API Services Developer Policies (III.D.2.c, III.E.4.g) give us
+ * seven calendar days from the moment someone disconnects, so this runs there
+ * and then rather than on a sweep. The other networks keep the channel name and
+ * picture until the workspace is deleted, which is what their own terms and our
+ * privacy policy say; YouTube is the one that may not.
+ *
+ * What survives is the record that a piece was published and the video's own id,
+ * because that is the business's own content on its own channel — the privacy
+ * policy says so in the same breath.
+ */
+export async function forgetYouTubeData(): Promise<void> {
+  const comments = await sdb.collection('socialComments').where('platform', '==', 'youtube').get();
+  // 500 writes is a batch's ceiling, and a busy channel can pass it.
+  for (let i = 0; i < comments.docs.length; i += 400) {
+    const batch = db.batch();
+    for (const doc of comments.docs.slice(i, i + 400)) batch.delete(doc.ref);
+    await batch.commit();
+  }
+  await accountRef('youtube').set(
+    { displayName: '', handle: null, externalId: '', followers: null, avatarUrl: null },
+    { merge: true },
+  );
+  logger.info('social: youtube data forgotten on disconnect', { comments: comments.size });
+}
+
 /** Forget a credential entirely. The profile row stays, marked disconnected. */
 export const adminDisconnectSocialAccount = deskCall('any', async (req) => {
   const ctx = requireAuth(req);
@@ -289,6 +317,7 @@ export const adminDisconnectSocialAccount = deskCall('any', async (req) => {
     { merge: true },
   );
   await batch.commit();
+  if (platform === 'youtube') await forgetYouTubeData();
 
   await db.collection('auditLogs').add({
     type: 'social.disconnected',
