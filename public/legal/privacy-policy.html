@@ -86,7 +86,7 @@
     <p class="lede">This policy explains what information the Velocity Rides mobile app collects,
       why we collect it, and the choices you have over your data.</p>
     <div class="meta">
-      <span><b>Effective:</b> 16 November 2026</span>
+      <span><b>Effective:</b> 27 November 2026</span>
       <span><b>Applies to:</b> Velocity Rides for Android &amp; iOS</span>
       <span><b>Contact:</b> <a href="mailto:business@velocityrides.app">business@velocityrides.app</a></span>
     </div>
@@ -402,14 +402,11 @@
     <h3>What we access</h3>
     <p>Only with the account holder's explicit consent, and only these scopes:</p>
     <ul>
-      <li><b>YouTube — read only</b> (<code>youtube.readonly</code>): the connected channel's basic
-        details and the metadata and public statistics of its videos, so the workspace can show which
-        posts went out and how they performed.</li>
       <li><b>YouTube — upload</b> (<code>youtube.upload</code>): permission to publish videos the
         business has approved to its own channel.</li>
-      <li><b>Google Ads</b> (<code>adwords</code>): the connected Google Ads account's campaigns,
-        ad groups, ads and performance metrics, so the workspace can create, manage and report on the
-        business's own campaigns.</li>
+      <li><b>YouTube — manage its own videos</b> (<code>youtube.force-ssl</code>): the comments left
+        on those videos, so the workspace can show them and post the business's replies, and those
+        videos' own statistics for its performance report.</li>
       <li><b>Account identity</b> (<code>userinfo.email</code>, <code>openid</code>): the email
         address and basic profile of the Google account, used only to identify which account is
         connected.</li>
@@ -417,9 +414,9 @@
 
     <h3>How we use it</h3>
     <p>Solely to provide the user-facing features the business asked for: publishing approved videos
-      to its own YouTube channel, showing channel and video performance in its workspace, and
-      creating and reporting on its own Google Ads campaigns. We do not use Google user data for
-      advertising targeting, credit or lending decisions, or any purpose outside these features.</p>
+      to its own YouTube channel, answering the comments left on them, and showing how those videos
+      performed in its workspace. We do not use Google user data for advertising targeting, credit
+      or lending decisions, or any purpose outside these features.</p>
 
     <h3>What we share</h3>
     <p>We do not sell Google user data, and we do not transfer it to data brokers, advertisers or any
@@ -435,13 +432,20 @@
 
     <h3>How long we keep it, and how to remove it</h3>
     <p>We keep Google user data only while the Google account stays connected. Disconnecting the
-      account in the workspace deletes the stored tokens and the YouTube and Google Ads data held with
-      them within 30 days. Access can also be withdrawn at any time from
+      account in the workspace deletes the stored token at once, and every piece of YouTube API data
+      held with it is deleted <b>within 7 calendar days</b> — on disconnection, on a request to have
+      the data deleted, or on deletion of the account or workspace, whichever comes first. Access can
+      also be withdrawn at any time from
       <a href="https://myaccount.google.com/permissions" target="_blank" rel="noreferrer">myaccount.google.com/permissions</a>,
       which stops all further access immediately. To have everything erased, write to
-      <a href="mailto:business@velocityrides.app">business@velocityrides.app</a>. Anything already
-      published to the business's own YouTube channel stays on that channel: only the account holder
-      can take it down.</p>
+      <a href="mailto:business@velocityrides.app">business@velocityrides.app</a>. In practice
+      disconnecting YouTube erases it immediately: the channel's name, handle, id, follower count and
+      picture are cleared, and every comment read from the channel is deleted the moment the account
+      is disconnected.</p>
+    <p>Two things survive, and both belong to the business rather than to us: anything already
+      published to its own YouTube channel stays on that channel, where only the account holder can
+      take it down, and our record that we published it — the piece, its date and the video's own id
+      — stays in the workspace until the workspace itself is deleted.</p>
   </section>
 
   <section>

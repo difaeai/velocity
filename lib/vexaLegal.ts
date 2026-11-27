@@ -30,11 +30,13 @@ import {
  */
 
 /** The day these last changed. One date for all three, so a reader can tell at a glance. */
-export const VEXA_LEGAL_EFFECTIVE = '12 November 2026';
+export const VEXA_LEGAL_EFFECTIVE = '27 November 2026';
 
 export interface Clause {
   t: string;
   d: string;
+  /** A clickable link after the text. YouTube's developer policy requires one to their terms. */
+  link?: { href: string; label: string };
 }
 
 /**
@@ -113,8 +115,12 @@ export const VEXA_PRIVACY: Clause[] = [
     d: 'Disconnect an account at any time from Connected accounts, which deletes its stored token; the account’s name and picture stay in your workspace until the workspace is deleted. You can also remove our app from Facebook at Settings → Business Integrations, and from the connected apps in your TikTok settings.',
   },
   {
+    t: 'YouTube, and the seven days',
+    d: 'Everything we hold that came from the YouTube API is deleted within 7 calendar days of you disconnecting YouTube in Connected accounts, asking us to delete your data, or deleting your account or workspace, whichever comes first — in practice the moment you disconnect: the channel’s name, handle, id, followers and picture are cleared, and every comment read from it is deleted. What stays is your own: the videos on your channel, and our record that we published them. You can also withdraw our access yourself at myaccount.google.com/permissions, which stops it at once.',
+  },
+  {
     t: 'Deleting everything',
-    d: 'Email business@velocityrides.app from the address you signed up with to delete your Vexa workspace and everything in it. We delete it within 30 days, except records the law requires us to keep.',
+    d: 'Email business@velocityrides.app from the address you signed up with to delete your Vexa workspace and everything in it. We delete it within 30 days — within 7 days for anything that came from the YouTube API — except records the law requires us to keep.',
   },
   {
     t: 'Who else sees it',
@@ -150,6 +156,11 @@ export const VEXA_TERMS: Clause[] = [
   {
     t: 'The accounts you connect',
     d: 'Connecting Facebook, Instagram, TikTok, YouTube, Google or a mailbox is you authorising us to act on that account within the permissions you grant, and within that platform’s own terms, which you keep. We use the access for nothing but running your workspace. You can disconnect any of them at any time, and a platform can withdraw access at any time, which may stop part of the service until it is reconnected.',
+  },
+  {
+    t: 'YouTube',
+    d: 'Vexa publishes to your own YouTube channel and answers the comments left on those videos using YouTube API Services. By using Vexa you agree to be bound by the YouTube Terms of Service, and Google’s own handling of your information is governed by the Google Privacy Policy at policies.google.com/privacy. You can withdraw our access at any time at myaccount.google.com/permissions.',
+    link: { href: 'https://www.youtube.com/t/terms', label: 'YouTube Terms of Service' },
   },
   {
     t: 'Plans and prices',
@@ -212,7 +223,7 @@ export const VEXA_DELETION: Clause[] = [
   },
   {
     t: 'What is deleted',
-    d: 'Everything in the workspace: your business brief and market analysis, every planned, made and posted piece and how it did, the comments and replies drafted for you, the leads the sales agent found and the emails it wrote, your connected accounts’ names and pictures, any stored mailbox password, and your log-in. It is deleted within 30 days of the request.',
+    d: 'Everything in the workspace: your business brief and market analysis, every planned, made and posted piece and how it did, the comments and replies drafted for you, the leads the sales agent found and the emails it wrote, your connected accounts’ names and pictures, any stored mailbox password, and your log-in. It is deleted within 30 days of the request, and anything that came from the YouTube API within 7 calendar days.',
   },
   {
     t: 'What stays, and why',
